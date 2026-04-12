@@ -163,8 +163,8 @@ export const HERO_PARTICLE_WORDS = ["Million Lives.", "One Decision.", "NutriPla
 /** Min time first hero line stays up after layout; particles need ~0.4–0.8s to resolve before it reads clearly */
 const FIRST_PHRASE_HOLD_MS = 7800;
 
-/** Min time on “One Decision.” before drifting upward */
-const SECOND_PHRASE_HOLD_MS = 4200;
+/** Min time on “One Decision.” before drifting upward (keep brief, then rise with the line) */
+const SECOND_PHRASE_HOLD_MS = 700;
 
 /** Drift speed (canvas px/frame) while rising; stop when glyph reaches upper band */
 const RISE_PX_PER_FRAME = 3.6;
@@ -236,7 +236,7 @@ export function ParticleTextEffect({
     (
       word: string,
       canvas: HTMLCanvasElement,
-      opts?: { layout?: "center" | "upper" }
+      opts?: { layout?: "center" | "upper"; seedImmediateWhite?: boolean }
     ) => {
     const offscreenCanvas = document.createElement("canvas");
     offscreenCanvas.width = canvas.width;
@@ -247,6 +247,7 @@ export function ParticleTextEffect({
     const w = canvas.width;
     const h = canvas.height;
     const layout = opts?.layout ?? "center";
+    const seedImmediateWhite = opts?.seedImmediateWhite === true;
     const maxTextWidth = w * 0.92;
     /* Shrink font until the line fits — clipped text produced zero particles before */
     const sizeCap =
@@ -279,6 +280,7 @@ export function ParticleTextEffect({
 
     const particles = particlesRef.current;
     let particleIndex = 0;
+    let seededWhite = false;
 
     const coordsIndexes: number[] = [];
     for (let i = 0; i < pixels.length; i += pixelSteps * 4) {
@@ -333,6 +335,17 @@ export function ParticleTextEffect({
 
         particle.target.x = x;
         particle.target.y = y;
+
+        if (seedImmediateWhite && !seededWhite) {
+          seededWhite = true;
+          particle.startColor = { r: 255, g: 255, b: 255 };
+          particle.targetColor = { r: 255, g: 255, b: 255 };
+          particle.colorWeight = 1;
+          particle.pos.x = x;
+          particle.pos.y = y;
+          particle.vel.x = 0;
+          particle.vel.y = 0;
+        }
       }
     }
 
@@ -376,7 +389,7 @@ export function ParticleTextEffect({
     phrase2StartRef.current = undefined;
     riseAccumRef.current = 0;
     titlePhaseNotifiedRef.current = false;
-    nextWord(wordsRef.current[0] ?? HERO_PARTICLE_WORDS[0], canvas);
+    nextWord(wordsRef.current[0] ?? HERO_PARTICLE_WORDS[0], canvas, { seedImmediateWhite: true });
     phraseClockRef.current = performance.now();
 
     if (overScene) {
@@ -524,7 +537,10 @@ export function ParticleTextEffect({
         wi = 2;
         layout = "upper";
       }
-      nextWord(list[wi] ?? HERO_PARTICLE_WORDS[0], canvas, { layout });
+      nextWord(list[wi] ?? HERO_PARTICLE_WORDS[0], canvas, {
+        layout,
+        seedImmediateWhite: step === 0,
+      });
       if (step === 4) {
         const acc = riseAccumRef.current;
         for (let i = 0; i < particlesRef.current.length; i++) {
