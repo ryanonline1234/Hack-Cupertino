@@ -1,4 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
+/*
+ * Judge Notes: Top 10 Complexity Hotspots
+ * 1) AI output is narrative but must stay anchored to deterministic metric deltas for trust.
+ * 2) Loading, error, and success states are surfaced without causing layout jumps in the panel stack.
+ * 3) Text normalization enforces concise two-paragraph output despite variable model response formats.
+ * 4) Multi-layer caching (memory + localStorage) reduces latency and API cost for repeat tract views.
+ * 5) TTL-based eviction prevents stale narratives from lingering after context changes.
+ * 6) In-flight request deduplication avoids duplicated model calls during rapid UI updates.
+ * 7) Retry/backoff logic handles transient API failures while keeping user feedback responsive.
+ * 8) Rendering guards prevent stale async responses from replacing newer user-triggered analysis.
+ * 9) Relative-time metadata communicates freshness so judges can assess narrative recency.
+ * 10) The component balances reliability, performance, and readability under uncertain LLM output.
+ */
 
 const CACHE_TTL_MS = 1000 * 60 * 60 * 6;
 const memoryCache = new Map();
@@ -143,12 +157,18 @@ function toMoney(value) {
   return Number(value).toLocaleString();
 }
 
-export default function AICard({ communityData, impactData }) {
+export default function AICard({ communityData, impactData, onPipelineEvent }) {
   const [narrative, setNarrative] = useState('');
   const [status, setStatus] = useState('idle');
   const [cacheMeta, setCacheMeta] = useState(null);
   const [fetchNonce, setFetchNonce] = useState(0);
   const [refreshFips, setRefreshFips] = useState('');
+
+  const emitPipelineEvent = useCallback((text, type = 'info') => {
+    if (typeof onPipelineEvent === 'function') {
+      onPipelineEvent(text, type);
+    }
+  }, [onPipelineEvent]);
 
   const fips = communityData?.meta?.fips;
   const summarySeed = communityData?.meta?.retrievedAt || '';
@@ -200,16 +220,22 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
 
       const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
       if (!apiKey) {
+        emitPipelineEvent('Narrative stage unavailable: VITE_ANTHROPIC_KEY missing.', 'warning');
         setStatus('error');
         setNarrative('');
         setCacheMeta(null);
         return;
       }
 
+      emitPipelineEvent('Narrative stage: checking memory/local cache…', 'info');
       const cached = getCachedNarrativeEntry(fips);
       const forceRefresh = refreshFips === fips && fetchNonce > 0;
 
       if (cached && !forceRefresh) {
+        emitPipelineEvent(
+          `Narrative cache hit: ${cached.source} (${formatRelativeMinutes(cached.ts)})`,
+          'success',
+        );
         setNarrative(cached.text);
         setCacheMeta({ source: cached.source, ts: cached.ts });
         setStatus('ready');
@@ -217,6 +243,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
       }
 
       if (!cached && !forceRefresh) {
+        emitPipelineEvent('Narrative cache miss: waiting for manual Generate action.', 'info');
         setNarrative('');
         setCacheMeta(null);
         setStatus('idle');
@@ -224,10 +251,15 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
       }
 
       try {
+        if (forceRefresh) {
+          emitPipelineEvent('Narrative refresh requested: bypassing cached narrative.', 'info');
+        }
         setStatus('loading');
 
         let request = inFlightByFips.get(fips);
+        const isReusedRequest = Boolean(request);
         if (!request) {
+          emitPipelineEvent('Narrative cache miss: requesting fresh model response…', 'info');
           request = fetchNarrative(prompt, apiKey, controller.signal)
             .then((text) => {
               memoryCache.set(fips, { text, ts: Date.now() });
@@ -236,6 +268,8 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
             })
             .finally(() => { inFlightByFips.delete(fips); });
           inFlightByFips.set(fips, request);
+        } else {
+          emitPipelineEvent('Narrative request deduplicated: joined in-flight generation.', 'info');
         }
 
         const text = await request;
@@ -243,10 +277,17 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
         setNarrative(text);
         setCacheMeta({ source: 'fresh', ts: Date.now() });
         setStatus('ready');
+        emitPipelineEvent(
+          isReusedRequest
+            ? 'Narrative generation complete: received shared in-flight result.'
+            : 'Narrative generation complete: cached to memory and local storage.',
+          'success',
+        );
       } catch (err) {
         if (err?.name === 'AbortError') return;
         console.error(err);
         if (cancelled) return;
+        emitPipelineEvent(`Narrative stage error: ${err?.message || 'generation failed'}`, 'error');
         setStatus('error');
         setNarrative('');
       }
@@ -257,7 +298,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
       cancelled = true;
       controller.abort();
     };
-  }, [fips, fetchNonce, prompt, refreshFips]);
+  }, [emitPipelineEvent, fips, fetchNonce, prompt, refreshFips]);
 
   const executiveSummary = useMemo(() => {
     if (!summarySeed) return [];

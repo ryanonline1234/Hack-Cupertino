@@ -1,0 +1,24 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/census-geocoder/:path*",
+      "destination": "https://geocoding.geo.census.gov/:path*"
+    },
+    {
+      "source": "/api/nominatim/:path*",
+      "destination": "https://nominatim.openstreetmap.org/:path*"
+    },
+    {
+      "source": "/api/cdc/:path*",
+      "destination": "https://data.cdc.gov/:path*"
+    },
+    {
+      "source": "/api/census/:path*",
+      "destination": "https://api.census.gov/:path*"
+    },
+    {
+      "source": "/api/llmapi/:path*",
+      "destination": "https://api.llmapi.ai/:path*"
+    }
+  ]
+}
