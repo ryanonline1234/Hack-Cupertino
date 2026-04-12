@@ -1,6 +1,4 @@
-/**
- * Neon “impact” arcs over the map (visual layer; not geo-projected — iframe cannot share camera).
- */
+/** Neon “impact” arcs (decorative overlay). */
 export function DecorativeArcs() {
   return (
     <svg
@@ -10,7 +8,7 @@ export function DecorativeArcs() {
       aria-hidden
     >
       <defs>
-        <filter id="streets-arc-glow" x="-50%" y="-50%" width="200%" height="200%">
+        <filter id="decorative-arc-glow" x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur stdDeviation="0.8" result="b" />
           <feMerge>
             <feMergeNode in="b" />
@@ -25,7 +23,7 @@ export function DecorativeArcs() {
         strokeWidth="0.35"
         strokeLinecap="round"
         opacity={0.92}
-        filter="url(#streets-arc-glow)"
+        filter="url(#decorative-arc-glow)"
       />
       <path
         d="M 86 71 Q 62 44 50 34"
@@ -34,7 +32,7 @@ export function DecorativeArcs() {
         strokeWidth="0.35"
         strokeLinecap="round"
         opacity={0.88}
-        filter="url(#streets-arc-glow)"
+        filter="url(#decorative-arc-glow)"
       />
     </svg>
   );

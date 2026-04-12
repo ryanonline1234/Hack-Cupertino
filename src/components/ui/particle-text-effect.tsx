@@ -158,12 +158,12 @@ export const NUTRIPLAN_PARTICLE_WORDS = [
 ];
 
 /** Landing hero: story beats → persistent title at top (needs ≥3 strings for title beat) */
-export const HERO_PARTICLE_WORDS = ["Millions Affected.", "One decision.", "NutriPlan.AI"];
+export const HERO_PARTICLE_WORDS = ["Million Lives.", "One Decision.", "NutriPlan.AI"];
 
-/** Min time first line stays up after layout; particles need ~0.4–0.8s to resolve before it reads clearly */
-const FIRST_PHRASE_HOLD_MS = 4200;
+/** Min time first hero line stays up after layout; particles need ~0.4–0.8s to resolve before it reads clearly */
+const FIRST_PHRASE_HOLD_MS = 7800;
 
-/** Min time on “One decision.” before drifting upward */
+/** Min time on “One Decision.” before drifting upward */
 const SECOND_PHRASE_HOLD_MS = 4200;
 
 /** Drift speed (canvas px/frame) while rising; stop when glyph reaches upper band */

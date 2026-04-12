@@ -8,6 +8,7 @@ import {
 import { SimulationProvider, useSimulation } from "./simulation/SimulationContext";
 import { CityScene } from "./scene/CityScene";
 import { CommandCenter } from "./ui/command/CommandCenter";
+import { LandingPage } from "./ui/landing/LandingPage";
 
 const CITY_DELAY_MS = 900;
 
@@ -20,7 +21,7 @@ function AppShell() {
   } = useSimulation();
 
   const [showCity, setShowCity] = useState(false);
-  const [phase, setPhase] = useState<"intro" | "command">("intro");
+  const [phase, setPhase] = useState<"intro" | "landing" | "command">("intro");
 
   useEffect(() => {
     const id = window.setTimeout(() => setShowCity(true), CITY_DELAY_MS);
@@ -28,7 +29,7 @@ function AppShell() {
   }, []);
 
   const handleTitlePhase = useCallback(() => {
-    setPhase("command");
+    setPhase("landing");
   }, []);
 
   return (
@@ -86,6 +87,27 @@ function AppShell() {
                 onTitlePhase={handleTitlePhase}
               />
             </div>
+
+            <button
+              type="button"
+              onClick={() => setPhase("landing")}
+              className="pointer-events-auto fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-[60] rounded-full border border-white/[0.12] bg-[#141923]/88 px-4 py-2.5 text-[13px] font-medium text-white/80 shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-xl transition hover:border-white/[0.18] hover:bg-[#1a2230]/95 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400/55"
+              aria-label="Skip intro animation"
+            >
+              Skip intro
+            </button>
+          </motion.div>
+        )}
+
+        {phase === "landing" && (
+          <motion.div
+            key="landing"
+            className="relative w-full"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <LandingPage onLaunchSimulation={() => setPhase("command")} />
           </motion.div>
         )}
 
