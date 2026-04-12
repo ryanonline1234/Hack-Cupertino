@@ -1,0 +1,86 @@
+[
+  {
+    "id": "burlingame-ks-osage-20139010200",
+    "tractFips": "20139010200",
+    "locationLabel": "Burlingame area, Osage County, KS",
+    "expectedUsdaLila": false,
+    "sourceUrl": "https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data/"
+  },
+  {
+    "id": "autauga-al-tract-1001021000",
+    "tractFips": "1001021000",
+    "locationLabel": "Autauga County, AL (rural tract)",
+    "expectedUsdaLila": true,
+    "sourceUrl": "https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data/"
+  },
+  {
+    "id": "autauga-al-tract-1001020600",
+    "tractFips": "1001020600",
+    "locationLabel": "Autauga County, AL (urban tract)",
+    "expectedUsdaLila": true,
+    "sourceUrl": "https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data/"
+  },
+  {
+    "id": "autauga-al-tract-1001020801",
+    "tractFips": "1001020801",
+    "locationLabel": "Autauga County, AL (rural non-designated tract)",
+    "expectedUsdaLila": false,
+    "sourceUrl": "https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data/"
+  },
+  {
+    "id": "baldwin-al-tract-1003010600",
+    "tractFips": "1003010600",
+    "locationLabel": "Baldwin County, AL (urban designated tract)",
+    "expectedUsdaLila": true,
+    "sourceUrl": "https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data/"
+  },
+  {
+    "id": "baldwin-al-tract-1003010200",
+    "tractFips": "1003010200",
+    "locationLabel": "Baldwin County, AL (rural non-designated tract)",
+    "expectedUsdaLila": false,
+    "sourceUrl": "https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data/"
+  },
+  {
+    "id": "barbour-al-tract-1005950300",
+    "tractFips": "1005950300",
+    "locationLabel": "Barbour County, AL (rural designated tract)",
+    "expectedUsdaLila": true,
+    "sourceUrl": "https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data/"
+  },
+  {
+    "id": "autauga-al-tract-1001020400",
+    "tractFips": "1001020400",
+    "locationLabel": "Autauga County, AL (urban non-designated tract)",
+    "expectedUsdaLila": false,
+    "sourceUrl": "https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data/"
+  },
+  {
+    "id": "saint-paul-ks-neosho-20133951800",
+    "tractFips": "20133951800",
+    "locationLabel": "Saint Paul area, Neosho County, KS (designated tract)",
+    "expectedUsdaLila": true,
+    "sourceUrl": "https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data/"
+  },
+  {
+    "id": "saint-paul-ks-neosho-20133951600",
+    "tractFips": "20133951600",
+    "locationLabel": "Saint Paul area, Neosho County, KS (non-designated tract)",
+    "expectedUsdaLila": false,
+    "sourceUrl": "https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data/"
+  },
+  {
+    "id": "grayson-ky-tract-21085950600",
+    "tractFips": "21085950600",
+    "locationLabel": "Grayson County, KY (designated tract)",
+    "expectedUsdaLila": true,
+    "sourceUrl": "https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data/"
+  },
+  {
+    "id": "grayson-ky-tract-21085950200",
+    "tractFips": "21085950200",
+    "locationLabel": "Grayson County, KY (non-designated tract)",
+    "expectedUsdaLila": false,
+    "sourceUrl": "https://www.ers.usda.gov/data-products/food-access-research-atlas/download-the-data/"
+  }
+]

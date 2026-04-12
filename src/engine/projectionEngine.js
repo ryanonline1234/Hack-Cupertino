@@ -21,16 +21,26 @@ export function projectImpact(communityData, scenario = {}) {
   if (!communityData) return null;
 
   const { foodAccess, health, demographics, meta } = communityData;
-  const { pctLowAccess1mi, pctNoVehicleLowAccess } = foodAccess;
+    const foodDesertForModel = foodAccess.isFoodDesert == null
+      ? Boolean(foodAccess.modelFoodDesertAssumption)
+      : Boolean(foodAccess.isFoodDesert);
+
+  const { pctLowAccess1mi, pctLowAccess10mi, pctNoVehicleLowAccess } = foodAccess;
   const { diabetes, obesity } = health;
   const { population, noVehicleHouseholds, medianIncome, pctPoverty } = demographics;
+
+  const qualifyingLowAccessPct = Number(
+    foodAccess.qualifyingLowAccessPct ||
+      (foodAccess.isRural ? pctLowAccess10mi : pctLowAccess1mi) ||
+      0
+  );
 
   const simulation = summarizeSimulation({
     center: scenario.center || { lat: meta?.lat, lng: meta?.lng },
     pins: scenario.pins || [],
   });
 
-  const lowAccessIntensity = clamp01((pctLowAccess1mi + pctNoVehicleLowAccess * 0.7) / 100);
+  const lowAccessIntensity = clamp01((qualifyingLowAccessPct + pctNoVehicleLowAccess * 0.7) / 100);
   const povertyIntensity = clamp01((pctPoverty || 0) / 35);
   const incomeScale = clamp01((medianIncome || 0) / 90_000);
 
@@ -39,7 +49,7 @@ export function projectImpact(communityData, scenario = {}) {
     0.08,
     0.78,
   );
-  const pctLowAccessReduction = pctLowAccess1mi * accessReductionFactor;
+  const pctLowAccessReduction = qualifyingLowAccessPct * accessReductionFactor;
   const residentsGainingAccess = Math.round(population * (pctLowAccessReduction / 100));
   const noVehicleHouseholdsHelped = Math.round(
     noVehicleHouseholds * clamp(simulation.coverageScore * (0.35 + lowAccessIntensity * 0.4), 0.08, 0.85),
@@ -51,9 +61,18 @@ export function projectImpact(communityData, scenario = {}) {
 
   const diabetesCasesAvoided = Math.round(population * (diabetes / 100) * (diabetesReductionPct / Math.max(diabetes, 0.1)) * 0.55);
 
-  const captureRate = clamp(0.07 + simulation.coverageScore * 0.3 + lowAccessIntensity * 0.1 - povertyIntensity * 0.05, 0.06, 0.45);
-  const perCapitaSpend = CORRELATIONS.perCapitaGrocerySpend * (0.85 + incomeScale * 0.35);
-  const annualCapturedSales = population * perCapitaSpend * captureRate;
+  // Economic demand is bounded by access need and a practical one-store revenue ceiling.
+  const captureRate = clamp(
+    0.05 + simulation.coverageScore * 0.2 + lowAccessIntensity * 0.08 - povertyIntensity * 0.06,
+    0.04,
+    0.28,
+  );
+  const perCapitaSpend = CORRELATIONS.perCapitaGrocerySpend * (0.78 + incomeScale * 0.27);
+  const accessNeedFactor = clamp(qualifyingLowAccessPct / 100, 0.2, 1);
+  const annualCapturedSalesRaw = population * perCapitaSpend * captureRate * accessNeedFactor;
+  const annualRevenueCap = CORRELATIONS.avgGroceryAnnualRevenue * (0.7 + incomeScale * 0.6);
+  const annualCapturedSales = Math.min(annualCapturedSalesRaw, annualRevenueCap);
+  const annualCapturedSalesCapped = annualCapturedSalesRaw > annualCapturedSales;
   const annualLocalImpact = Math.round(annualCapturedSales * CORRELATIONS.economicMultiplier);
 
   const baseJobs = annualCapturedSales / CORRELATIONS.revenuePerJob;
@@ -64,12 +83,12 @@ export function projectImpact(communityData, scenario = {}) {
     ? clamp(medianIncome / 2080, 10, 65)
     : CORRELATIONS.defaultHourlyWage;
 
-  const baselineTravelMinutes = clamp(12 + pctLowAccess1mi * 0.45 + pctNoVehicleLowAccess * 0.38, 8, 70);
+  const baselineTravelMinutes = clamp(12 + qualifyingLowAccessPct * 0.45 + pctNoVehicleLowAccess * 0.38, 8, 70);
   const travelDropRate = clamp(simulation.coverageScore * (0.38 + lowAccessIntensity * 0.36), 0.1, 0.72);
   const newTravelMinutes = baselineTravelMinutes * (1 - travelDropRate);
 
   const baseBasketCost = CORRELATIONS.baseBasketCost;
-  const conveniencePremiumBefore = baseBasketCost * (foodAccess.isFoodDesert ? 0.15 : 0.07);
+  const conveniencePremiumBefore = baseBasketCost * (foodDesertForModel ? 0.15 : 0.07);
   const conveniencePremiumAfter = conveniencePremiumBefore * (1 - clamp(simulation.coverageScore * 0.78, 0.12, 0.88));
 
   const timeSurchargeBefore = (baselineTravelMinutes / 60) * hourlyWage;
@@ -78,7 +97,7 @@ export function projectImpact(communityData, scenario = {}) {
   const totalAccessCostBefore = baseBasketCost + conveniencePremiumBefore + timeSurchargeBefore;
   const totalAccessCostAfter = baseBasketCost + conveniencePremiumAfter + timeSurchargeAfter;
 
-  const householdsAffected = population * clamp01(pctLowAccess1mi / 100);
+  const householdsAffected = population * clamp01(qualifyingLowAccessPct / 100);
   const commuteHoursSavedAnnual =
     householdsAffected * CORRELATIONS.groceryTripsPerYear * Math.max((baselineTravelMinutes - newTravelMinutes) / 60, 0);
 
@@ -108,6 +127,9 @@ export function projectImpact(communityData, scenario = {}) {
       jobsMax,
       annualLocalImpact,
       annualCapturedSales: Math.round(annualCapturedSales),
+      annualCapturedSalesRaw: Math.round(annualCapturedSalesRaw),
+      annualRevenueCap: Math.round(annualRevenueCap),
+      annualCapturedSalesCapped,
       captureRate,
     },
     trueCost: {
@@ -122,6 +144,8 @@ export function projectImpact(communityData, scenario = {}) {
       totalAccessCostBefore,
       totalAccessCostAfter,
       tripSavings: totalAccessCostBefore - totalAccessCostAfter,
+      foodDesertAssumptionUsed: foodDesertForModel,
+      foodDesertAssumptionMethod: foodAccess.modelFoodDesertAssumptionMethod || 'model_assumption_final_designation',
     },
     simulation: {
       ...simulation,

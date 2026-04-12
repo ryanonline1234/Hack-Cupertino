@@ -29,15 +29,29 @@ function writeLocalCache(fips, text) {
   }
 }
 
-function getCachedNarrative(fips) {
+function getCachedNarrativeEntry(fips) {
   const memoHit = memoryCache.get(fips);
-  if (memoHit && Date.now() - memoHit.ts <= CACHE_TTL_MS) return memoHit.text;
+  if (memoHit && Date.now() - memoHit.ts <= CACHE_TTL_MS) {
+    return { ...memoHit, source: 'memory' };
+  }
+
   const localHit = readLocalCache(fips);
   if (localHit) {
     memoryCache.set(fips, localHit);
-    return localHit.text;
+    return { ...localHit, source: 'local' };
   }
+
   return null;
+}
+
+function formatRelativeMinutes(ts) {
+  if (!ts) return '';
+  const mins = Math.max(0, Math.floor((Date.now() - ts) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins === 1) return '1 min ago';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ago`;
 }
 
 function normalizeTwoParagraphs(text) {
@@ -132,20 +146,30 @@ function toMoney(value) {
 export default function AICard({ communityData, impactData }) {
   const [narrative, setNarrative] = useState('');
   const [status, setStatus] = useState('idle');
+  const [cacheMeta, setCacheMeta] = useState(null);
+  const [fetchNonce, setFetchNonce] = useState(0);
+  const [refreshFips, setRefreshFips] = useState('');
 
   const fips = communityData?.meta?.fips;
+  const summarySeed = communityData?.meta?.retrievedAt || '';
 
   const prompt = useMemo(() => {
     if (!communityData || !impactData) return null;
 
     const { foodAccess, health, demographics } = communityData;
     const { foodAccess: impactFood, health: impactHealth, economic } = impactData;
+    const lowAccessRuleLabel = foodAccess.isRural ? '10 miles (rural)' : '1 mile (urban)';
+    const lowAccessRulePct = Number(
+      foodAccess.qualifyingLowAccessPct ||
+      (foodAccess.isRural ? foodAccess.pctLowAccess10mi : foodAccess.pctLowAccess1mi) ||
+      0
+    ).toFixed(1);
 
     return `You are analyzing food access data for a US community. Respond in exactly two short paragraphs with no headers or bullet points.
 
 Community data:
 - Food desert: ${foodAccess.isFoodDesert}
-- Population with low grocery access (within 1 mile): ${Number(foodAccess.pctLowAccess1mi || 0).toFixed(1)}%
+- Population with low grocery access (within ${lowAccessRuleLabel}): ${lowAccessRulePct}%
 - Diabetes prevalence: ${Number(health.diabetes || 0).toFixed(1)}%
 - Obesity prevalence: ${Number(health.obesity || 0).toFixed(1)}%
 - Median household income: $${toMoney(demographics.medianIncome)}
@@ -169,6 +193,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
     async function run() {
       if (!fips || !prompt) {
         setNarrative('');
+        setCacheMeta(null);
         setStatus('idle');
         return;
       }
@@ -177,13 +202,24 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
       if (!apiKey) {
         setStatus('error');
         setNarrative('');
+        setCacheMeta(null);
         return;
       }
 
-      const cached = getCachedNarrative(fips);
-      if (cached) {
-        setNarrative(cached);
+      const cached = getCachedNarrativeEntry(fips);
+      const forceRefresh = refreshFips === fips && fetchNonce > 0;
+
+      if (cached && !forceRefresh) {
+        setNarrative(cached.text);
+        setCacheMeta({ source: cached.source, ts: cached.ts });
         setStatus('ready');
+        return;
+      }
+
+      if (!cached && !forceRefresh) {
+        setNarrative('');
+        setCacheMeta(null);
+        setStatus('idle');
         return;
       }
 
@@ -205,6 +241,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
         const text = await request;
         if (cancelled) return;
         setNarrative(text);
+        setCacheMeta({ source: 'fresh', ts: Date.now() });
         setStatus('ready');
       } catch (err) {
         if (err?.name === 'AbortError') return;
@@ -220,7 +257,16 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
       cancelled = true;
       controller.abort();
     };
-  }, [fips]);
+  }, [fips, fetchNonce, prompt, refreshFips]);
+
+  const executiveSummary = useMemo(() => {
+    if (!summarySeed) return [];
+
+    const nextSummary = impactData?.simulation?.executiveSummary;
+    return Array.isArray(nextSummary) && nextSummary.length > 0
+      ? nextSummary.slice(0, 3)
+      : [];
+  }, [summarySeed, impactData]);
 
   // ── Idle: no community selected ──
   if (!communityData) {
@@ -241,7 +287,11 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
     .filter(Boolean)
     .slice(0, 2);
 
-  const executiveSummary = impactData?.simulation?.executiveSummary || [];
+  const canGenerate = Boolean(communityData && prompt && import.meta.env.VITE_ANTHROPIC_KEY);
+  const hasNarrative = paragraphs.length > 0;
+  const cacheLabel = cacheMeta
+    ? `${cacheMeta.source === 'fresh' ? 'Generated' : `Cache: ${cacheMeta.source}`} · ${formatRelativeMinutes(cacheMeta.ts)}`
+    : null;
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -254,11 +304,34 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
         <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">
           Community Narrative
         </span>
+        {cacheLabel && status !== 'loading' && (
+          <span className="ml-auto text-[10px] text-white/35">{cacheLabel}</span>
+        )}
         {status === 'loading' && (
           <span className="ml-auto text-[10px] font-medium" style={{ color: 'var(--cyan)' }}>
             Generating…
           </span>
         )}
+      </div>
+
+      <div className="mb-2 shrink-0">
+        <button
+          type="button"
+          disabled={!canGenerate || status === 'loading'}
+          onClick={() => {
+            if (!fips) return;
+            setRefreshFips(fips);
+            setFetchNonce((n) => n + 1);
+          }}
+          className="w-full py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
+          style={{
+            background: 'rgba(34,211,238,0.08)',
+            border: '1px solid rgba(34,211,238,0.24)',
+            color: 'var(--cyan)',
+          }}
+        >
+          {hasNarrative ? 'Refresh Narrative' : 'Generate Narrative'}
+        </button>
       </div>
 
       {/* Content */}
@@ -300,9 +373,11 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
           </p>
         )}
 
-        {status === 'idle' && communityData && !import.meta.env.VITE_ANTHROPIC_KEY && (
+        {status === 'idle' && communityData && (
           <p className="text-xs text-white/30 italic">
-            Add VITE_ANTHROPIC_KEY to .env to enable AI narrative
+            {import.meta.env.VITE_ANTHROPIC_KEY
+              ? 'Narrative is on-demand. Click Generate Narrative when you want an update.'
+              : 'Add VITE_ANTHROPIC_KEY to .env to enable AI narrative.'}
           </p>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import RippleField from './RippleField';
 import ParticleDrift from './ParticleDrift';
 import SimLabControls from './SimLabControls';
@@ -7,6 +7,9 @@ const STREETS_GL_BASE = 'https://streets-gl.pages.dev';
 const DEFAULT_PITCH = 50;
 const DEFAULT_YAW = 330;
 const DEFAULT_DISTANCE = 1800;
+const IFRAME_LOAD_TIMEOUT_MS = 12000;
+const IFRAME_MAX_RETRIES = 2;
+const SHOW_SIM_LAB_UI = false;
 
 const EXAMPLE_LOCATIONS = [
   { label: 'San Jose, CA',        lat: 37.339,  lng: -121.894 },
@@ -17,6 +20,13 @@ const EXAMPLE_LOCATIONS = [
 
 function buildSrc(lat, lng) {
   return `${STREETS_GL_BASE}/?mapStyle=streets&pitch=${DEFAULT_PITCH}&yaw=-30&distance=${DEFAULT_DISTANCE}&lat=${lat.toFixed(5)}&lon=${lng.toFixed(5)}${buildHash(lat, lng)}`;
+}
+
+function withRetryParam(url, retry) {
+  const [rawBase, rawHash] = url.split('#');
+  const base = rawBase.replace(/([?&])_retry=\d+/, '$1').replace(/[?&]$/, '');
+  const joined = `${base}${base.includes('?') ? '&' : '?'}_retry=${retry}`;
+  return rawHash ? `${joined}#${rawHash}` : joined;
 }
 
 function buildHash(lat, lng) {
@@ -89,11 +99,47 @@ export default function StreetsGlView({
   const [showDrop, setShowDrop]         = useState(false);
   const [activeIdx, setActiveIdx]       = useState(-1);
   const [iframeSrc, setIframeSrc]       = useState(() => buildSrc(lat, lng));
+  const [mapError, setMapError]         = useState('');
+  const [iframeRetry, setIframeRetry]   = useState(0);
   const inputRef    = useRef(null);
   const iframeRef   = useRef(null);
   const debounceRef = useRef(null);
   const dropRef     = useRef(null);
   const lastMoveRef = useRef('');
+  const iframeReadyRef = useRef(false);
+  const iframeWatchdogRef = useRef(null);
+
+  const clearIframeWatchdog = useCallback(() => {
+    if (iframeWatchdogRef.current) {
+      clearTimeout(iframeWatchdogRef.current);
+      iframeWatchdogRef.current = null;
+    }
+  }, []);
+
+  const scheduleIframeWatchdog = useCallback((retryCount) => {
+    clearIframeWatchdog();
+    iframeReadyRef.current = false;
+
+    iframeWatchdogRef.current = setTimeout(() => {
+      if (iframeReadyRef.current) return;
+
+      if (retryCount < IFRAME_MAX_RETRIES) {
+        const nextRetry = retryCount + 1;
+        setMapError('Streets GL timed out, retrying…');
+        setIframeRetry(nextRetry);
+        setIframeSrc((prev) => withRetryParam(prev, nextRetry));
+      } else {
+        setMapError('Streets GL failed to load. Tap retry.');
+      }
+    }, IFRAME_LOAD_TIMEOUT_MS);
+  }, [clearIframeWatchdog]);
+
+  function retryIframeNow() {
+    const nextRetry = iframeRetry + 1;
+    setIframeRetry(nextRetry);
+    setMapError('Retrying Streets GL…');
+    setIframeSrc((prev) => withRetryParam(prev, nextRetry));
+  }
 
   function teleportMap(nextLat, nextLng) {
     const moveKey = `${nextLat.toFixed(5)},${nextLng.toFixed(5)}`;
@@ -103,7 +149,7 @@ export default function StreetsGlView({
 
     let didHashMove = false;
     const frameWin = iframeRef.current?.contentWindow;
-    if (frameWin) {
+    if (frameWin && iframeReadyRef.current) {
       try {
         // Streets GL listens for hash updates as live camera state.
         frameWin.location.hash = buildHash(nextLat, nextLng);
@@ -115,6 +161,8 @@ export default function StreetsGlView({
 
     if (!didHashMove) {
       const nextSrc = buildSrc(nextLat, nextLng);
+      setMapError('');
+      setIframeRetry(0);
       setIframeSrc((prev) => (prev === nextSrc ? prev : nextSrc));
     }
   }
@@ -122,6 +170,11 @@ export default function StreetsGlView({
   useEffect(() => {
     teleportMap(lat, lng);
   }, [lat, lng]);
+
+  useEffect(() => {
+    scheduleIframeWatchdog(iframeRetry);
+    return () => clearIframeWatchdog();
+  }, [iframeSrc, iframeRetry, scheduleIframeWatchdog, clearIframeWatchdog]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -214,6 +267,14 @@ export default function StreetsGlView({
     onSearch(loc.lat, loc.lng);
   }
 
+  function handleForceRefresh() {
+    if (busy || !hasData) return;
+    setSearchError('');
+    setShowDrop(false);
+    setSuggestions([]);
+    onSearch(lat, lng, { forceRefresh: true });
+  }
+
   const busy = isLoading || geocoding;
 
   return (
@@ -222,9 +283,27 @@ export default function StreetsGlView({
       <iframe
         ref={iframeRef}
         src={iframeSrc}
+        onLoad={() => {
+          iframeReadyRef.current = true;
+          clearIframeWatchdog();
+          setMapError('');
+        }}
+        onError={() => {
+          iframeReadyRef.current = false;
+          clearIframeWatchdog();
+
+          if (iframeRetry < IFRAME_MAX_RETRIES) {
+            const nextRetry = iframeRetry + 1;
+            setIframeRetry(nextRetry);
+            setMapError('Streets GL failed to load, retrying…');
+            setIframeSrc((prev) => withRetryParam(prev, nextRetry));
+          } else {
+            setMapError('Streets GL failed to load. Tap retry.');
+          }
+        }}
         className="absolute border-0"
         title="3D Street Map"
-        loading="lazy"
+        loading="eager"
         allow="fullscreen"
         style={{
           zIndex: 1,
@@ -239,14 +318,16 @@ export default function StreetsGlView({
       <ParticleDrift />
       <RippleField visible={hasData} />
 
-      <SimLabControls
-        mode={mode}
-        pinCounts={pinCounts}
-        pinTotal={pinTotal}
-        onAddPin={onAddPin}
-        onUndoPin={onUndoPin}
-        onClearPins={onClearPins}
-      />
+      {SHOW_SIM_LAB_UI && (
+        <SimLabControls
+          mode={mode}
+          pinCounts={pinCounts}
+          pinTotal={pinTotal}
+          onAddPin={onAddPin}
+          onUndoPin={onUndoPin}
+          onClearPins={onClearPins}
+        />
+      )}
 
       {/* Corner arc */}
       <svg
@@ -325,6 +406,22 @@ export default function StreetsGlView({
           >
             Analyze
           </button>
+
+          <button
+            type="button"
+            disabled={busy || !hasData}
+            onClick={handleForceRefresh}
+            className="shrink-0 px-3.5 py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40"
+            style={{
+              background: 'rgba(34,211,238,0.08)',
+              border: '1px solid rgba(34,211,238,0.24)',
+              color: 'var(--cyan)',
+              backdropFilter: 'blur(20px)',
+            }}
+            title="Bypass cache and fetch fresh tract data"
+          >
+            Fresh Data
+          </button>
         </form>
 
         {/* Suggestions dropdown */}
@@ -381,6 +478,31 @@ export default function StreetsGlView({
             }}
           >
             {searchError}
+          </div>
+        )}
+
+        {mapError && (
+          <div
+            className="mt-2 px-4 py-2 rounded-xl text-sm animate-fade-slide-up flex items-center justify-between gap-3"
+            style={{
+              background: 'rgba(34,211,238,0.12)',
+              border: '1px solid rgba(34,211,238,0.35)',
+              color: 'rgba(186,230,253,0.95)',
+            }}
+          >
+            <span className="leading-tight">{mapError}</span>
+            <button
+              type="button"
+              onClick={retryIframeNow}
+              className="px-2 py-1 rounded text-[11px] font-semibold"
+              style={{
+                border: '1px solid rgba(186,230,253,0.45)',
+                background: 'rgba(186,230,253,0.1)',
+                color: 'rgba(224,242,254,0.95)',
+              }}
+            >
+              Retry
+            </button>
           </div>
         )}
       </div>

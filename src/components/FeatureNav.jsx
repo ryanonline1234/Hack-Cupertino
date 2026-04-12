@@ -1,3 +1,16 @@
+const SHOW_SIM_LAB_UI = false;
+
+function formatCacheBadge(cache) {
+  if (!cache) return null;
+
+  if (cache.status === 'fresh') return 'Fresh';
+
+  const minsLeft = Math.max(0, Math.ceil((cache.expiresInMs || 0) / 60000));
+  if (cache.status === 'memory') return `Cached (${minsLeft}m)`;
+  if (cache.status === 'local') return `Cached-local (${minsLeft}m)`;
+  return 'Cached';
+}
+
 function LayoutToggle({ layout, onToggle }) {
   const isBottom = layout === 'bottom';
   return (
@@ -72,6 +85,7 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
   const locationLabel = communityData
     ? `${communityData.meta.stateAbbr} · Tract ${communityData.meta.fips?.slice(-6)}`
     : null;
+  const cacheBadge = formatCacheBadge(communityData?.meta?.cache);
 
   return (
     <nav
@@ -103,7 +117,7 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
 
       {/* Center: status + layout toggle */}
       <div className="flex items-center gap-2.5">
-        <ModeToggle mode={mode} onModeChange={onModeChange} />
+        {SHOW_SIM_LAB_UI && <ModeToggle mode={mode} onModeChange={onModeChange} />}
 
         {loading && (
           <div
@@ -122,19 +136,34 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
           </div>
         )}
         {!loading && communityData && (
-          <div
-            className="flex items-center gap-2 rounded-full px-3 py-1 text-xs animate-fade-slide-up"
-            style={{
-              background: 'rgba(0,255,153,0.08)',
-              border: '1px solid rgba(0,255,153,0.2)',
-              color: 'var(--neon)',
-            }}
-          >
-            <span
-              className="inline-block w-1.5 h-1.5 rounded-full"
-              style={{ background: 'var(--neon)', boxShadow: '0 0 6px var(--neon)' }}
-            />
-            {locationLabel}
+          <div className="flex items-center gap-1.5 animate-fade-slide-up">
+            <div
+              className="flex items-center gap-2 rounded-full px-3 py-1 text-xs"
+              style={{
+                background: 'rgba(0,255,153,0.08)',
+                border: '1px solid rgba(0,255,153,0.2)',
+                color: 'var(--neon)',
+              }}
+            >
+              <span
+                className="inline-block w-1.5 h-1.5 rounded-full"
+                style={{ background: 'var(--neon)', boxShadow: '0 0 6px var(--neon)' }}
+              />
+              {locationLabel}
+            </div>
+            {cacheBadge && (
+              <div
+                className="rounded-full px-2 py-1 text-[10px]"
+                style={{
+                  color: 'rgba(34,211,238,0.85)',
+                  border: '1px solid rgba(34,211,238,0.25)',
+                  background: 'rgba(34,211,238,0.08)',
+                }}
+                title="Community-data cache freshness"
+              >
+                {cacheBadge}
+              </div>
+            )}
           </div>
         )}
         {!loading && !communityData && (

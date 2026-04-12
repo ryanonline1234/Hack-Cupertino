@@ -4,6 +4,7 @@ import StreetsGlView from './components/StreetsGlView';
 import CommunityStatsPanel from './components/CommunityStatsPanel';
 import AICard from './components/AICard';
 import AgentStatusFeed from './components/AgentStatusFeed';
+import { LandingPage } from './ui/landing/LandingPage';
 import { buildCommunityData } from './pipeline/normalizer';
 import { projectImpact } from './engine/projectionEngine';
 
@@ -17,7 +18,19 @@ const INITIAL_LOGS = [
 ];
 
 // ── Shared panel set ──────────────────────────────────────────────────────────
-function Panels({ communityData, impactData, showImpact, onToggleImpact, loading, dataError, logs }) {
+function Panels({
+  communityData,
+  impactData,
+  baselineImpact,
+  savedScenario,
+  onSaveScenario,
+  onClearScenario,
+  showImpact,
+  onToggleImpact,
+  loading,
+  dataError,
+  logs,
+}) {
   return (
     <>
       <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-0">
@@ -25,6 +38,10 @@ function Panels({ communityData, impactData, showImpact, onToggleImpact, loading
           communityData={communityData}
           loading={loading}
           impactData={impactData}
+          baselineImpact={baselineImpact}
+          savedScenario={savedScenario}
+          onSaveScenario={onSaveScenario}
+          onClearScenario={onClearScenario}
           showImpact={showImpact}
           onToggleImpact={onToggleImpact}
         />
@@ -49,8 +66,11 @@ function Panels({ communityData, impactData, showImpact, onToggleImpact, loading
 }
 
 export default function App() {
+  const [phase, setPhase]                 = useState('landing'); // 'landing' | 'tracker'
   const [communityData, setCommunityData] = useState(null);
   const [impactData, setImpactData]       = useState(null);
+  const [baselineImpact, setBaselineImpact] = useState(null);
+  const [savedScenario, setSavedScenario] = useState(null);
   const [loading, setLoading]             = useState(false);
   const [showImpact, setShowImpact]       = useState(false);
   const [mapCenter, setMapCenter]         = useState({ lat: 37.773, lng: -122.418 });
@@ -79,16 +99,22 @@ export default function App() {
     return counts;
   }, [simPins]);
 
-  async function handleLocationSearch(lat, lng) {
+  async function handleLocationSearch(lat, lng, options = {}) {
+    const forceRefresh = Boolean(options?.forceRefresh);
+
     setLoading(true);
     setCommunityData(null);
     setImpactData(null);
+    setBaselineImpact(null);
     setDataError('');
     setShowImpact(false);
     setMapCenter({ lat, lng });
     setSimPins([]);
 
     addLog(`Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}`, 'system');
+    if (forceRefresh) {
+      addLog('Force refresh requested: bypassing cached tract data.', 'info');
+    }
     addLog('Querying Census TIGER geocoder…', 'info');
 
     try {
@@ -96,8 +122,18 @@ export default function App() {
       addLog('Pulling CDC PLACES health metrics…', 'info');
       addLog('Loading Census ACS 5-year estimates…', 'info');
 
-      const data = await buildCommunityData(lat, lng);
+      const data = await buildCommunityData(lat, lng, { forceRefresh });
       if (!data) throw new Error('No census tract found. Try a different US location.');
+
+      const cacheStatus = data.meta?.cache?.status;
+      if (cacheStatus === 'memory' || cacheStatus === 'local') {
+        addLog(
+          `Community cache hit: ${cacheStatus} (${Math.ceil(Number(data.meta?.cache?.expiresInMs || 0) / 60000)}m until refresh)`,
+          'info',
+        );
+      } else if (cacheStatus === 'fresh') {
+        addLog('Community cache: fresh fetch', 'info');
+      }
 
       addLog(`Census tract: ${data.meta.fips}  (${data.meta.stateAbbr})`, 'success');
       addLog(`ZIP code: ${data.meta.zip || 'N/A'}`, 'info');
@@ -106,11 +142,81 @@ export default function App() {
       } else if (data.foodAccess.matchQuality === 'county_nearest') {
         addLog('USDA exact tract unavailable; matched nearest tract within county sample.', 'warning');
       }
+      const distanceThreshold = Number(data.foodAccess.distanceThresholdMiles || (data.foodAccess.isRural ? 5 : 1));
+      const communityAvgDistanceLabel = data.foodAccess.isTwentyFivePlusMiles === true
+        ? '25+ miles'
+        : (Number.isFinite(data.foodAccess.communityAverageSupermarketMiles)
+          ? `${Number(data.foodAccess.communityAverageSupermarketMiles).toFixed(1)} miles`
+          : 'unavailable');
+      const finalDesignationLabel = data.foodAccess.finalDesignation === 'unknown'
+        ? 'UNKNOWN ?'
+        : (data.foodAccess.isFoodDesert ? 'DESIGNATED ⚠' : 'NOT DESIGNATED ✓');
+
       addLog(
-        `Food desert: ${data.foodAccess.isFoodDesert ? 'DESIGNATED ⚠' : 'NOT DESIGNATED ✓'} (${data.foodAccess.designationMethod || 'n/a'})`,
-        data.foodAccess.isFoodDesert ? 'warning' : 'success',
+        `Food desert (${data.foodAccess.isRural ? 'rural' : 'urban'} ${distanceThreshold.toFixed(0)}-mile rule): ${finalDesignationLabel} (community avg: ${communityAvgDistanceLabel})`,
+        data.foodAccess.finalDesignation === 'unknown'
+          ? 'warning'
+          : (data.foodAccess.isFoodDesert ? 'warning' : 'success'),
       );
-      addLog(`Low access (1mi): ${Number(data.foodAccess.pctLowAccess1mi || 0).toFixed(1)}%`, 'info');
+      if (Number.isFinite(data.foodAccess.centerNearestSupermarketMiles)) {
+        addLog(
+          `Center-point nearest supermarket (reference): ${Number(data.foodAccess.centerNearestSupermarketMiles).toFixed(1)} miles`,
+          'info',
+        );
+      }
+      addLog(`Designation method: ${data.foodAccess.designationMethod || 'n/a'}`, 'info');
+
+      if (data.foodAccess.sourceComparable) {
+        addLog(
+          `Distance vs USDA: ${data.foodAccess.sourceDisagreement ? 'DISAGREE' : 'agree'} (${data.foodAccess.distanceDesignation} vs ${data.foodAccess.usdaDesignation})`,
+          data.foodAccess.sourceDisagreement ? 'warning' : 'info',
+        );
+      }
+
+      const accessDistanceRule = data.foodAccess.accessRule === 'rural_10mi' ? 'USDA 10-mile (rural)' : 'USDA 1-mile (urban)';
+      addLog(
+        `USDA low-access test: ${data.foodAccess.isLowAccess ? 'PASS' : 'FAIL'} (${accessDistanceRule}; ${Number(data.foodAccess.qualifyingLowAccessPct || 0).toFixed(1)}% / ${Math.round(Number(data.foodAccess.lowAccessPopulationCount || 0)).toLocaleString()} residents)`,
+        data.foodAccess.isLowAccess ? 'warning' : 'info',
+      );
+
+      addLog(
+        `USDA low-income test: ${data.foodAccess.isLowIncome ? 'PASS' : 'FAIL'} (poverty >=20%: ${data.foodAccess.lowIncomeByPoverty ? 'yes' : 'no'}; income <=80% state median: ${data.foodAccess.lowIncomeByIncomeThreshold ? 'yes' : 'no'})`,
+        data.foodAccess.isLowIncome ? 'warning' : 'info',
+      );
+
+      addLog(
+        `Vehicle access indicator: ${data.foodAccess.vehicleAccessConcern ? 'FLAGGED' : 'clear'} (100+ no-vehicle households with low-access exposure)`,
+        data.foodAccess.vehicleAccessConcern ? 'warning' : 'info',
+      );
+
+      if (data.foodAccess.isTwentyFivePlusMiles === true) {
+        addLog('Community average supermarket distance (est.): 25+ miles', 'warning');
+      } else if (Number.isFinite(data.foodAccess.communityAverageSupermarketMiles)) {
+        addLog(`Community average supermarket distance (est.): ${Number(data.foodAccess.communityAverageSupermarketMiles).toFixed(1)} miles`, 'info');
+      }
+
+      const lowAccess1 = Number(data.foodAccess.pctLowAccess1mi || 0);
+      const lowAccess10 = Number(data.foodAccess.pctLowAccess10mi || 0);
+      const noVehicleLow = Number(data.foodAccess.pctNoVehicleLowAccess || 0);
+      const isRural = Boolean(data.foodAccess.isRural);
+      const accessCrisis =
+        data.foodAccess.isTwentyFivePlusMiles === true ||
+        (isRural && lowAccess1 >= 90 && noVehicleLow >= 3) ||
+        (Number(data.foodAccess.qualifyingLowAccessPct || 0) >= 66);
+      const accessElevated = !accessCrisis && Number(data.foodAccess.qualifyingLowAccessPct || 0) >= 33;
+
+      if (accessCrisis) {
+        addLog(`Access burden: CRISIS (${isRural ? `10mi=${lowAccess10.toFixed(1)}%, 1mi=${lowAccess1.toFixed(1)}%` : `1mi=${lowAccess1.toFixed(1)}%`})`, 'warning');
+      } else if (accessElevated) {
+        addLog(`Access burden: ELEVATED (${isRural ? `10mi=${lowAccess10.toFixed(1)}%` : `1mi=${lowAccess1.toFixed(1)}%`})`, 'info');
+      } else {
+        addLog(`Access burden: stable (${isRural ? `10mi=${lowAccess10.toFixed(1)}%` : `1mi=${lowAccess1.toFixed(1)}%`})`, 'info');
+      }
+
+      addLog(
+        `Low access (${isRural ? '10mi' : '1mi'}): ${Number(data.foodAccess.qualifyingLowAccessPct || 0).toFixed(1)}%`,
+        'info',
+      );
       addLog(`Diabetes: ${Number(data.health.diabetes || 0).toFixed(1)}%  |  Obesity: ${Number(data.health.obesity || 0).toFixed(1)}%`, 'info');
       addLog('Running projection engine…', 'info');
 
@@ -119,9 +225,9 @@ export default function App() {
       addLog(`Impact: +${Number(impact.foodAccess.residentsGainingAccess).toLocaleString()} residents gain access`, 'success');
       addLog(`Economic: ${impact.economic.jobsMin}–${impact.economic.jobsMax} jobs · $${(impact.economic.annualLocalImpact / 1e6).toFixed(1)}M local impact`, 'success');
       addLog(`True cost: ${impact.trueCost.totalAccessCostBefore.toFixed(2)} -> ${impact.trueCost.totalAccessCostAfter.toFixed(2)} per trip`, 'info');
-      addLog('Generating AI narrative via Claude…', 'info');
       addLog('Analysis pipeline complete ✓', 'success');
 
+      setBaselineImpact(impact);
       setImpactData(impact);
       setCommunityData(data);
     } catch (err) {
@@ -176,9 +282,36 @@ export default function App() {
     addLog('Sim Lab: pins cleared, baseline scenario restored', 'info');
   }
 
+  function saveScenarioSnapshot() {
+    if (!impactData || !baselineImpact) return;
+    setSavedScenario({ impact: impactData, savedAt: new Date().toISOString() });
+    addLog('Scenario snapshot saved for compare table', 'success');
+  }
+
+  function clearScenarioSnapshot() {
+    setSavedScenario(null);
+    addLog('Scenario snapshot cleared', 'info');
+  }
+
   if (import.meta.env.DEV) window.__testPinDrop = handleLocationSearch;
 
-  const panelProps = { communityData, impactData, showImpact, onToggleImpact: () => setShowImpact((v) => !v), loading, dataError, logs };
+  if (phase === 'landing') {
+    return <LandingPage onLaunchSimulation={() => setPhase('tracker')} />;
+  }
+
+  const panelProps = {
+    communityData,
+    impactData,
+    baselineImpact,
+    savedScenario,
+    onSaveScenario: saveScenarioSnapshot,
+    onClearScenario: clearScenarioSnapshot,
+    showImpact,
+    onToggleImpact: () => setShowImpact((v) => !v),
+    loading,
+    dataError,
+    logs,
+  };
 
   const panelStrip = (
     <div

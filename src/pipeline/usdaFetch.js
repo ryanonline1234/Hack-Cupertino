@@ -2,18 +2,32 @@ import Papa from 'papaparse';
 
 const DEFAULT_DATA = {
   isFoodDesert: false,
+  usdaLilaFlag: false,
   hasUsdaMatch: false,
   matchQuality: 'none',
   designationMethod: 'none',
+  accessRule: 'urban_1mi',
+  isRural: false,
+  lowAccessByShare: false,
+  lowAccessByCount: false,
+  isLowAccess: false,
+  lowIncomeByPoverty: false,
+  lowIncomeByIncomeThreshold: false,
+  isLowIncome: false,
+  povertyRate: 0,
+  medianFamilyIncome: 0,
+  lowAccessPopulationCount: 0,
+  lowIncomeLowAccessPopulationCount: 0,
+  qualifyingLowAccessPct: 0,
   pctLowAccess1mi: 0,
   pctLowAccess10mi: 0,
   pctSeniorsLowAccess: 0,
   pctNoVehicleLowAccess: 0,
-  nearestStoreMiles: null,
 };
 
 const LOW_ACCESS_SIGNIFICANT_PCT = 33;
-const NO_VEHICLE_SIGNIFICANT_PCT = 10;
+const LOW_ACCESS_SIGNIFICANT_COUNT = 500;
+const POVERTY_LOW_INCOME_THRESHOLD = 20;
 
 function normalizeTractId(value) {
   if (value == null) return '';
@@ -63,11 +77,11 @@ function toPercent(value) {
   return Math.max(0, Math.min(100, percent));
 }
 
-// Module-level cache — parsed once, reused on every subsequent call
-let cachedRows = null;
+// Module-level cache — parsed and indexed once, reused on every subsequent call
+let cachedDataset = null;
 
 async function loadCsv() {
-  if (cachedRows) return cachedRows;
+  if (cachedDataset) return cachedDataset;
 
   try {
     const res = await fetch('/data/food_atlas.csv');
@@ -75,8 +89,23 @@ async function loadCsv() {
     const text = await res.text();
 
     const { data } = Papa.parse(text, { header: true, skipEmptyLines: true });
-    cachedRows = data;
-    return cachedRows;
+    const tractIndex = new Map();
+    const countyIndex = new Map();
+
+    for (const row of data) {
+      const tractId = normalizeTractId(row.CensusTract);
+      if (tractId && !tractIndex.has(tractId)) {
+        tractIndex.set(tractId, row);
+      }
+
+      const countyId = countyKey(row.CensusTract);
+      if (!countyId) continue;
+      if (!countyIndex.has(countyId)) countyIndex.set(countyId, []);
+      countyIndex.get(countyId).push(row);
+    }
+
+    cachedDataset = { rows: data, tractIndex, countyIndex };
+    return cachedDataset;
   } catch {
     return null;
   }
@@ -84,21 +113,21 @@ async function loadCsv() {
 
 export async function getUsdaData(fips) {
   try {
-    const rows = await loadCsv();
-    if (!rows) return { ...DEFAULT_DATA };
+    const dataset = await loadCsv();
+    if (!dataset) return { ...DEFAULT_DATA };
+
+    const { tractIndex, countyIndex } = dataset;
 
     const target = normalizeTractId(fips);
     const targetCounty = countyKey(fips);
     const targetNumeric = tractNumericKey(fips);
 
-    let row = rows.find(
-      (r) => normalizeTractId(r.CensusTract) === target
-    );
+    let row = tractIndex.get(target);
 
     let matchQuality = 'exact';
 
     if (!row && targetCounty) {
-      const countyRows = rows.filter((r) => countyKey(r.CensusTract) === targetCounty);
+      const countyRows = countyIndex.get(targetCounty) || [];
       if (countyRows.length > 0) {
         row = countyRows.reduce((best, candidate) => {
           const bestDiff = Math.abs(tractNumericKey(best.CensusTract) - targetNumeric);
@@ -115,27 +144,53 @@ export async function getUsdaData(fips) {
     const pctLowAccess10mi = toPercent(row.lapop10share);
     const pctSeniorsLowAccess = toPercent(row.laseniors1share);
     const pctNoVehicleLowAccess = toPercent(row.lahunv1share);
-    const nearestStoreMiles = parseFloat(row.LAPOP1_10);
+    const lowAccessPopulationCount = Number.parseFloat(row.LAPOP1_10) || 0;
+    const lowIncomeLowAccessPopulationCount = Number.parseFloat(row.LALOWI1_10) || 0;
+    const povertyRate = parseFloat(row.PovertyRate) || 0;
+    const medianFamilyIncome = parseFloat(row.MedianFamilyIncome) || 0;
+    const isRural = Number(row.Urban) === 0;
+    const accessRule = isRural ? 'rural_10mi' : 'urban_1mi';
+    const qualifyingLowAccessPct = isRural ? pctLowAccess10mi : pctLowAccess1mi;
+    const lowAccessByShare = qualifyingLowAccessPct >= LOW_ACCESS_SIGNIFICANT_PCT;
+    const lowAccessByCount = lowAccessPopulationCount >= LOW_ACCESS_SIGNIFICANT_COUNT;
+    const isLowAccess = lowAccessByShare || lowAccessByCount;
+    const lowIncomeByPoverty = povertyRate >= POVERTY_LOW_INCOME_THRESHOLD;
 
     const usdaLilaFlag = Number(row.LILATracts_1And10) === 1;
-    // Fallback designation rule using available CSV fields when flag quality is uncertain.
-    const significantLowAccess = Math.max(pctLowAccess1mi, pctLowAccess10mi) >= LOW_ACCESS_SIGNIFICANT_PCT;
-    const significantNoVehicleBurden = pctNoVehicleLowAccess >= NO_VEHICLE_SIGNIFICANT_PCT;
-    const derivedFoodDesert = significantLowAccess && significantNoVehicleBurden;
+    // Derived rule aligned with USDA-style definition: low-income + limited access distance.
+    const derivedFoodDesert =
+      isLowAccess &&
+      lowIncomeByPoverty;
 
     const isFoodDesert = usdaLilaFlag || derivedFoodDesert;
-    const designationMethod = usdaLilaFlag ? 'usda_lila' : (derivedFoodDesert ? 'derived_low_access_no_vehicle' : 'not_designated');
+    let designationMethod = 'not_designated';
+    if (usdaLilaFlag) designationMethod = 'usda_lila';
+    else if (derivedFoodDesert) designationMethod = 'derived_low_income_and_access';
+    else if (isLowAccess && !lowIncomeByPoverty) designationMethod = 'low_access_not_low_income';
 
     return {
       isFoodDesert,
+      usdaLilaFlag,
       hasUsdaMatch: true,
       matchQuality,
       designationMethod,
+      accessRule,
+      isRural,
+      lowAccessByShare,
+      lowAccessByCount,
+      isLowAccess,
+      lowIncomeByPoverty,
+      lowIncomeByIncomeThreshold: false,
+      isLowIncome: lowIncomeByPoverty,
+      povertyRate,
+      medianFamilyIncome,
+      lowAccessPopulationCount,
+      lowIncomeLowAccessPopulationCount,
+      qualifyingLowAccessPct,
       pctLowAccess1mi,
       pctLowAccess10mi,
       pctSeniorsLowAccess,
       pctNoVehicleLowAccess,
-      nearestStoreMiles: Number.isFinite(nearestStoreMiles) ? nearestStoreMiles : null,
     };
   } catch {
     return { ...DEFAULT_DATA };

@@ -14,12 +14,26 @@ export async function getCensusData(fips) {
       `/api/census/data/2022/acs/acs5?get=B19013_001E,B01003_001E,B17001_002E,B25044_003E,B25044_010E` +
       `&for=tract:${tract}&in=state:${state}%20county:${county}&key=${key}`;
 
-    const res = await fetch(url);
+    const stateMedianFamilyIncomeUrl =
+      `/api/census/data/2022/acs/acs5?get=B19113_001E` +
+      `&for=state:${state}&key=${key}`;
+
+    const [res, stateMedianRes] = await Promise.all([
+      fetch(url),
+      fetch(stateMedianFamilyIncomeUrl),
+    ]);
+
     if (!res.ok) return defaultCensus();
 
     const json = await res.json();
     // json[0] = headers, json[1] = values
     if (!json?.[1]) return defaultCensus();
+
+    let stateMedianFamilyIncome = 0;
+    if (stateMedianRes.ok) {
+      const stateJson = await stateMedianRes.json();
+      stateMedianFamilyIncome = Number(stateJson?.[1]?.[0]) || 0;
+    }
 
     const [medianIncome, population, povertyPop, ownerNoVeh, renterNoVeh] =
       json[1].map(Number);
@@ -29,6 +43,7 @@ export async function getCensusData(fips) {
       population: population > 0 ? population : 0,
       pctPoverty: population > 0 ? (povertyPop / population) * 100 : 0,
       noVehicleHouseholds: (ownerNoVeh || 0) + (renterNoVeh || 0),
+      stateMedianFamilyIncome: stateMedianFamilyIncome > 0 ? stateMedianFamilyIncome : 0,
     };
   } catch {
     return defaultCensus();
@@ -36,5 +51,11 @@ export async function getCensusData(fips) {
 }
 
 function defaultCensus() {
-  return { medianIncome: 0, population: 0, pctPoverty: 0, noVehicleHouseholds: 0 };
+  return {
+    medianIncome: 0,
+    population: 0,
+    pctPoverty: 0,
+    noVehicleHouseholds: 0,
+    stateMedianFamilyIncome: 0,
+  };
 }

@@ -13,7 +13,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
-export default function MapView({ onPinDrop, isLoading, communityData }) {
+export default function MapView({ onPinDrop, isLoading }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markerRef = useRef(null);
