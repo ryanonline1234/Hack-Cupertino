@@ -15,6 +15,24 @@ export async function buildCommunityData(lat, lng) {
     getCensusData(fips),
   ]);
 
+  // Final designation uses USDA flag first; if USDA row was missing, apply a conservative
+  // fallback based on low-access burden and socioeconomic stress.
+  const derivedFoodDesert =
+    !usdaData.hasUsdaMatch &&
+    (
+      (Number(usdaData.pctLowAccess1mi || 0) >= 33 || Number(usdaData.pctLowAccess10mi || 0) >= 33)
+      &&
+      (Number(censusData.pctPoverty || 0) >= 20 || Number(usdaData.pctNoVehicleLowAccess || 0) >= 10)
+    );
+
+  const foodAccess = {
+    ...usdaData,
+    isFoodDesert: Boolean(usdaData.isFoodDesert || derivedFoodDesert),
+    designationMethod: usdaData.isFoodDesert
+      ? (usdaData.designationMethod || 'usda_lila')
+      : (derivedFoodDesert ? 'derived_low_access_poverty' : (usdaData.designationMethod || 'not_designated')),
+  };
+
   return {
     meta: {
       fips,
@@ -24,7 +42,7 @@ export async function buildCommunityData(lat, lng) {
       stateAbbr,
       retrievedAt: new Date().toISOString(),
     },
-    foodAccess: { ...usdaData },
+    foodAccess,
     health: { ...cdcData },
     demographics: { ...censusData },
   };

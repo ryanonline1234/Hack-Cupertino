@@ -1,4 +1,5 @@
 import { fmtPct, fmtIncome } from '../utils/formatters';
+import ImpactReceipt from './ImpactReceipt';
 
 function SkeletonRow() {
   return (
@@ -35,20 +36,20 @@ function FoodDesertBadge({ isFoodDesert }) {
       className="flex items-center justify-between px-3 py-2 rounded-lg mb-3"
       style={{
         background: isFoodDesert
-          ? 'rgba(249, 115, 22, 0.1)'
+          ? 'rgba(239, 68, 68, 0.12)'
           : 'rgba(0, 255, 153, 0.08)',
-        border: `1px solid ${isFoodDesert ? 'rgba(249,115,22,0.3)' : 'rgba(0,255,153,0.25)'}`,
+        border: `1px solid ${isFoodDesert ? 'rgba(239,68,68,0.35)' : 'rgba(0,255,153,0.25)'}`,
       }}
     >
       <span className="text-xs font-medium text-white/55">Food Desert Status</span>
       <span
         className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded"
         style={{
-          color: isFoodDesert ? 'var(--orange)' : 'var(--neon)',
-          background: isFoodDesert ? 'rgba(249,115,22,0.15)' : 'rgba(0,255,153,0.12)',
+          color: isFoodDesert ? 'rgba(252,165,165,0.95)' : 'var(--neon)',
+          background: isFoodDesert ? 'rgba(239,68,68,0.2)' : 'rgba(0,255,153,0.12)',
         }}
       >
-        {isFoodDesert ? 'Confirmed' : 'Not Designated'}
+        {isFoodDesert ? 'Designated' : 'Not Designated'}
       </span>
     </div>
   );
@@ -179,6 +180,8 @@ export default function CommunityStatsPanel({ communityData, loading, impactData
                 −{Number(impactData.health.diabetesReductionPct).toFixed(1)} pp
               </span>
             </div>
+
+            <ImpactReceipt trueCost={impactData.trueCost} />
           </div>
         )}
       </div>

@@ -31,7 +31,44 @@ function LayoutToggle({ layout, onToggle }) {
   );
 }
 
-export default function FeatureNav({ communityData, loading, layout, onToggleLayout }) {
+function ModeToggle({ mode, onModeChange }) {
+  const isAtlas = mode === 'atlas';
+
+  return (
+    <div
+      className="flex items-center rounded-lg p-0.5"
+      style={{
+        border: '1px solid rgba(255,255,255,0.1)',
+        background: 'rgba(255,255,255,0.03)',
+      }}
+    >
+      <button
+        onClick={() => onModeChange('atlas')}
+        className="px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+        style={{
+          color: isAtlas ? 'var(--cyan)' : 'rgba(255,255,255,0.45)',
+          background: isAtlas ? 'rgba(34,211,238,0.12)' : 'transparent',
+        }}
+        title="Global Atlas"
+      >
+        Globe
+      </button>
+      <button
+        onClick={() => onModeChange('simlab')}
+        className="px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+        style={{
+          color: !isAtlas ? 'var(--neon)' : 'rgba(255,255,255,0.45)',
+          background: !isAtlas ? 'rgba(0,255,153,0.12)' : 'transparent',
+        }}
+        title="Sim Lab"
+      >
+        Sim Lab
+      </button>
+    </div>
+  );
+}
+
+export default function FeatureNav({ communityData, loading, layout, onToggleLayout, mode, onModeChange }) {
   const locationLabel = communityData
     ? `${communityData.meta.stateAbbr} · Tract ${communityData.meta.fips?.slice(-6)}`
     : null;
@@ -66,6 +103,8 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
 
       {/* Center: status + layout toggle */}
       <div className="flex items-center gap-2.5">
+        <ModeToggle mode={mode} onModeChange={onModeChange} />
+
         {loading && (
           <div
             className="flex items-center gap-2 rounded-full px-3 py-1 text-xs"

@@ -1,6 +1,7 @@
 export function fmtPct(value, decimals = 1) {
   if (value == null || isNaN(value)) return '—';
-  return `${Number(value).toFixed(decimals)}%`;
+  const bounded = Math.max(0, Math.min(100, Number(value)));
+  return `${bounded.toFixed(decimals)}%`;
 }
 
 export function fmtCurrency(value) {

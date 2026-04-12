@@ -20,6 +20,21 @@ export const CORRELATIONS = {
 
   // Average annual US grocery store revenue (USDA)
   avgGroceryAnnualRevenue: 8_000_000,
+
+  // Average yearly grocery spend per resident (rough national baseline)
+  perCapitaGrocerySpend: 4_400,
+
+  // Rule-of-thumb annual revenue supported per full-time grocery job
+  revenuePerJob: 260_000,
+
+  // Used when Census income is unavailable
+  defaultHourlyWage: 18,
+
+  // Approximate single-trip basket used by the "Impact Receipt"
+  baseBasketCost: 45,
+
+  // Typical household trip cadence for recurring grocery travel
+  groceryTripsPerYear: 52,
 };
 
 export const SOURCES = [

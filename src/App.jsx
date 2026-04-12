@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import FeatureNav from './components/FeatureNav';
 import StreetsGlView from './components/StreetsGlView';
 import CommunityStatsPanel from './components/CommunityStatsPanel';
@@ -57,6 +57,8 @@ export default function App() {
   const [logs, setLogs]                   = useState(INITIAL_LOGS);
   const [dataError, setDataError]         = useState('');
   const [layout, setLayout]               = useState('bottom'); // 'bottom' | 'split'
+  const [mode, setMode]                   = useState('atlas'); // 'atlas' | 'simlab'
+  const [simPins, setSimPins]             = useState([]);
 
   const addLog = useCallback((text, type = 'info') => {
     setLogs((prev) => [
@@ -65,6 +67,18 @@ export default function App() {
     ]);
   }, []);
 
+  function buildImpact(data, pins, center) {
+    return projectImpact(data, { pins, center });
+  }
+
+  const pinCounts = useMemo(() => {
+    const counts = { grocery: 0, transit: 0, pantry: 0 };
+    for (const pin of simPins) {
+      if (counts[pin.type] != null) counts[pin.type] += 1;
+    }
+    return counts;
+  }, [simPins]);
+
   async function handleLocationSearch(lat, lng) {
     setLoading(true);
     setCommunityData(null);
@@ -72,6 +86,7 @@ export default function App() {
     setDataError('');
     setShowImpact(false);
     setMapCenter({ lat, lng });
+    setSimPins([]);
 
     addLog(`Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}`, 'system');
     addLog('Querying Census TIGER geocoder…', 'info');
@@ -86,18 +101,24 @@ export default function App() {
 
       addLog(`Census tract: ${data.meta.fips}  (${data.meta.stateAbbr})`, 'success');
       addLog(`ZIP code: ${data.meta.zip || 'N/A'}`, 'info');
+      if (!data.foodAccess.hasUsdaMatch) {
+        addLog('USDA tract row not found, using derived food-desert fallback logic.', 'warning');
+      } else if (data.foodAccess.matchQuality === 'county_nearest') {
+        addLog('USDA exact tract unavailable; matched nearest tract within county sample.', 'warning');
+      }
       addLog(
-        `Food desert: ${data.foodAccess.isFoodDesert ? 'YES ⚠' : 'NO ✓'}`,
+        `Food desert: ${data.foodAccess.isFoodDesert ? 'DESIGNATED ⚠' : 'NOT DESIGNATED ✓'} (${data.foodAccess.designationMethod || 'n/a'})`,
         data.foodAccess.isFoodDesert ? 'warning' : 'success',
       );
       addLog(`Low access (1mi): ${Number(data.foodAccess.pctLowAccess1mi || 0).toFixed(1)}%`, 'info');
       addLog(`Diabetes: ${Number(data.health.diabetes || 0).toFixed(1)}%  |  Obesity: ${Number(data.health.obesity || 0).toFixed(1)}%`, 'info');
       addLog('Running projection engine…', 'info');
 
-      const impact = projectImpact(data);
+      const impact = buildImpact(data, [], { lat, lng });
 
       addLog(`Impact: +${Number(impact.foodAccess.residentsGainingAccess).toLocaleString()} residents gain access`, 'success');
       addLog(`Economic: ${impact.economic.jobsMin}–${impact.economic.jobsMax} jobs · $${(impact.economic.annualLocalImpact / 1e6).toFixed(1)}M local impact`, 'success');
+      addLog(`True cost: ${impact.trueCost.totalAccessCostBefore.toFixed(2)} -> ${impact.trueCost.totalAccessCostAfter.toFixed(2)} per trip`, 'info');
       addLog('Generating AI narrative via Claude…', 'info');
       addLog('Analysis pipeline complete ✓', 'success');
 
@@ -109,6 +130,50 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function addSimulationPin(type) {
+    if (!communityData) {
+      addLog('Load a location before running Sim Lab.', 'warning');
+      return;
+    }
+    if (simPins.length >= 10) {
+      addLog('Sim Lab pin limit reached (10). Clear or undo to continue.', 'warning');
+      return;
+    }
+
+    const pin = {
+      id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type,
+      lat: mapCenter.lat,
+      lng: mapCenter.lng,
+      createdAt: Date.now(),
+    };
+
+    const next = [...simPins, pin];
+    setSimPins(next);
+    const impact = buildImpact(communityData, next, mapCenter);
+    setImpactData(impact);
+
+    addLog(`Sim Lab: ${type} pin placed at center`, 'success');
+    addLog(`Updated impact: +${Number(impact.foodAccess.residentsGainingAccess).toLocaleString()} residents, coverage ${(impact.simulation.coverageScore * 100).toFixed(0)}%`, 'info');
+  }
+
+  function undoSimulationPin() {
+    if (!communityData || simPins.length === 0) return;
+    const next = simPins.slice(0, -1);
+    setSimPins(next);
+    const impact = buildImpact(communityData, next, mapCenter);
+    setImpactData(impact);
+    addLog('Sim Lab: last pin removed', 'info');
+  }
+
+  function clearSimulationPins() {
+    if (!communityData || simPins.length === 0) return;
+    setSimPins([]);
+    const impact = buildImpact(communityData, [], mapCenter);
+    setImpactData(impact);
+    addLog('Sim Lab: pins cleared, baseline scenario restored', 'info');
   }
 
   if (import.meta.env.DEV) window.__testPinDrop = handleLocationSearch;
@@ -142,6 +207,8 @@ export default function App() {
         communityData={communityData}
         loading={loading}
         layout={layout}
+        mode={mode}
+        onModeChange={setMode}
         onToggleLayout={() => setLayout((l) => l === 'bottom' ? 'split' : 'bottom')}
       />
 
@@ -156,6 +223,12 @@ export default function App() {
                 isLoading={loading}
                 hasData={!!communityData}
                 onSearch={handleLocationSearch}
+                mode={mode}
+                pinCounts={pinCounts}
+                pinTotal={simPins.length}
+                onAddPin={addSimulationPin}
+                onUndoPin={undoSimulationPin}
+                onClearPins={clearSimulationPins}
               />
             </div>
             {panelStrip}
@@ -170,6 +243,12 @@ export default function App() {
                 isLoading={loading}
                 hasData={!!communityData}
                 onSearch={handleLocationSearch}
+                mode={mode}
+                pinCounts={pinCounts}
+                pinTotal={simPins.length}
+                onAddPin={addSimulationPin}
+                onUndoPin={undoSimulationPin}
+                onClearPins={clearSimulationPins}
               />
             </div>
             {panelColumn}

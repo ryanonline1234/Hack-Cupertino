@@ -241,6 +241,8 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
     .filter(Boolean)
     .slice(0, 2);
 
+  const executiveSummary = impactData?.simulation?.executiveSummary || [];
+
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
@@ -261,6 +263,25 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto min-h-0">
+        {executiveSummary.length > 0 && (
+          <div
+            className="mb-3 rounded-lg p-2.5"
+            style={{
+              background: 'rgba(34,211,238,0.06)',
+              border: '1px solid rgba(34,211,238,0.2)',
+            }}
+          >
+            <p className="text-[10px] uppercase tracking-wider text-white/45 mb-1.5">Executive Summary</p>
+            <ul className="space-y-1.5">
+              {executiveSummary.map((line, idx) => (
+                <li key={idx} className="text-[11px] leading-relaxed text-white/70">
+                  • {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {status === 'loading' && <Skeleton />}
 
         {status === 'ready' && paragraphs.length > 0 && (

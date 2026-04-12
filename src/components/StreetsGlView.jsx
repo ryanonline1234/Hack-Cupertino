@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import RippleField from './RippleField';
 import ParticleDrift from './ParticleDrift';
+import SimLabControls from './SimLabControls';
 
 const STREETS_GL_BASE = 'https://streets-gl.pages.dev';
 const DEFAULT_PITCH = 50;
@@ -68,7 +69,19 @@ function SuggestionIcon({ cls }) {
   );
 }
 
-export default function StreetsGlView({ lat, lng, isLoading, hasData, onSearch }) {
+export default function StreetsGlView({
+  lat,
+  lng,
+  isLoading,
+  hasData,
+  onSearch,
+  mode,
+  pinCounts,
+  pinTotal,
+  onAddPin,
+  onUndoPin,
+  onClearPins,
+}) {
   const [query, setQuery]               = useState('');
   const [geocoding, setGeocoding]       = useState(false);
   const [searchError, setSearchError]   = useState('');
@@ -225,6 +238,15 @@ export default function StreetsGlView({ lat, lng, isLoading, hasData, onSearch }
       {/* Decorative overlays */}
       <ParticleDrift />
       <RippleField visible={hasData} />
+
+      <SimLabControls
+        mode={mode}
+        pinCounts={pinCounts}
+        pinTotal={pinTotal}
+        onAddPin={onAddPin}
+        onUndoPin={onUndoPin}
+        onClearPins={onClearPins}
+      />
 
       {/* Corner arc */}
       <svg
