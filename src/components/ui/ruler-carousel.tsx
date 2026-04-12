@@ -56,10 +56,10 @@ function RulerLines({
 
     if (isCenter) {
       height = "h-8";
-      color = onBlack ? "bg-cyan-400" : "bg-primary";
+      color = onBlack ? "bg-amber-400" : "bg-primary";
     } else if (isFifth) {
       height = "h-4";
-      color = onBlack ? "bg-cyan-400/90" : "bg-primary";
+      color = onBlack ? "bg-amber-400/90" : "bg-primary";
     }
 
     const positionClass = top ? "" : "bottom-0";
@@ -289,7 +289,7 @@ export function RulerCarousel({
           className={cn(
             "flex cursor-pointer items-center justify-center rounded-full p-2 transition disabled:opacity-40",
             isSection
-              ? "text-cyan-400/90 hover:bg-neutral-900 hover:text-cyan-300"
+              ? "text-amber-400/90 hover:bg-neutral-900 hover:text-amber-300"
               : "text-primary/80 hover:bg-white/[0.06] hover:text-primary"
           )}
           aria-label="Previous item"
@@ -328,7 +328,7 @@ export function RulerCarousel({
           className={cn(
             "flex cursor-pointer items-center justify-center rounded-full p-2 transition disabled:opacity-40",
             isSection
-              ? "text-cyan-400/90 hover:bg-neutral-900 hover:text-cyan-300"
+              ? "text-amber-400/90 hover:bg-neutral-900 hover:text-amber-300"
               : "text-primary/80 hover:bg-white/[0.06] hover:text-primary"
           )}
           aria-label="Next item"
