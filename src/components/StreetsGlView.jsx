@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import RippleField from './RippleField';
 import ParticleDrift from './ParticleDrift';
 import SimLabControls from './SimLabControls';
@@ -18,6 +20,13 @@ import SimLabControls from './SimLabControls';
  */
 
 const STREETS_GL_BASE = 'https://streets-gl.pages.dev';
+const STREETS_GL_ENABLED = (() => {
+  const envEnabled = import.meta.env.VITE_ENABLE_STREETS_GL === 'true';
+  if (!envEnabled) return false;
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.get('streets3d') === '1';
+})();
 const DEFAULT_PITCH = 50;
 const DEFAULT_YAW = 330;
 const DEFAULT_DISTANCE = 1800;
@@ -122,6 +131,9 @@ export default function StreetsGlView({
   const lastMoveRef = useRef('');
   const iframeReadyRef = useRef(false);
   const iframeWatchdogRef = useRef(null);
+  const mapRootRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const centerMarkerRef = useRef(null);
 
   const clearIframeWatchdog = useCallback(() => {
     if (iframeWatchdogRef.current) {
@@ -155,7 +167,17 @@ export default function StreetsGlView({
     setIframeSrc((prev) => withRetryParam(prev, nextRetry));
   }
 
-  function teleportMap(nextLat, nextLng) {
+  const teleportMap = useCallback((nextLat, nextLng) => {
+    if (!STREETS_GL_ENABLED) {
+      const map = mapInstanceRef.current;
+      if (map) {
+        map.setView([nextLat, nextLng], Math.max(map.getZoom(), hasData ? 12 : 9), { animate: true });
+      }
+      const marker = centerMarkerRef.current;
+      if (marker) marker.setLatLng([nextLat, nextLng]);
+      return;
+    }
+
     const moveKey = `${nextLat.toFixed(5)},${nextLng.toFixed(5)}`;
     if (lastMoveRef.current === moveKey) return;
 
@@ -179,16 +201,67 @@ export default function StreetsGlView({
       setIframeRetry(0);
       setIframeSrc((prev) => (prev === nextSrc ? prev : nextSrc));
     }
-  }
+  }, [hasData]);
 
   useEffect(() => {
     teleportMap(lat, lng);
-  }, [lat, lng]);
+  }, [lat, lng, teleportMap]);
 
   useEffect(() => {
+    if (!STREETS_GL_ENABLED) return undefined;
     scheduleIframeWatchdog(iframeRetry);
     return () => clearIframeWatchdog();
   }, [iframeSrc, iframeRetry, scheduleIframeWatchdog, clearIframeWatchdog]);
+
+  useEffect(() => {
+    if (STREETS_GL_ENABLED || mapInstanceRef.current || !mapRootRef.current) return undefined;
+
+    const map = L.map(mapRootRef.current, {
+      center: [lat, lng],
+      zoom: hasData ? 12 : 9,
+      minZoom: 3,
+      maxZoom: 18,
+      zoomControl: true,
+      attributionControl: true,
+    });
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 19,
+    }).addTo(map);
+
+    const marker = L.circleMarker([lat, lng], {
+      radius: 8,
+      color: '#00ff99',
+      fillColor: '#22d3ee',
+      fillOpacity: 0.9,
+      weight: 2,
+      opacity: 0.95,
+    }).addTo(map);
+
+    mapInstanceRef.current = map;
+    centerMarkerRef.current = marker;
+
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+      centerMarkerRef.current = null;
+    };
+  }, [hasData, lat, lng]);
+
+  useEffect(() => {
+    if (STREETS_GL_ENABLED) return;
+
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    const targetZoom = hasData ? Math.max(map.getZoom(), 12) : Math.max(map.getZoom(), 9);
+    map.setView([lat, lng], targetZoom, { animate: true });
+
+    const marker = centerMarkerRef.current;
+    if (marker) marker.setLatLng([lat, lng]);
+  }, [hasData, lat, lng]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -293,40 +366,48 @@ export default function StreetsGlView({
 
   return (
     <div className="relative w-full h-full overflow-hidden map-scanlines" style={{ background: '#050608' }}>
-      {/* Streets GL 3D iframe — shifted up to clip its native toolbar (~56px) */}
-      <iframe
-        ref={iframeRef}
-        src={iframeSrc}
-        onLoad={() => {
-          iframeReadyRef.current = true;
-          clearIframeWatchdog();
-          setMapError('');
-        }}
-        onError={() => {
-          iframeReadyRef.current = false;
-          clearIframeWatchdog();
+      {STREETS_GL_ENABLED ? (
+        /* Streets GL 3D iframe — shifted up to clip its native toolbar (~56px) */
+        <iframe
+          ref={iframeRef}
+          src={iframeSrc}
+          onLoad={() => {
+            iframeReadyRef.current = true;
+            clearIframeWatchdog();
+            setMapError('');
+          }}
+          onError={() => {
+            iframeReadyRef.current = false;
+            clearIframeWatchdog();
 
-          if (iframeRetry < IFRAME_MAX_RETRIES) {
-            const nextRetry = iframeRetry + 1;
-            setIframeRetry(nextRetry);
-            setMapError('Streets GL failed to load, retrying…');
-            setIframeSrc((prev) => withRetryParam(prev, nextRetry));
-          } else {
-            setMapError('Streets GL failed to load. Tap retry.');
-          }
-        }}
-        className="absolute border-0"
-        title="3D Street Map"
-        loading="eager"
-        allow="fullscreen"
-        style={{
-          zIndex: 1,
-          top: '-56px',
-          left: 0,
-          width: '100%',
-          height: 'calc(100% + 56px)',
-        }}
-      />
+            if (iframeRetry < IFRAME_MAX_RETRIES) {
+              const nextRetry = iframeRetry + 1;
+              setIframeRetry(nextRetry);
+              setMapError('Streets GL failed to load, retrying…');
+              setIframeSrc((prev) => withRetryParam(prev, nextRetry));
+            } else {
+              setMapError('Streets GL failed to load. Tap retry.');
+            }
+          }}
+          className="absolute border-0"
+          title="3D Street Map"
+          loading="eager"
+          allow="fullscreen"
+          style={{
+            zIndex: 1,
+            top: '-56px',
+            left: 0,
+            width: '100%',
+            height: 'calc(100% + 56px)',
+          }}
+        />
+      ) : (
+        <div
+          ref={mapRootRef}
+          className="absolute inset-0"
+          style={{ zIndex: 1 }}
+        />
+      )}
 
       {/* Decorative overlays */}
       <ParticleDrift />
@@ -495,7 +576,20 @@ export default function StreetsGlView({
           </div>
         )}
 
-        {mapError && (
+        {!STREETS_GL_ENABLED && (
+          <div
+            className="mt-2 px-4 py-2 rounded-xl text-sm animate-fade-slide-up"
+            style={{
+              background: 'rgba(34,211,238,0.10)',
+              border: '1px solid rgba(34,211,238,0.28)',
+              color: 'rgba(186,230,253,0.9)',
+            }}
+          >
+            Stable map mode active (2D fallback).
+          </div>
+        )}
+
+        {STREETS_GL_ENABLED && mapError && (
           <div
             className="mt-2 px-4 py-2 rounded-xl text-sm animate-fade-slide-up flex items-center justify-between gap-3"
             style={{
