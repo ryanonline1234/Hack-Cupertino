@@ -21,129 +21,138 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-@layer utilities {
-  .glass-panel {
-    @apply rounded-2xl border border-white/[0.08] bg-slate/70 shadow-glass backdrop-blur-xl;
-    background: linear-gradient(
-      145deg,
-      rgba(15, 22, 32, 0.82) 0%,
-      rgba(8, 12, 18, 0.72) 100%
-    );
+.glass-panel {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  background: linear-gradient(
+    145deg,
+    rgba(15, 22, 32, 0.82) 0%,
+    rgba(8, 12, 18, 0.72) 100%
+  );
+}
+
+.text-glow-neon {
+  text-shadow: 0 0 24px rgba(0, 255, 153, 0.45);
+}
+
+.ring-heat {
+  box-shadow: 0 0 0 1px rgba(255, 90, 60, 0.25), 0 0 40px rgba(255, 80, 40, 0.15);
+}
+
+.text-glow-metric {
+  text-shadow: 0 0 18px rgba(52, 211, 153, 0.45);
+}
+
+.command-ripple-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(120vw, 900px);
+  height: min(120vw, 900px);
+  margin-left: calc(min(120vw, 900px) / -2);
+  margin-top: calc(min(120vw, 900px) / -2);
+  border: 1px solid rgba(34, 211, 238, 0.12);
+  border-radius: 50%;
+  animation: command-ripple-pulse 5.5s ease-out infinite;
+}
+
+.command-ripple-ring.delay-a {
+  animation-delay: 1.6s;
+}
+
+.command-ripple-ring.delay-b {
+  animation-delay: 3.2s;
+}
+
+@keyframes command-ripple-pulse {
+  0% {
+    transform: scale(0.2);
+    opacity: 0.45;
   }
 
-  .text-glow-neon {
-    text-shadow: 0 0 24px rgba(0, 255, 153, 0.45);
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+.particle-drift-dot {
+  animation: particle-drift 14s linear infinite;
+}
+
+@keyframes particle-drift {
+  0% {
+    transform: translate(0, 0);
   }
 
-  .ring-heat {
-    box-shadow: 0 0 0 1px rgba(255, 90, 60, 0.25), 0 0 40px rgba(255, 80, 40, 0.15);
+  100% {
+    transform: translate(12px, -24px);
+  }
+}
+
+.glitch-brand-shadow {
+  background: linear-gradient(90deg, #fff, #f0abfc, #67e8f9);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  clip-path: inset(0 0 0 0);
+  animation: glitch-flicker 4s ease-in-out infinite;
+}
+
+@keyframes glitch-flicker {
+  0%,
+  92%,
+  100% {
+    opacity: 0.35;
+    transform: translate(0, 0);
   }
 
-  .text-glow-metric {
-    text-shadow: 0 0 18px rgba(52, 211, 153, 0.45);
+  93% {
+    opacity: 0.5;
+    transform: translate(-1px, 0);
   }
 
-  .command-ripple-ring {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: min(120vw, 900px);
-    height: min(120vw, 900px);
-    margin-left: calc(min(120vw, 900px) / -2);
-    margin-top: calc(min(120vw, 900px) / -2);
-    border: 1px solid rgba(34, 211, 238, 0.12);
-    border-radius: 50%;
-    animation: command-ripple-pulse 5.5s ease-out infinite;
+  94% {
+    opacity: 0.25;
+    transform: translate(1px, 0);
+  }
+}
+
+.agent-feed-window {
+  mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
+}
+
+.agent-feed-track {
+  animation: agent-feed-scroll 32s linear infinite;
+}
+
+@keyframes agent-feed-scroll {
+  0% {
+    transform: translateY(0);
   }
 
-  .command-ripple-ring.delay-a {
-    animation-delay: 1.6s;
+  100% {
+    transform: translateY(-50%);
   }
-  .command-ripple-ring.delay-b {
-    animation-delay: 3.2s;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 1.9s ease-in-out infinite;
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+    filter: brightness(1.05);
   }
 
-  @keyframes command-ripple-pulse {
-    0% {
-      transform: scale(0.2);
-      opacity: 0.45;
-    }
-    100% {
-      transform: scale(1);
-      opacity: 0;
-    }
-  }
-
-  .particle-drift-dot {
-    animation: particle-drift 14s linear infinite;
-  }
-
-  @keyframes particle-drift {
-    0% {
-      transform: translate(0, 0);
-    }
-    100% {
-      transform: translate(12px, -24px);
-    }
-  }
-
-  .glitch-brand-shadow {
-    background: linear-gradient(90deg, #fff, #f0abfc, #67e8f9);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    clip-path: inset(0 0 0 0);
-    animation: glitch-flicker 4s ease-in-out infinite;
-  }
-
-  @keyframes glitch-flicker {
-    0%,
-    92%,
-    100% {
-      opacity: 0.35;
-      transform: translate(0, 0);
-    }
-    93% {
-      opacity: 0.5;
-      transform: translate(-1px, 0);
-    }
-    94% {
-      opacity: 0.25;
-      transform: translate(1px, 0);
-    }
-  }
-
-  .agent-feed-window {
-    mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
-  }
-
-  .agent-feed-track {
-    animation: agent-feed-scroll 32s linear infinite;
-  }
-
-  @keyframes agent-feed-scroll {
-    0% {
-      transform: translateY(0);
-    }
-    100% {
-      transform: translateY(-50%);
-    }
-  }
-
-  .animate-pulse-soft {
-    animation: pulse-soft 1.9s ease-in-out infinite;
-  }
-
-  @keyframes pulse-soft {
-    0%,
-    100% {
-      opacity: 1;
-      filter: brightness(1.05);
-    }
-    50% {
-      opacity: 0.88;
-      filter: brightness(1.25);
-    }
+  50% {
+    opacity: 0.88;
+    filter: brightness(1.25);
   }
 }
 
