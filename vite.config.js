@@ -26,6 +26,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/census/, ''),
       },
+      '/api/llmapi': {
+        target: 'https://api.llmapi.ai',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/llmapi/, ''),
+      },
     },
   },
 })

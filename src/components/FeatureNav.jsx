@@ -1,4 +1,37 @@
-export default function FeatureNav({ communityData, loading }) {
+function LayoutToggle({ layout, onToggle }) {
+  const isBottom = layout === 'bottom';
+  return (
+    <button
+      onClick={onToggle}
+      title={isBottom ? 'Switch to side-by-side layout' : 'Switch to bottom panel layout'}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-white/5"
+      style={{
+        border: '1px solid rgba(255,255,255,0.1)',
+        color: 'rgba(255,255,255,0.45)',
+      }}
+    >
+      {isBottom ? (
+        // Icon: map left | panels right
+        <svg width="22" height="16" viewBox="0 0 22 16" fill="none">
+          <rect x="0.5" y="0.5" width="9" height="15" rx="1.5" stroke="currentColor" strokeWidth="1.2" fill="rgba(34,211,238,0.15)" />
+          <rect x="12.5" y="0.5" width="9" height="6.5" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
+          <rect x="12.5" y="9" width="9" height="6.5" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      ) : (
+        // Icon: map top | panels bottom
+        <svg width="22" height="16" viewBox="0 0 22 16" fill="none">
+          <rect x="0.5" y="0.5" width="21" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2" fill="rgba(34,211,238,0.15)" />
+          <rect x="0.5" y="11.5" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.2" />
+          <rect x="8" y="11.5" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.2" />
+          <rect x="15.5" y="11.5" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      )}
+      <span className="hidden sm:inline">{isBottom ? 'Split' : 'Bottom'}</span>
+    </button>
+  );
+}
+
+export default function FeatureNav({ communityData, loading, layout, onToggleLayout }) {
   const locationLabel = communityData
     ? `${communityData.meta.stateAbbr} · Tract ${communityData.meta.fips?.slice(-6)}`
     : null;
@@ -15,14 +48,14 @@ export default function FeatureNav({ communityData, loading }) {
     >
       {/* Left: logo + title */}
       <div className="flex items-center gap-3">
+        <div
+          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
+          style={{ background: 'linear-gradient(135deg, var(--neon), var(--cyan))' }}
+        >
+          <span style={{ color: '#050608' }}>FD</span>
+        </div>
         <div className="flex items-center gap-2">
-          <div
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
-            style={{ background: 'linear-gradient(135deg, var(--neon), var(--cyan))' }}
-          >
-            <span style={{ color: '#050608' }}>FD</span>
-          </div>
-          <span className="text-sm font-semibold tracking-wide text-white/90">
+          <span className="text-sm font-semibold tracking-wide text-white/90 hidden sm:inline">
             FOOD DESERT
           </span>
           <span className="text-sm font-light tracking-widest" style={{ color: 'var(--cyan)' }}>
@@ -31,14 +64,14 @@ export default function FeatureNav({ communityData, loading }) {
         </div>
       </div>
 
-      {/* Center: status badge */}
-      <div className="flex items-center gap-3">
+      {/* Center: status + layout toggle */}
+      <div className="flex items-center gap-2.5">
         {loading && (
           <div
             className="flex items-center gap-2 rounded-full px-3 py-1 text-xs"
             style={{
-              background: 'rgba(34, 211, 238, 0.1)',
-              border: '1px solid rgba(34, 211, 238, 0.25)',
+              background: 'rgba(34,211,238,0.1)',
+              border: '1px solid rgba(34,211,238,0.25)',
               color: 'var(--cyan)',
             }}
           >
@@ -53,8 +86,8 @@ export default function FeatureNav({ communityData, loading }) {
           <div
             className="flex items-center gap-2 rounded-full px-3 py-1 text-xs animate-fade-slide-up"
             style={{
-              background: 'rgba(0, 255, 153, 0.08)',
-              border: '1px solid rgba(0, 255, 153, 0.2)',
+              background: 'rgba(0,255,153,0.08)',
+              border: '1px solid rgba(0,255,153,0.2)',
               color: 'var(--neon)',
             }}
           >
@@ -78,6 +111,8 @@ export default function FeatureNav({ communityData, loading }) {
             Awaiting location
           </div>
         )}
+
+        <LayoutToggle layout={layout} onToggle={onToggleLayout} />
       </div>
 
       {/* Right: data sources */}

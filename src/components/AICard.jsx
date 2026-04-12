@@ -60,26 +60,32 @@ function wait(ms) {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
-async function fetchNarrativeAnthropic(prompt, apiKey, signal) {
+async function fetchNarrative(prompt, apiKey, signal) {
   let lastError = null;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const url = import.meta.env.DEV
+        ? '/api/llmapi/v1/chat/completions'
+        : 'https://api.llmapi.ai/v1/chat/completions';
+      const res = await fetch(url, {
         method: 'POST',
         signal,
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
+          'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-3-5-haiku',
           max_tokens: 600,
           temperature: 0.45,
-          system:
-            'You are a civic-health narrative writer. Write clear, human language grounded only in provided numbers. Avoid hype, avoid hedging, and never use bullet points.',
-          messages: [{ role: 'user', content: prompt }],
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a civic-health narrative writer. Write clear, human language grounded only in provided numbers. Avoid hype, avoid hedging, and never use bullet points.',
+            },
+            { role: 'user', content: prompt },
+          ],
         }),
       });
 
@@ -88,17 +94,13 @@ async function fetchNarrativeAnthropic(prompt, apiKey, signal) {
           await wait(400 * (2 ** attempt));
           continue;
         }
-        throw new Error(`Anthropic request failed: ${res.status}`);
+        throw new Error(`LLMApi request failed: ${res.status}`);
       }
 
       const json = await res.json();
-      const text = (json?.content || [])
-        .filter((part) => part?.type === 'text')
-        .map((part) => part.text)
-        .join('\n\n')
-        .trim();
+      const text = json?.choices?.[0]?.message?.content?.trim();
 
-      if (!text) throw new Error('Anthropic returned empty text');
+      if (!text) throw new Error('LLMApi returned empty text');
       return normalizeTwoParagraphs(text);
     } catch (err) {
       if (signal?.aborted) throw err;
@@ -107,7 +109,7 @@ async function fetchNarrativeAnthropic(prompt, apiKey, signal) {
     }
   }
 
-  throw lastError || new Error('Anthropic request failed');
+  throw lastError || new Error('LLMApi request failed');
 }
 
 function Skeleton() {
@@ -190,7 +192,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
 
         let request = inFlightByFips.get(fips);
         if (!request) {
-          request = fetchNarrativeAnthropic(prompt, apiKey, controller.signal)
+          request = fetchNarrative(prompt, apiKey, controller.signal)
             .then((text) => {
               memoryCache.set(fips, { text, ts: Date.now() });
               writeLocalCache(fips, text);
@@ -273,7 +275,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
 
         {status === 'error' && (
           <p className="text-xs text-white/30 italic">
-            Narrative unavailable — add VITE_ANTHROPIC_KEY to .env
+            Narrative unavailable — check VITE_ANTHROPIC_KEY in .env
           </p>
         )}
 

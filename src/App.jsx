@@ -16,6 +16,38 @@ const INITIAL_LOGS = [
   { id: 5, text: 'Awaiting location input…', type: 'info' },
 ];
 
+// ── Shared panel set ──────────────────────────────────────────────────────────
+function Panels({ communityData, impactData, showImpact, onToggleImpact, loading, dataError, logs }) {
+  return (
+    <>
+      <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-0">
+        <CommunityStatsPanel
+          communityData={communityData}
+          loading={loading}
+          impactData={impactData}
+          showImpact={showImpact}
+          onToggleImpact={onToggleImpact}
+        />
+      </div>
+
+      <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-0">
+        {dataError ? (
+          <div className="h-full flex items-center justify-center text-sm text-center px-4"
+            style={{ color: 'rgba(252,165,165,0.8)' }}>
+            {dataError}
+          </div>
+        ) : (
+          <AICard communityData={communityData} impactData={impactData} />
+        )}
+      </div>
+
+      <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-0">
+        <AgentStatusFeed logs={logs} loading={loading} />
+      </div>
+    </>
+  );
+}
+
 export default function App() {
   const [communityData, setCommunityData] = useState(null);
   const [impactData, setImpactData]       = useState(null);
@@ -24,6 +56,7 @@ export default function App() {
   const [mapCenter, setMapCenter]         = useState({ lat: 37.773, lng: -122.418 });
   const [logs, setLogs]                   = useState(INITIAL_LOGS);
   const [dataError, setDataError]         = useState('');
+  const [layout, setLayout]               = useState('bottom'); // 'bottom' | 'split'
 
   const addLog = useCallback((text, type = 'info') => {
     setLogs((prev) => [
@@ -49,9 +82,7 @@ export default function App() {
       addLog('Loading Census ACS 5-year estimates…', 'info');
 
       const data = await buildCommunityData(lat, lng);
-      if (!data) {
-        throw new Error('No census tract found. Try a different US location.');
-      }
+      if (!data) throw new Error('No census tract found. Try a different US location.');
 
       addLog(`Census tract: ${data.meta.fips}  (${data.meta.stateAbbr})`, 'success');
       addLog(`ZIP code: ${data.meta.zip || 'N/A'}`, 'info');
@@ -80,79 +111,70 @@ export default function App() {
     }
   }
 
-  // DEV hook
   if (import.meta.env.DEV) window.__testPinDrop = handleLocationSearch;
+
+  const panelProps = { communityData, impactData, showImpact, onToggleImpact: () => setShowImpact((v) => !v), loading, dataError, logs };
+
+  const panelStrip = (
+    <div
+      className="shrink-0 flex gap-3 p-3"
+      style={{ height: '30vh', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(5,6,8,0.6)' }}
+    >
+      <Panels {...panelProps} />
+    </div>
+  );
+
+  const panelColumn = (
+    <div
+      className="flex flex-col gap-3 p-3 overflow-y-auto"
+      style={{ width: '50%', borderLeft: '1px solid rgba(255,255,255,0.06)', background: 'rgba(5,6,8,0.6)' }}
+    >
+      <Panels {...panelProps} />
+    </div>
+  );
 
   return (
     <div
       className="flex flex-col h-screen overflow-hidden"
       style={{ background: 'var(--void)', fontFamily: "'Inter', sans-serif" }}
     >
-      {/* Top nav */}
-      <FeatureNav communityData={communityData} loading={loading} />
+      <FeatureNav
+        communityData={communityData}
+        loading={loading}
+        layout={layout}
+        onToggleLayout={() => setLayout((l) => l === 'bottom' ? 'split' : 'bottom')}
+      />
 
-      {/* Main content below nav */}
-      <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-
-        {/* ── Streets GL map (fills remaining space above bottom strip) ── */}
-        <div className="flex-1 relative min-h-0">
-          <StreetsGlView
-            lat={mapCenter.lat}
-            lng={mapCenter.lng}
-            isLoading={loading}
-            hasData={!!communityData}
-            onSearch={handleLocationSearch}
-          />
-        </div>
-
-        {/* ── Bottom command strip ── */}
-        <div
-          className="shrink-0 flex gap-3 p-3"
-          style={{
-            height: '30vh',
-            borderTop: '1px solid rgba(255,255,255,0.06)',
-            background: 'rgba(5,6,8,0.6)',
-          }}
-        >
-          {/* Panel 1 — Community stats */}
-          <div
-            className="flex-1 glass-panel rounded-xl p-3 min-w-0 overflow-hidden"
-            style={{ minWidth: 0 }}
-          >
-            <CommunityStatsPanel
-              communityData={communityData}
-              loading={loading}
-              impactData={impactData}
-              showImpact={showImpact}
-              onToggleImpact={() => setShowImpact((v) => !v)}
-            />
+      <div className="flex-1 overflow-hidden min-h-0">
+        {layout === 'bottom' ? (
+          /* ── Top map / bottom panels ── */
+          <div className="flex flex-col h-full">
+            <div className="flex-1 relative min-h-0">
+              <StreetsGlView
+                lat={mapCenter.lat}
+                lng={mapCenter.lng}
+                isLoading={loading}
+                hasData={!!communityData}
+                onSearch={handleLocationSearch}
+              />
+            </div>
+            {panelStrip}
           </div>
-
-          {/* Panel 2 — AI Narrative */}
-          <div
-            className="flex-1 glass-panel rounded-xl p-3 min-w-0 overflow-hidden"
-            style={{ minWidth: 0 }}
-          >
-            {dataError ? (
-              <div
-                className="h-full flex items-center justify-center text-sm text-center px-4"
-                style={{ color: 'rgba(252,165,165,0.8)' }}
-              >
-                {dataError}
-              </div>
-            ) : (
-              <AICard communityData={communityData} impactData={impactData} />
-            )}
+        ) : (
+          /* ── Left map / right panels ── */
+          <div className="flex h-full">
+            <div className="flex-1 relative min-h-0">
+              <StreetsGlView
+                lat={mapCenter.lat}
+                lng={mapCenter.lng}
+                isLoading={loading}
+                hasData={!!communityData}
+                onSearch={handleLocationSearch}
+              />
+            </div>
+            {panelColumn}
           </div>
-
-          {/* Panel 3 — Pipeline log */}
-          <div
-            className="flex-1 glass-panel rounded-xl p-3 min-w-0 overflow-hidden"
-            style={{ minWidth: 0 }}
-          >
-            <AgentStatusFeed logs={logs} loading={loading} />
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
