@@ -7,6 +7,39 @@ const srcPath = fileURLToPath(new URL('./src', import.meta.url))
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return undefined
+          }
+
+          if (id.includes('three') || id.includes('@react-three')) {
+            return 'three-vendor'
+          }
+
+          if (id.includes('framer-motion') || id.includes('lucide-react')) {
+            return 'landing-vendor'
+          }
+
+          if (id.includes('chart.js') || id.includes('react-chartjs-2')) {
+            return 'charts-vendor'
+          }
+
+          if (id.includes('leaflet')) {
+            return 'map-vendor'
+          }
+
+          if (id.includes('react') || id.includes('@radix-ui') || id.includes('class-variance-authority') || id.includes('clsx') || id.includes('tailwind-merge')) {
+            return 'react-vendor'
+          }
+
+          return 'vendor'
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': srcPath,
