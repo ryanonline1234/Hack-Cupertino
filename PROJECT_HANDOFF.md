@@ -192,7 +192,7 @@ Economic calibration currently includes:
    - annualRevenueCap
    - annualCapturedSalesCapped
 
-Invariant maintained by tests:
+Maintained by tests/formulas:
 
 - annualLocalImpact == round(annualCapturedSales * economicMultiplier)
 
