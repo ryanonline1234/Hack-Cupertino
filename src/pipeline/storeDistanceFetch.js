@@ -106,7 +106,36 @@ export function computeCommunityDistanceMetrics(elements, lat, lng) {
   };
 }
 
-function makeResult(metrics, source) {
+// Pull the raw OSM elements down to a compact, render-friendly list of
+// store points. Used by the StreetsGlView highlight overlay and the
+// 2D MapView. Sorted nearest-first relative to the search center so the
+// UI can cap the marker count cheaply.
+export function extractStorePoints(elements, centerLat, centerLng, limit = 200) {
+  if (!Array.isArray(elements)) return [];
+  const points = [];
+  for (const el of elements) {
+    const eLat = el?.lat ?? el?.center?.lat;
+    const eLng = el?.lon ?? el?.center?.lon;
+    if (!Number.isFinite(eLat) || !Number.isFinite(eLng)) continue;
+    const name =
+      el?.tags?.name ||
+      el?.tags?.brand ||
+      el?.tags?.operator ||
+      'Supermarket';
+    const distanceMiles = haversineMiles(centerLat, centerLng, eLat, eLng);
+    points.push({
+      id: `${el.type}/${el.id}`,
+      lat: eLat,
+      lng: eLng,
+      name,
+      distanceMiles,
+    });
+  }
+  points.sort((a, b) => a.distanceMiles - b.distanceMiles);
+  return points.slice(0, limit);
+}
+
+function makeResult(metrics, source, stores = []) {
   const nearestMiles = metrics.communityAverageSupermarketMiles;
   return {
     // Backward-compatible field name now carries community-average distance.
@@ -117,6 +146,7 @@ function makeResult(metrics, source) {
     distanceModel: 'community_average_sampled',
     isTwentyFivePlusMiles: nearestMiles == null ? true : nearestMiles >= 25,
     checkedRadiusMiles: SEARCH_RADIUS_MILES,
+    stores,
     source,
   };
 }
@@ -151,7 +181,8 @@ export async function getNearestSupermarketDistance(lat, lng) {
     try {
       const json = await fetchFromEndpoint(endpoint, query, controller.signal);
       const metrics = computeCommunityDistanceMetrics(json?.elements, lat, lng);
-      const result = makeResult(metrics, `osm_overpass:${endpoint}`);
+      const stores = extractStorePoints(json?.elements, lat, lng);
+      const result = makeResult(metrics, `osm_overpass:${endpoint}`, stores);
       cache.set(key, { result, cachedAt: Date.now() });
       return result;
     } catch {
@@ -169,6 +200,7 @@ export async function getNearestSupermarketDistance(lat, lng) {
     distanceModel: 'community_average_sampled',
     isTwentyFivePlusMiles: null,
     checkedRadiusMiles: SEARCH_RADIUS_MILES,
+    stores: [],
     source: 'unavailable',
   };
 }

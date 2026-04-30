@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import RippleField from './RippleField';
 import ParticleDrift from './ParticleDrift';
 import SimLabControls from './SimLabControls';
 import MapView from './MapView';
+import { makeTopDownProjector, pickCameraDistance } from '../lib/projection';
 
 /*
  * Judge Notes: Top 10 Complexity Hotspots
@@ -39,6 +40,16 @@ const EXAMPLE_LOCATIONS = [
 
 function buildSrc(lat, lng) {
   return `${STREETS_GL_BASE}/?mapStyle=streets&pitch=${DEFAULT_PITCH}&yaw=-30&distance=${DEFAULT_DISTANCE}&lat=${lat.toFixed(5)}&lon=${lng.toFixed(5)}${buildHash(lat, lng)}`;
+}
+
+function buildLockedSrc(lat, lng, distance) {
+  // Top-down (pitch=90), north-up (yaw=0). Used in highlight mode so our
+  // overlay markers can be projected with simple Mercator math instead of
+  // Streets GL's perspective transform — which we can't replicate without
+  // forking the engine.
+  const d = Math.round(distance);
+  const hash = `#${lat.toFixed(5)},${lng.toFixed(5)},90.00,0.00,${d.toFixed(2)}`;
+  return `${STREETS_GL_BASE}/?mapStyle=streets&pitch=90&yaw=0&distance=${d}&lat=${lat.toFixed(5)}&lon=${lng.toFixed(5)}${hash}`;
 }
 
 function withRetryParam(url, retry) {
@@ -183,6 +194,7 @@ export default function StreetsGlView({
   onAddPin,
   onUndoPin,
   onClearPins,
+  stores = [],
 }) {
   const [query, setQuery]               = useState('');
   const [geocoding, setGeocoding]       = useState(false);
@@ -194,14 +206,45 @@ export default function StreetsGlView({
   const [mapError, setMapError]         = useState('');
   const [iframeRetry, setIframeRetry]   = useState(0);
   const [rendererMode, setRendererMode] = useState(() => getInitialRendererMode());
+  // Highlight mode: locks the iframe camera to top-down + paints our own
+  // green grocery-store markers on top using Mercator projection.
+  const [highlight, setHighlight]       = useState(false);
+  const [viewport, setViewport]         = useState({ width: 0, height: 0 });
+  const [hoveredStoreId, setHoveredStoreId] = useState(null);
   const inputRef    = useRef(null);
   const iframeRef   = useRef(null);
+  const containerRef = useRef(null);
   const debounceRef = useRef(null);
   const dropRef     = useRef(null);
   const lastMoveRef = useRef('');
   const iframeReadyRef = useRef(false);
   const iframeWatchdogRef = useRef(null);
   const useFallbackMap = rendererMode === '2d';
+
+  // Camera distance chosen to frame all the stores comfortably. Memoized
+  // so the iframe URL doesn't churn on every render.
+  const lockedDistance = useMemo(
+    () => pickCameraDistance({ lat, lng }, stores, 1800),
+    [lat, lng, stores],
+  );
+
+  const projector = useMemo(() => {
+    if (!highlight || !viewport.width || !viewport.height) return null;
+    return makeTopDownProjector({ lat, lng }, lockedDistance, viewport);
+  }, [highlight, viewport, lat, lng, lockedDistance]);
+
+  // Track container size with a ResizeObserver so the marker overlay
+  // re-projects when the user drags the map/panel splitter.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (rect) setViewport({ width: rect.width, height: rect.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const clearIframeWatchdog = useCallback(() => {
     if (iframeWatchdogRef.current) {
@@ -254,10 +297,21 @@ export default function StreetsGlView({
   const teleportMap = useCallback((nextLat, nextLng) => {
     if (useFallbackMap) return;
 
-    const moveKey = `${nextLat.toFixed(5)},${nextLng.toFixed(5)}`;
+    const moveKey = `${nextLat.toFixed(5)},${nextLng.toFixed(5)}|${highlight ? 'h' : 'n'}|${lockedDistance.toFixed(0)}`;
     if (lastMoveRef.current === moveKey) return;
 
     lastMoveRef.current = moveKey;
+
+    // In highlight mode we always rebuild the URL so the camera is fully
+    // reset to top-down + chosen distance — hash-only updates would leave
+    // the user's pan/zoom intact, which would break marker alignment.
+    if (highlight) {
+      const nextSrc = buildLockedSrc(nextLat, nextLng, lockedDistance);
+      setMapError('');
+      setIframeRetry(0);
+      setIframeSrc((prev) => (prev === nextSrc ? prev : nextSrc));
+      return;
+    }
 
     let didHashMove = false;
     const frameWin = iframeRef.current?.contentWindow;
@@ -277,7 +331,18 @@ export default function StreetsGlView({
       setIframeRetry(0);
       setIframeSrc((prev) => (prev === nextSrc ? prev : nextSrc));
     }
-  }, [useFallbackMap]);
+  }, [useFallbackMap, highlight, lockedDistance]);
+
+  // Toggling highlight mode rebuilds the iframe URL with the appropriate
+  // camera (oblique vs top-down). We force a re-teleport by clearing the
+  // memo key so the next teleport always fires.
+  useEffect(() => {
+    lastMoveRef.current = '';
+    teleportMap(lat, lng);
+    // Intentional: only reacts to the highlight toggle itself; lat/lng
+    // changes already drive teleportMap via the effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlight, lockedDistance]);
 
   useEffect(() => {
     teleportMap(lat, lng);
@@ -413,7 +478,7 @@ export default function StreetsGlView({
   const busy = isLoading || geocoding;
 
   return (
-    <div className="relative w-full h-full overflow-hidden map-scanlines" style={{ background: '#050608' }}>
+    <div ref={containerRef} className="relative w-full h-full overflow-hidden map-scanlines" style={{ background: '#050608' }}>
       {/* Streets GL 3D iframe — shifted up to clip its native toolbar (~56px) */}
       {useFallbackMap ? (
         <div className="absolute inset-0" style={{ zIndex: 1 }}>
@@ -469,8 +534,114 @@ export default function StreetsGlView({
             left: 0,
             width: '100%',
             height: 'calc(100% + 56px)',
+            // In highlight mode we lock the camera by killing the iframe's
+            // pointer events. Our HTML overlay markers stay aligned with
+            // the (known, fixed) Streets GL camera state.
+            pointerEvents: highlight ? 'none' : 'auto',
           }}
         />
+      )}
+
+      {/* Highlight-mode marker overlay. Only rendered when the camera is
+          locked top-down so projection math stays valid. */}
+      {highlight && !useFallbackMap && projector && stores.length > 0 && (
+        <div
+          aria-hidden={false}
+          className="absolute inset-0 pointer-events-none animate-fade-slide-up"
+          style={{ zIndex: 6 }}
+        >
+          {stores
+            .map((store) => ({ store, pos: projector({ lat: store.lat, lng: store.lng }) }))
+            .filter(({ pos }) => pos !== null)
+            .map(({ store, pos }) => (
+              <button
+                key={store.id}
+                type="button"
+                onMouseEnter={() => setHoveredStoreId(store.id)}
+                onMouseLeave={() => setHoveredStoreId((id) => (id === store.id ? null : id))}
+                onFocus={() => setHoveredStoreId(store.id)}
+                onBlur={() => setHoveredStoreId((id) => (id === store.id ? null : id))}
+                className="absolute"
+                style={{
+                  left: `${pos.x}px`,
+                  top: `${pos.y}px`,
+                  transform: 'translate(-50%, -50%)',
+                  pointerEvents: 'auto',
+                }}
+                title={`${store.name} · ${store.distanceMiles.toFixed(1)} mi`}
+              >
+                <span
+                  className="block rounded-full"
+                  style={{
+                    width: 14,
+                    height: 14,
+                    background: 'var(--neon)',
+                    border: '2px solid rgba(5,6,8,0.8)',
+                    boxShadow: '0 0 14px var(--neon), 0 0 4px rgba(0,0,0,0.6)',
+                  }}
+                />
+                {hoveredStoreId === store.id && (
+                  <span
+                    className="absolute left-1/2 -translate-x-1/2 mt-2 px-2 py-1 rounded text-[11px] whitespace-nowrap"
+                    style={{
+                      top: '100%',
+                      background: 'rgba(5,6,8,0.92)',
+                      border: '1px solid rgba(0,255,153,0.35)',
+                      color: 'rgba(255,255,255,0.92)',
+                      boxShadow: '0 6px 18px rgba(0,0,0,0.4)',
+                    }}
+                  >
+                    <span style={{ color: 'var(--neon)' }}>{store.name}</span>
+                    <span className="text-white/40 ml-2">{store.distanceMiles.toFixed(1)} mi</span>
+                  </span>
+                )}
+              </button>
+            ))}
+          {/* Center pin so the user knows where they actually are. */}
+          {(() => {
+            const c = projector({ lat, lng });
+            if (!c) return null;
+            return (
+              <span
+                className="absolute"
+                style={{
+                  left: `${c.x}px`,
+                  top: `${c.y}px`,
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  background: 'var(--cyan)',
+                  border: '2px solid rgba(5,6,8,0.85)',
+                  boxShadow: '0 0 10px var(--cyan)',
+                }}
+              />
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Highlight-mode banner */}
+      {highlight && !useFallbackMap && (
+        <div
+          className="absolute top-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] animate-fade-slide-up"
+          style={{
+            background: 'rgba(5,6,8,0.85)',
+            border: '1px solid rgba(0,255,153,0.35)',
+            color: 'rgba(255,255,255,0.85)',
+            backdropFilter: 'blur(12px)',
+          }}
+        >
+          <span
+            className="block w-1.5 h-1.5 rounded-full"
+            style={{ background: 'var(--neon)', boxShadow: '0 0 6px var(--neon)' }}
+          />
+          <span>
+            {stores.length > 0
+              ? `${stores.length} food source${stores.length === 1 ? '' : 's'} in range · camera locked top-down`
+              : 'No supermarkets within 50 miles · camera locked top-down'}
+          </span>
+        </div>
       )}
 
       {/* Decorative overlays */}
@@ -580,6 +751,33 @@ export default function StreetsGlView({
             title="Bypass cache and fetch fresh tract data"
           >
             Fresh Data
+          </button>
+
+          {/* Highlight food sources toggle. Locks the 3D camera to a top-down
+              view and overlays green markers for every supermarket Overpass
+              found within the search radius. Disabled in 2D fallback because
+              MapView already shows those naturally (and we'd be duplicating). */}
+          <button
+            type="button"
+            disabled={useFallbackMap || !hasData}
+            onClick={() => setHighlight((v) => !v)}
+            className="shrink-0 px-3.5 py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40"
+            style={{
+              background: highlight ? 'rgba(0,255,153,0.18)' : 'rgba(0,255,153,0.06)',
+              border: `1px solid ${highlight ? 'rgba(0,255,153,0.55)' : 'rgba(0,255,153,0.22)'}`,
+              color: 'var(--neon)',
+              backdropFilter: 'blur(20px)',
+              boxShadow: highlight ? '0 0 12px rgba(0,255,153,0.25)' : 'none',
+            }}
+            title={
+              useFallbackMap
+                ? 'Switch to 3D to enable highlight mode'
+                : highlight
+                  ? 'Hide food source highlights'
+                  : 'Highlight nearby supermarkets in green (locks camera top-down)'
+            }
+          >
+            {highlight ? 'Hide Sources' : 'Highlight Food'}
           </button>
 
           <button

@@ -170,6 +170,9 @@ export async function buildCommunityData(lat, lng, options = {}) {
     isTwentyFivePlusMiles: storeDistanceData?.isTwentyFivePlusMiles ?? null,
     nearestDistanceCheckedRadiusMiles: storeDistanceData?.checkedRadiusMiles ?? 50,
     nearestDistanceSource: storeDistanceData?.source || 'unavailable',
+    // Raw point list of supermarkets near this community, used by the map
+    // overlay layer to highlight food sources in green.
+    stores: Array.isArray(storeDistanceData?.stores) ? storeDistanceData.stores : [],
     modelFoodDesertAssumption,
     modelFoodDesertAssumptionMethod,
   };

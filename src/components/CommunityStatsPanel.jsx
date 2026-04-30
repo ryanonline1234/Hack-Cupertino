@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { fmtPct, fmtIncome } from '../utils/formatters';
 import ImpactReceipt from './ImpactReceipt';
+import SimilarTractsPanel from './SimilarTractsPanel';
 import { evaluateFoodDesertDesignation } from '../engine/foodDesertEvaluation';
 
 /*
@@ -643,6 +644,7 @@ export default function CommunityStatsPanel({
   onClearScenario,
   showImpact,
   onToggleImpact,
+  onJumpToTract,
 }) {
   if (!communityData && !loading) {
     return (
@@ -815,6 +817,8 @@ export default function CommunityStatsPanel({
             />
           </div>
         )}
+
+        <SimilarTractsPanel communityData={communityData} onJump={onJumpToTract} />
       </div>
     </div>
   );

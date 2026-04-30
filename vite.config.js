@@ -1,12 +1,75 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
 const srcPath = fileURLToPath(new URL('./src', import.meta.url))
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    /*
+     * Service worker via Workbox. Strategy:
+     *   • App shell (HTML/CSS/JS) is precached on install — full offline
+     *     boot for users who've already loaded the app once.
+     *   • Map tiles (OSM, Streets GL): StaleWhileRevalidate so tiles you've
+     *     looked at recently come back instantly when offline.
+     *   • Our /api/* serverless calls: NetworkOnly. Stale food-desert data
+     *     would be misleading; we'd rather show an error than fake fresh.
+     *
+     * Note: the LLMApi / Census / CDC calls happen during page load, so the
+     * tract data they returned still lives in localStorage (community cache,
+     * narrative cache). The service worker just makes the SHELL offline so
+     * the cached data has somewhere to render.
+     */
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.svg'],
+      manifest: {
+        name: 'Food Desert Impact Simulator',
+        short_name: 'FoodDesertSim',
+        description: 'Tract-centric food access analysis with USDA, CDC, Census, and OSM data.',
+        theme_color: '#050608',
+        background_color: '#050608',
+        display: 'standalone',
+        start_url: '/',
+        icons: [
+          { src: 'favicon.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' },
+        ],
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) =>
+              url.origin === 'https://tile.openstreetmap.org' ||
+              url.hostname.endsWith('.tile.openstreetmap.org'),
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'osm-tiles',
+              expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 7 },
+            },
+          },
+          {
+            urlPattern: ({ url }) => url.origin === 'https://streets-gl.pages.dev',
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'streets-gl-shell',
+              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 3 },
+            },
+          },
+          {
+            // Never cache our API surfaces — stale data is worse than none.
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+            handler: 'NetworkOnly',
+          },
+        ],
+      },
+    }),
+  ],
   build: {
     rollupOptions: {
       output: {

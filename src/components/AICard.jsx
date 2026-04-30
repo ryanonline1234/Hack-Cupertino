@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { annotateNarrative } from '../lib/citeNumbers';
 
 /*
  * Judge Notes: Top 10 Complexity Hotspots
@@ -157,6 +158,34 @@ function Skeleton() {
       <div className="skeleton h-2.5 rounded w-full mt-3" />
       <div className="skeleton h-2.5 rounded w-10/12" />
     </div>
+  );
+}
+
+/*
+ * Inline pill rendered for each numeric chunk of the AI narrative that we
+ * recognized as one of our metrics. Uses a native <button> with title/aria
+ * attributes so keyboard users get the same source attribution as mouse
+ * hover, and so the tooltip works without a JS popper library.
+ */
+function CitationBadge({ chunk }) {
+  const tooltip = `${chunk.label} · source: ${chunk.source}${chunk.detail ? `\n\n${chunk.detail}` : ''}`;
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-px mx-px rounded align-baseline"
+      title={tooltip}
+      aria-label={`${chunk.text} — ${chunk.label}, source ${chunk.source}`}
+      style={{
+        background: 'rgba(34,211,238,0.10)',
+        border: '1px solid rgba(34,211,238,0.28)',
+        color: 'var(--cyan)',
+        fontWeight: 600,
+        fontSize: '0.95em',
+        cursor: 'help',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {chunk.text}
+    </span>
   );
 }
 
@@ -390,7 +419,13 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
           <div className="space-y-3 animate-fade-slide-up">
             {paragraphs.map((p, idx) => (
               <p key={idx} className="text-xs leading-relaxed text-white/70">
-                {p}
+                {annotateNarrative(p, communityData, impactData).map((chunk, i) =>
+                  chunk.type === 'badge' ? (
+                    <CitationBadge key={i} chunk={chunk} />
+                  ) : (
+                    <span key={i}>{chunk.text}</span>
+                  ),
+                )}
               </p>
             ))}
           </div>

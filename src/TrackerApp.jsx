@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FeatureNav from './components/FeatureNav';
 import StreetsGlView from './components/StreetsGlView';
 import DesignationAtlasView from './components/DesignationAtlasView';
@@ -8,6 +8,7 @@ import AgentStatusFeed from './components/AgentStatusFeed';
 import ResizeHandle from './components/ResizeHandle';
 import { buildCommunityData } from './pipeline/normalizer';
 import { projectImpact } from './engine/projectionEngine';
+import { decodeAppState, writeAppStateToHash } from './lib/urlState';
 
 const PANEL_HEIGHT_KEY = 'fds:layout:bottomHeight';
 const PANEL_WIDTH_KEY = 'fds:layout:splitWidth';
@@ -58,6 +59,7 @@ function Panels({
   onClearScenario,
   showImpact,
   onToggleImpact,
+  onJumpToTract,
   loading,
   dataError,
   logs,
@@ -75,6 +77,7 @@ function Panels({
           onClearScenario={onClearScenario}
           showImpact={showImpact}
           onToggleImpact={onToggleImpact}
+          onJumpToTract={onJumpToTract}
         />
       </div>
 
@@ -99,29 +102,45 @@ function Panels({
 }
 
 export default function TrackerApp() {
+  // URL hash hydration: if the page was loaded with #lat=…&lng=…&layout=…
+  // we restore that state and auto-trigger the analysis pipeline once
+  // mounted. Done synchronously here so initial render uses the right
+  // panel layout without a flash.
+  const initialUrlState = typeof window !== 'undefined'
+    ? decodeAppState(window.location.hash)
+    : {};
+
   const [communityData, setCommunityData] = useState(null);
   const [impactData, setImpactData] = useState(null);
   const [baselineImpact, setBaselineImpact] = useState(null);
   const [savedScenario, setSavedScenario] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showImpact, setShowImpact] = useState(false);
-  const [mapCenter, setMapCenter] = useState({ lat: 37.773, lng: -122.418 });
+  const [mapCenter, setMapCenter] = useState(() =>
+    Number.isFinite(initialUrlState.lat) && Number.isFinite(initialUrlState.lng)
+      ? { lat: initialUrlState.lat, lng: initialUrlState.lng }
+      : { lat: 37.773, lng: -122.418 },
+  );
   const [logs, setLogs] = useState(INITIAL_LOGS);
   const [dataError, setDataError] = useState('');
-  const [layout, setLayout] = useState('bottom');
+  const [layout, setLayout] = useState(initialUrlState.layout || 'bottom');
   const [mode, setMode] = useState('atlas');
   const [simPins, setSimPins] = useState([]);
   const [bottomPanelHeight, setBottomPanelHeight] = useState(() =>
-    readStoredSize(
-      PANEL_HEIGHT_KEY,
-      typeof window !== 'undefined' ? Math.round(window.innerHeight * DEFAULT_BOTTOM_VH) : 280,
-    ),
+    Number.isFinite(initialUrlState.bottomPanelHeight)
+      ? initialUrlState.bottomPanelHeight
+      : readStoredSize(
+          PANEL_HEIGHT_KEY,
+          typeof window !== 'undefined' ? Math.round(window.innerHeight * DEFAULT_BOTTOM_VH) : 280,
+        ),
   );
   const [splitPanelWidth, setSplitPanelWidth] = useState(() =>
-    readStoredSize(
-      PANEL_WIDTH_KEY,
-      typeof window !== 'undefined' ? Math.round(window.innerWidth * DEFAULT_SPLIT_VW) : 480,
-    ),
+    Number.isFinite(initialUrlState.splitPanelWidth)
+      ? initialUrlState.splitPanelWidth
+      : readStoredSize(
+          PANEL_WIDTH_KEY,
+          typeof window !== 'undefined' ? Math.round(window.innerWidth * DEFAULT_SPLIT_VW) : 480,
+        ),
   );
 
   // Persist resize state. Quiet about quota errors so private-mode browsers
@@ -142,6 +161,21 @@ export default function TrackerApp() {
     window.addEventListener('resize', clampToViewport);
     return () => window.removeEventListener('resize', clampToViewport);
   }, []);
+
+  // Mirror app state into the URL hash so refreshing or sharing a link
+  // restores the same view. Debounced to avoid churn during splitter drags.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      writeAppStateToHash({
+        lat: communityData ? mapCenter.lat : null,
+        lng: communityData ? mapCenter.lng : null,
+        layout,
+        bottomPanelHeight,
+        splitPanelWidth,
+      });
+    }, 250);
+    return () => clearTimeout(t);
+  }, [communityData, mapCenter.lat, mapCenter.lng, layout, bottomPanelHeight, splitPanelWidth]);
 
   const maxBottomHeight = typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.85) : 1200;
   const maxSplitWidth = typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.85) : 1600;
@@ -364,6 +398,21 @@ export default function TrackerApp() {
     addLog('Scenario snapshot cleared', 'info');
   }
 
+  // Auto-run the pipeline once on mount when a lat/lng was supplied via the
+  // URL hash. We guard with a ref so this fires exactly once per page load,
+  // and only if no analysis is already in flight.
+  const didHydrateRef = useRef(false);
+  useEffect(() => {
+    if (didHydrateRef.current) return;
+    didHydrateRef.current = true;
+    if (Number.isFinite(initialUrlState.lat) && Number.isFinite(initialUrlState.lng)) {
+      addLog('Restoring location from shared link…', 'system');
+      handleLocationSearch(initialUrlState.lat, initialUrlState.lng);
+    }
+    // We only want the URL hydrate to run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Expose a dev-only manual trigger without re-installing the global on
   // every render, and clean it up when the component unmounts.
   useEffect(() => {
@@ -408,6 +457,7 @@ export default function TrackerApp() {
     onClearScenario: clearScenarioSnapshot,
     showImpact,
     onToggleImpact: () => setShowImpact((value) => !value),
+    onJumpToTract: (lat, lng) => handleLocationSearch(lat, lng),
     loading,
     dataError,
     logs,
@@ -467,6 +517,7 @@ export default function TrackerApp() {
                 onAddPin={addSimulationPin}
                 onUndoPin={undoSimulationPin}
                 onClearPins={clearSimulationPins}
+                stores={communityData?.foodAccess?.stores || []}
               />
             </div>
             <ResizeHandle
@@ -494,6 +545,7 @@ export default function TrackerApp() {
                 onAddPin={addSimulationPin}
                 onUndoPin={undoSimulationPin}
                 onClearPins={clearSimulationPins}
+                stores={communityData?.foodAccess?.stores || []}
               />
             </div>
             <ResizeHandle
