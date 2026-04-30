@@ -25,7 +25,10 @@ const DEFAULT_DISTANCE = 1800;
 const IFRAME_LOAD_TIMEOUT_MS = 12000;
 const IFRAME_MAX_RETRIES = 2;
 const SHOW_SIM_LAB_UI = false;
-const MAP_RENDERER_STORAGE_KEY = 'fds:mapRendererMode';
+// Bumped from 'fds:mapRendererMode' so any '2d' values cached from a previous
+// build (which had over-aggressive auto-fallback) don't stick after upgrade.
+// 3D Streets GL is the intended default for capable browsers.
+const MAP_RENDERER_STORAGE_KEY = 'fds:mapRendererMode:v2';
 
 const EXAMPLE_LOCATIONS = [
   { label: 'San Jose, CA',        lat: 37.339,  lng: -121.894 },
@@ -53,37 +56,16 @@ function shortName(displayName) {
   return displayName.split(',').slice(0, 3).join(',').trim();
 }
 
-function isProbablySafari() {
-  if (typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent;
-  return /Safari/i.test(ua) && !/Chrome|CriOS|Edg|OPR|Firefox/i.test(ua);
-}
-
 function hasWebGL2Support() {
-  // Streets GL requires WebGL2. Falling back to WebGL1 detection led the
-  // app to hand the iframe to engines that immediately threw
-  // INVALID_ENUM/INVALID_FRAMEBUFFER_OPERATION errors. Test WebGL2 directly,
-  // and additionally probe for a working framebuffer to catch GPUs that
-  // expose WebGL2 but fail on multisample renderbuffers.
+  // Streets GL requires WebGL2. We only check that a WebGL2 context can be
+  // created at all — earlier versions also probed framebuffer completeness,
+  // but that turned out to reject GPUs that Streets GL itself rendered on
+  // perfectly fine, so users were being shoved into 2D for no reason.
   if (typeof document === 'undefined') return true;
   try {
     const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl2', { antialias: true, powerPreference: 'high-performance' });
-    if (!gl) return false;
-
-    // Quick framebuffer-completeness probe — many of the production console
-    // errors trace back to this check failing inside Streets GL.
-    const fb = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 4, 4, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-    gl.deleteTexture(tex);
-    gl.deleteFramebuffer(fb);
-
-    return status === gl.FRAMEBUFFER_COMPLETE;
+    const gl = canvas.getContext('webgl2');
+    return Boolean(gl);
   } catch {
     return false;
   }
@@ -117,8 +99,9 @@ function getInitialRendererMode() {
     // Ignore storage failures.
   }
 
-  // Safari + weaker GPU stacks are common sources of unstable WebGL framebuffers.
-  if (!hasWebGL2Support() || isProbablySafari()) {
+  // Only fall back to 2D when WebGL2 truly isn't available. Safari 15+,
+  // current Chrome/Firefox/Edge all support WebGL2 and can run Streets GL.
+  if (!hasWebGL2Support()) {
     return '2d';
   }
 
@@ -321,45 +304,13 @@ export default function StreetsGlView({
     return () => document.removeEventListener('mousedown', onDown);
   }, []);
 
-  // Auto-fallback to the 2D map when Streets GL's iframe is hammered with
-  // WebGL framebuffer / tile-404 errors. We can't observe the cross-origin
-  // iframe directly, but tile errors and unhandled rejections that originate
-  // from it bubble up to the parent's window.onerror.
-  useEffect(() => {
-    if (useFallbackMap) return undefined;
-
-    let webglErrorCount = 0;
-    let tileErrorCount = 0;
-    let switched = false;
-
-    function maybeSwitch(reason) {
-      if (switched) return;
-      switched = true;
-      setMapError(`3D map disabled: ${reason}. Switched to 2D fallback.`);
-      updateRendererMode('2d');
-    }
-
-    function onErr(e) {
-      const msg = String(e?.message || e?.reason?.message || '');
-      if (/INVALID_FRAMEBUFFER_OPERATION|INVALID_ENUM|glFramebufferTexture2D/i.test(msg)) {
-        webglErrorCount += 1;
-        if (webglErrorCount >= 4) maybeSwitch('repeated WebGL framebuffer errors');
-      } else if (/Failed to fetch tile|tile:\s*404/i.test(msg)) {
-        tileErrorCount += 1;
-        if (tileErrorCount >= 6) maybeSwitch('tile server unavailable');
-      }
-    }
-
-    window.addEventListener('error', onErr);
-    window.addEventListener('unhandledrejection', onErr);
-    return () => {
-      window.removeEventListener('error', onErr);
-      window.removeEventListener('unhandledrejection', onErr);
-    };
-    // updateRendererMode is intentionally captured by closure — we only
-    // need this watcher to reset when the renderer mode changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useFallbackMap]);
+  // NOTE: a previous build of this component installed a window.onerror
+  // listener that switched to 2D after a small burst of WebGL framebuffer or
+  // tile-404 errors. That was too aggressive: Streets GL emits these as
+  // routine initialization noise without any actual rendering breakage, and
+  // it forced users into 2D for no reason. The iframe load watchdog below
+  // still handles real iframe-load failure, and the user can hit "2D Map"
+  // manually if they ever want to override.
 
   // Clean up the watchdog when the component unmounts.
   useEffect(() => {
