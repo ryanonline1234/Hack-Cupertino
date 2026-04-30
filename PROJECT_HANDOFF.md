@@ -1,186 +1,297 @@
-# Food Desert Simulator - Project Handoff (IDE-Agnostic)
+# Food Desert Simulator - Technical Project Handoff
 
 Last updated: 2026-04-12
-Audience: engineers taking over in any IDE (VS Code, Cursor, WebStorm, Zed, etc.).
+Primary audience: engineers and coding agents taking over implementation.
+Secondary audience: technical product owners needing implementation-level detail.
 
-## 1) Scope and Product Intent
+## 1. Product Intent and System Boundaries
 
-This app is a tract-centric US food access analysis tool. It merges multiple public sources to:
+The application is a tract-centric decision support tool for food access analysis in the US. It combines USDA, CDC, Census, and OSM-derived data to:
 
-1. Classify designation state (designated, not designated, unknown).
-2. Show why the classification happened (trace + source confidence).
-3. Project intervention impact across access, health, economics, and trip true-cost.
-4. Support scenario planning rather than static reporting.
+1. Classify food access designation state for the selected community.
+2. Surface the evidence chain behind classification decisions.
+3. Estimate intervention impact (access, health, economic, and true-cost dimensions).
+4. Provide scenario tooling for strategic planning and comparison.
 
-## 2) IDE Migration Quick Checklist
+Current architecture assumes one selected location at a time, resolved to one tract context, with projection outputs computed in-browser.
 
-Use this when moving the project to another IDE.
+## 2. Current Decision Standard (Important)
 
-1. Open project root: `food-desert-simulator`.
-2. Configure Node.js 20+ interpreter.
-3. Ensure `.env` is loaded with required keys.
-4. Set run command: `npm run dev -- --host 127.0.0.1 --port 5173`.
-5. Set validation commands:
-   - `npm run lint`
-   - `npm test`
-   - `npm run build`
-6. Keep import alias behavior consistent (`@` alias is used in UI components).
+Food desert classification is currently distance-first using a community-average distance model with explicit Unknown handling.
 
-## 3) Required Environment
+Primary threshold rules:
 
-Environment variables:
+1. Urban: designated when community-average supermarket distance >= 1 mile.
+2. Rural: designated when community-average supermarket distance >= 5 miles.
+3. If distance is unavailable, final designation defaults to Unknown.
 
-1. `VITE_CENSUS_KEY`
-2. `VITE_ANTHROPIC_KEY`
+Implementation:
 
-Reference template:
+- Classification evaluator: src/engine/foodDesertEvaluation.js
+- Pipeline wiring: src/pipeline/normalizer.js
 
-1. `.env.example`
+Distance model inputs:
 
-## 4) Runtime and Tooling
+- Distance for classification uses sampled community-average distance.
+- Center-point nearest distance is retained as a reference metric for transparency.
 
-Stack:
+## 3. Repository Layout and Ownership
 
-1. React + Vite
-2. Leaflet for map UI
-3. Tailwind/PostCSS for styling
-4. Framer Motion for transitions
-5. Three.js + R3F for landing visual elements
+Top-level runtime files:
 
-NPM scripts:
+- App shell and orchestration: src/App.jsx
+- Map/search experience: src/components/StreetsGlView.jsx
+- Profile, trace, confidence badges, compare UI: src/components/CommunityStatsPanel.jsx
+- Narrative generation: src/components/AICard.jsx
 
-1. `npm run dev`
-2. `npm run build`
-3. `npm run lint`
-4. `npm run test`
-5. `npm run preview`
+Data pipeline modules:
 
-## 5) Current Functional State
+- Geocoder and tract resolution: src/pipeline/geocoder.js
+- USDA tract ingestion and derived USDA context: src/pipeline/usdaFetch.js
+- CDC health metrics: src/pipeline/cdcFetch.js
+- Census ACS demographics: src/pipeline/censusFetch.js
+- OSM distance service: src/pipeline/storeDistanceFetch.js
+- Data normalization/merge: src/pipeline/normalizer.js
 
-The app currently includes both tracker and nationwide modes:
+Core engines:
 
-1. Landing flow with animated intro overlay and handoff to main UI.
-2. Tracker mode for location-specific tract analysis and scenario controls.
-3. US Map mode (`DesignationAtlasView`) with preloaded designation overview.
-4. Zoom-aware map behavior that shifts from broad summary to in-view stats.
-5. Explainability surfaces in stats panel (trace/confidence/sensitivity/compare).
+- Designation evaluator: src/engine/foodDesertEvaluation.js
+- Impact projection: src/engine/projectionEngine.js
+- Simulation scoring: src/engine/simulationEngine.js
+- Model constants/correlations: src/engine/correlations.js
 
-## 6) Architecture Map
+Test coverage roots:
 
-Entry and orchestration:
+- Designation behavior: tests/foodDesertEvaluation.test.js
+- USDA fixtures and divergence checks: tests/knownFoodDesertCases.test.js
+- Projection economics calibration: tests/projectionEconomics.test.js
+- Community-average distance helpers: tests/storeDistanceFetch.test.js
 
-1. `src/App.jsx`
-2. `src/TrackerApp.jsx`
-3. `src/main.jsx`
+## 4. End-to-End Data Flow
 
-Landing and presentation:
+Request path:
 
-1. `src/ui/landing/LandingPage.tsx`
-2. `src/components/ui/particle-text-effect.tsx`
+1. User selects location in map/search UI.
+2. App requests normalized tract payload from buildCommunityData.
+3. buildCommunityData resolves tract metadata and fetches source payloads in parallel.
+4. Normalizer computes classification context and projection inputs.
+5. App computes impact output with projectImpact.
+6. UI renders profile, confidence, trace, and impact sections.
 
-Core UI:
+Fetch sequence in normalizer:
 
-1. `src/components/CommunityStatsPanel.jsx`
-2. `src/components/AICard.jsx`
-3. `src/components/StreetsGlView.jsx`
-4. `src/components/FeatureNav.jsx`
-5. `src/components/DesignationAtlasView.jsx`
+1. coordsToGeo(lat, lng)
+2. getUsdaData(fips)
+3. getCdcData(stateAbbr, fips)
+4. getCensusData(fips)
+5. getNearestSupermarketDistance(lat, lng)
 
-Data pipeline:
+## 5. Distance Model Internals (Community-Average)
 
-1. `src/pipeline/geocoder.js`
-2. `src/pipeline/usdaFetch.js`
-3. `src/pipeline/cdcFetch.js`
-4. `src/pipeline/censusFetch.js`
-5. `src/pipeline/storeDistanceFetch.js`
-6. `src/pipeline/normalizer.js`
+Distance module: src/pipeline/storeDistanceFetch.js
 
-Engines:
+What it does now:
 
-1. `src/engine/foodDesertEvaluation.js`
-2. `src/engine/projectionEngine.js`
-3. `src/engine/simulationEngine.js`
-4. `src/engine/correlations.js`
+1. Queries Overpass for supermarket-tagged elements within 50 miles of the center.
+2. Builds 9 sample points (center + offsets).
+3. Computes nearest-store distance for each sample point via Haversine.
+4. Computes community average from sample nearest distances.
+5. Exposes both:
+   - communityAverageSupermarketMiles (primary for classification)
+   - centerNearestSupermarketMiles (reference only)
 
-Tests:
+Returned distance payload fields:
 
-1. `tests/foodDesertEvaluation.test.js`
-2. `tests/knownFoodDesertCases.test.js`
-3. `tests/projectionEconomics.test.js`
-4. `tests/storeDistanceFetch.test.js`
+1. nearestSupermarketMiles: backward-compatible alias carrying community average.
+2. communityAverageSupermarketMiles
+3. centerNearestSupermarketMiles
+4. communityDistanceSampleCount
+5. distanceModel
+6. isTwentyFivePlusMiles
+7. checkedRadiusMiles
+8. source
 
-## 7) End-to-End Data Flow
+Failure behavior:
 
-Location flow:
+- Endpoint failover attempts second Overpass host.
+- On full failure, returns null distance fields and source=unavailable.
 
-1. User selects/searches a location.
-2. Tract context is resolved by geocoder.
-3. USDA, CDC, Census, and distance sources are fetched.
-4. Pipeline normalizes and merges source payloads.
-5. Classification evaluator computes designation + trace fields.
-6. Projection engine computes impact outputs.
-7. UI renders metrics, narrative, and explainability panels.
+Known caveats:
 
-## 8) Classification and Distance Model
+1. Not road-network travel time/distance.
+2. OSM tagging completeness affects quality.
+3. Sampling model is spatially representative, not population-weighted.
 
-Current designation behavior is distance-first with explicit Unknown handling.
+## 6. Classification Engine Contract
 
-Rules:
+Evaluator API: evaluateFoodDesertDesignation
 
-1. Urban threshold: 1 mile.
-2. Rural threshold: 5 miles.
-3. Missing required distance input: Unknown.
+Inputs:
 
-Distance model details:
+1. isRural
+2. nearestSupermarketMiles (currently community average from pipeline)
+3. isTwentyFivePlusMiles
+4. usdaLilaFlag
+5. urbanThresholdMiles (default 1)
+6. ruralThresholdMiles (default 5)
+7. unavailableMode (default unknown)
 
-1. Overpass query for supermarket-tagged candidates.
-2. Multi-point sampling around center.
-3. Community-average nearest distance for classification.
-4. Center-point nearest retained as reference metric.
+Outputs:
 
-## 9) Caching and Freshness
+1. finalDesignation (designated | not_designated | unknown)
+2. isFoodDesert (true | false | null)
+3. distanceDesignation
+4. usdaDesignation
+5. sourceComparable
+6. sourceDisagreement
+7. designationMethod
+8. distanceThresholdMiles
+9. distanceRuleEvaluable
+10. isFoodDesertByDistanceRule
 
-1. Community payload caching:
-   - In-memory + localStorage
-   - TTL about 15 minutes
-2. Narrative caching:
-   - In-memory + localStorage
-   - TTL about 6 hours
+Method labels currently used:
 
-## 10) Quality Gates for Handoff
+1. distance_rule_urban_1mi
+2. distance_rule_rural_5mi
+3. distance_rule_unavailable_unknown
+4. distance_rule_unavailable_usda_fallback
+5. distance_rule_unavailable
 
-Run before merging or transferring ownership:
+## 7. USDA Context vs Final Distance Classification
 
-1. `npm run lint`
-2. `npm test`
-3. `npm run build`
+USDA-derived fields are still retained as diagnostics and policy context:
 
-Current expectation:
+1. accessRule remains USDA 1/10-mile benchmark context.
+2. qualifyingLowAccessPct for USDA low-access tests.
+3. low-income tests based on poverty/income threshold logic.
 
-1. Lint passes.
-2. Tests pass.
-3. Build passes.
+Important distinction:
 
-## 11) Known Risks
+- USDA low-access benchmark in UI is not the same as final distance-first designation threshold.
+- Final designation threshold is now 1 mile urban / 5 miles rural over community-average distance.
 
-1. Overpass instability can degrade distance resolution.
-2. OSM completeness varies by geography.
-3. Distance model is sampled and not population-weighted.
-4. Large vendor chunks are present in production build warnings.
+## 8. Projection Engine Technical Notes
 
-## 12) Recommended Next Iterations
+Projection module: src/engine/projectionEngine.js
 
-1. Population-weighted distance sampling.
-2. Optional road-network fallback model.
-3. Better telemetry around source failure and timing.
-4. Additional tests for landing-to-tracker transition behavior.
-5. Chunk-size optimization follow-up for heavy Three.js vendor bundles.
+The engine emits:
 
-## 13) Successor Runbook
+1. foodAccess impact metrics
+2. health impact metrics
+3. economic impact metrics
+4. true-cost before/after trip economics
+5. simulation summary
 
-1. Validate env keys and run local server.
-2. Run lint/test/build and confirm green baseline.
-3. Verify both modes (`Tracker` and `US Map`) manually.
-4. Verify landing intro and nav layering still behave correctly.
-5. Preserve current output field contracts when changing pipeline behavior.
+Economic calibration currently includes:
+
+1. Bounded capture rate.
+2. Access-need factor from qualifying low-access share.
+3. Revenue cap for practical single-store scale.
+4. Transparency fields:
+   - annualCapturedSalesRaw
+   - annualRevenueCap
+   - annualCapturedSalesCapped
+
+Maintained by tests/formulas:
+
+- annualLocalImpact == round(annualCapturedSales * economicMultiplier)
+
+## 9. Caching and Freshness
+
+Community payload cache:
+
+- In-memory + localStorage.
+- TTL: 15 minutes.
+- Meta attached as payload.meta.cache.
+- Status values: fresh | memory | local.
+
+Narrative cache:
+
+- In-memory + localStorage.
+- TTL: 6 hours.
+- Scoped by FIPS key.
+
+Force refresh path:
+
+- UI can bypass community cache and force fresh retrieval.
+
+## 10. UI Surfaces and Technical Behavior
+
+Key transparency elements:
+
+1. Source confidence badges.
+2. Evaluation trace drawer (criterion-level details).
+3. Threshold sensitivity panel with live override preview.
+4. Scenario compare table (baseline/current/saved).
+
+Distance presentation now:
+
+1. Community avg supermarket distance (est.)
+2. Center-point nearest (reference)
+
+Logs now explicitly call out:
+
+1. Community-average distance used for classification.
+2. Center-point nearest as reference.
+3. USDA benchmark diagnostics separately.
+
+## 11. Environment and Runtime Configuration
+
+Current env vars used:
+
+1. VITE_CENSUS_KEY
+2. VITE_ANTHROPIC_KEY
+
+Vite proxy routes:
+
+1. /api/census-geocoder
+2. /api/nominatim
+3. /api/cdc
+4. /api/census
+5. /api/llmapi
+
+## 12. Testing and Build Commands
+
+Primary checks:
+
+1. npm test -- --runInBand
+2. npm run build
+
+Current status at handoff:
+
+1. Tests passing: 29
+2. Build: passing
+
+## 13. Risk Register
+
+1. Overpass availability and throttling can induce Unknown classifications.
+2. OSM completeness can bias distance estimates by geography.
+3. Community sample offsets are fixed and not tuned by tract geometry.
+4. Current sampled average is not population-weighted.
+
+## 14. Recommended Next Technical Iterations
+
+1. Population-weighted sampling using Census block-group centroids and population weights.
+2. Optional road-network distance fallback for high-stakes planning mode.
+3. Persisted telemetry for stage timings and source failure rates.
+4. Expand disagreement analytics dashboard (distance vs USDA cohorts over multiple tracts).
+5. Snapshot tests for trace drawer wording and model metadata rendering.
+
+## 15. Handoff Runbook for Successor Engineers
+
+1. Start with this file and verify current thresholds in evaluator.
+2. Confirm normalizer still passes community-average distance into evaluator.
+3. Validate UI wording if changing policy thresholds.
+4. Preserve backward-compatible distance fields unless migration is coordinated.
+5. Run tests/build before and after modifying pipeline contracts.
+
+## 16. Quick File Reference Map
+
+- Classification thresholds: src/engine/foodDesertEvaluation.js
+- Distance modeling: src/pipeline/storeDistanceFetch.js
+- Merge and designation wiring: src/pipeline/normalizer.js
+- Runtime logs and orchestration: src/App.jsx
+- Profile/trace/stat rendering: src/components/CommunityStatsPanel.jsx
+- Projection formulas: src/engine/projectionEngine.js
+- Distance model tests: tests/storeDistanceFetch.test.js
 
