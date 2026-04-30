@@ -1,12 +1,30 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import FeatureNav from './components/FeatureNav';
 import StreetsGlView from './components/StreetsGlView';
 import DesignationAtlasView from './components/DesignationAtlasView';
 import CommunityStatsPanel from './components/CommunityStatsPanel';
 import AICard from './components/AICard';
 import AgentStatusFeed from './components/AgentStatusFeed';
+import ResizeHandle from './components/ResizeHandle';
 import { buildCommunityData } from './pipeline/normalizer';
 import { projectImpact } from './engine/projectionEngine';
+
+const PANEL_HEIGHT_KEY = 'fds:layout:bottomHeight';
+const PANEL_WIDTH_KEY = 'fds:layout:splitWidth';
+const MIN_PANEL_HEIGHT = 140;
+const MIN_PANEL_WIDTH = 320;
+const DEFAULT_BOTTOM_VH = 0.30;
+const DEFAULT_SPLIT_VW = 0.50;
+
+function readStoredSize(key, fallback) {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = Number(window.localStorage.getItem(key));
+    return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 /*
  * Judge Notes: Top 10 Complexity Hotspots
@@ -43,7 +61,6 @@ function Panels({
   loading,
   dataError,
   logs,
-  onNarrativePipelineEvent,
 }) {
   return (
     <>
@@ -70,11 +87,7 @@ function Panels({
             {dataError}
           </div>
         ) : (
-          <AICard
-            communityData={communityData}
-            impactData={impactData}
-            onPipelineEvent={onNarrativePipelineEvent}
-          />
+          <AICard communityData={communityData} impactData={impactData} />
         )}
       </div>
 
@@ -98,22 +111,56 @@ export default function TrackerApp() {
   const [layout, setLayout] = useState('bottom');
   const [mode, setMode] = useState('atlas');
   const [simPins, setSimPins] = useState([]);
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(() =>
+    readStoredSize(
+      PANEL_HEIGHT_KEY,
+      typeof window !== 'undefined' ? Math.round(window.innerHeight * DEFAULT_BOTTOM_VH) : 280,
+    ),
+  );
+  const [splitPanelWidth, setSplitPanelWidth] = useState(() =>
+    readStoredSize(
+      PANEL_WIDTH_KEY,
+      typeof window !== 'undefined' ? Math.round(window.innerWidth * DEFAULT_SPLIT_VW) : 480,
+    ),
+  );
+
+  // Persist resize state. Quiet about quota errors so private-mode browsers
+  // don't break the UI.
+  useEffect(() => {
+    try { window.localStorage.setItem(PANEL_HEIGHT_KEY, String(bottomPanelHeight)); } catch { /* noop */ }
+  }, [bottomPanelHeight]);
+  useEffect(() => {
+    try { window.localStorage.setItem(PANEL_WIDTH_KEY, String(splitPanelWidth)); } catch { /* noop */ }
+  }, [splitPanelWidth]);
+
+  // Reclamp on window resize so a too-large panel never crowds the viewport.
+  useEffect(() => {
+    function clampToViewport() {
+      setBottomPanelHeight((h) => Math.min(Math.max(h, MIN_PANEL_HEIGHT), Math.round(window.innerHeight * 0.85)));
+      setSplitPanelWidth((w) => Math.min(Math.max(w, MIN_PANEL_WIDTH), Math.round(window.innerWidth * 0.85)));
+    }
+    window.addEventListener('resize', clampToViewport);
+    return () => window.removeEventListener('resize', clampToViewport);
+  }, []);
+
+  const maxBottomHeight = typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.85) : 1200;
+  const maxSplitWidth = typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.85) : 1600;
+  const defaultBottomHeight = typeof window !== 'undefined' ? Math.round(window.innerHeight * DEFAULT_BOTTOM_VH) : 280;
+  const defaultSplitWidth = typeof window !== 'undefined' ? Math.round(window.innerWidth * DEFAULT_SPLIT_VW) : 480;
 
   const addLog = useCallback((text, type = 'info') => {
     setLogs((prev) => [
-      ...prev.slice(-59),
+      ...prev.slice(-24),
       { id: Date.now() + Math.random(), text, type },
     ]);
   }, []);
 
-  const handleNarrativePipelineEvent = useCallback((text, type = 'info') => {
-    if (!text) return;
-    addLog(text, type);
-  }, [addLog]);
-
-  function buildImpact(data, pins, center) {
-    return projectImpact(data, { pins, center });
-  }
+  // Stable reference so child memoization (and `useEffect` deps in AICard
+  // via `impactData`) don't churn on every TrackerApp re-render.
+  const buildImpact = useCallback(
+    (data, pins, center) => projectImpact(data, { pins, center }),
+    [],
+  );
 
   const pinCounts = useMemo(() => {
     const counts = { grocery: 0, transit: 0, pantry: 0 };
@@ -140,9 +187,12 @@ export default function TrackerApp() {
       addLog('Force refresh requested: bypassing cached tract data.', 'info');
     }
     addLog('Querying Census TIGER geocoder…', 'info');
-    addLog('Pipeline stage: geocoder -> cache lookup -> USDA/CDC/Census aggregation', 'info');
 
     try {
+      addLog('Fetching USDA Food Access Atlas CSV…', 'info');
+      addLog('Pulling CDC PLACES health metrics…', 'info');
+      addLog('Loading Census ACS 5-year estimates…', 'info');
+
       const data = await buildCommunityData(lat, lng, { forceRefresh });
       if (!data) throw new Error('No census tract found. Try a different US location.');
 
@@ -150,11 +200,10 @@ export default function TrackerApp() {
       if (cacheStatus === 'memory' || cacheStatus === 'local') {
         addLog(
           `Community cache hit: ${cacheStatus} (${Math.ceil(Number(data.meta?.cache?.expiresInMs || 0) / 60000)}m until refresh)`,
-          'success',
+          'info',
         );
-        addLog('Cache path active: skipped remote USDA/CDC/Census pulls for this tract.', 'info');
       } else if (cacheStatus === 'fresh') {
-        addLog('Community cache miss: retrieved fresh USDA/CDC/Census datasets.', 'info');
+        addLog('Community cache: fresh fetch', 'info');
       }
 
       addLog(`Census tract: ${data.meta.fips}  (${data.meta.stateAbbr})`, 'success');
@@ -315,7 +364,19 @@ export default function TrackerApp() {
     addLog('Scenario snapshot cleared', 'info');
   }
 
-  if (import.meta.env.DEV) window.__testPinDrop = handleLocationSearch;
+  // Expose a dev-only manual trigger without re-installing the global on
+  // every render, and clean it up when the component unmounts.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return undefined;
+    window.__testPinDrop = handleLocationSearch;
+    return () => {
+      if (window.__testPinDrop === handleLocationSearch) {
+        delete window.__testPinDrop;
+      }
+    };
+    // We intentionally update the global whenever the closure changes so
+    // tests always invoke the latest handler.
+  });
 
   if (mode === 'designation') {
     return (
@@ -350,13 +411,15 @@ export default function TrackerApp() {
     loading,
     dataError,
     logs,
-    onNarrativePipelineEvent: handleNarrativePipelineEvent,
   };
 
   const panelStrip = (
     <div
       className="shrink-0 flex gap-3 p-3"
-      style={{ height: '30vh', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(5,6,8,0.6)' }}
+      style={{
+        height: `${bottomPanelHeight}px`,
+        background: 'rgba(5,6,8,0.6)',
+      }}
     >
       <Panels {...panelProps} />
     </div>
@@ -365,7 +428,10 @@ export default function TrackerApp() {
   const panelColumn = (
     <div
       className="flex flex-col gap-3 p-3 overflow-y-auto"
-      style={{ width: '50%', borderLeft: '1px solid rgba(255,255,255,0.06)', background: 'rgba(5,6,8,0.6)' }}
+      style={{
+        width: `${splitPanelWidth}px`,
+        background: 'rgba(5,6,8,0.6)',
+      }}
     >
       <Panels {...panelProps} />
     </div>
@@ -403,6 +469,14 @@ export default function TrackerApp() {
                 onClearPins={clearSimulationPins}
               />
             </div>
+            <ResizeHandle
+              orientation="horizontal"
+              size={bottomPanelHeight}
+              onSize={setBottomPanelHeight}
+              min={MIN_PANEL_HEIGHT}
+              max={maxBottomHeight}
+              defaultSize={defaultBottomHeight}
+            />
             {panelStrip}
           </div>
         ) : (
@@ -422,6 +496,14 @@ export default function TrackerApp() {
                 onClearPins={clearSimulationPins}
               />
             </div>
+            <ResizeHandle
+              orientation="vertical"
+              size={splitPanelWidth}
+              onSize={setSplitPanelWidth}
+              min={MIN_PANEL_WIDTH}
+              max={maxSplitWidth}
+              defaultSize={defaultSplitWidth}
+            />
             {panelColumn}
           </div>
         )}

@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import RippleField from './RippleField';
 import ParticleDrift from './ParticleDrift';
 import SimLabControls from './SimLabControls';
+import MapView from './MapView';
 
 /*
  * Judge Notes: Top 10 Complexity Hotspots
@@ -20,19 +19,13 @@ import SimLabControls from './SimLabControls';
  */
 
 const STREETS_GL_BASE = 'https://streets-gl.pages.dev';
-const STREETS_GL_ENABLED = (() => {
-  const envEnabled = import.meta.env.VITE_ENABLE_STREETS_GL === 'true';
-  if (!envEnabled) return false;
-  if (typeof window === 'undefined') return false;
-  const params = new URLSearchParams(window.location.search);
-  return params.get('streets3d') === '1';
-})();
 const DEFAULT_PITCH = 50;
 const DEFAULT_YAW = 330;
 const DEFAULT_DISTANCE = 1800;
 const IFRAME_LOAD_TIMEOUT_MS = 12000;
 const IFRAME_MAX_RETRIES = 2;
 const SHOW_SIM_LAB_UI = false;
+const MAP_RENDERER_STORAGE_KEY = 'fds:mapRendererMode';
 
 const EXAMPLE_LOCATIONS = [
   { label: 'San Jose, CA',        lat: 37.339,  lng: -121.894 },
@@ -60,28 +53,121 @@ function shortName(displayName) {
   return displayName.split(',').slice(0, 3).join(',').trim();
 }
 
+function isProbablySafari() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return /Safari/i.test(ua) && !/Chrome|CriOS|Edg|OPR|Firefox/i.test(ua);
+}
+
+function hasWebGL2Support() {
+  // Streets GL requires WebGL2. Falling back to WebGL1 detection led the
+  // app to hand the iframe to engines that immediately threw
+  // INVALID_ENUM/INVALID_FRAMEBUFFER_OPERATION errors. Test WebGL2 directly,
+  // and additionally probe for a working framebuffer to catch GPUs that
+  // expose WebGL2 but fail on multisample renderbuffers.
+  if (typeof document === 'undefined') return true;
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2', { antialias: true, powerPreference: 'high-performance' });
+    if (!gl) return false;
+
+    // Quick framebuffer-completeness probe — many of the production console
+    // errors trace back to this check failing inside Streets GL.
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 4, 4, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    gl.deleteTexture(tex);
+    gl.deleteFramebuffer(fb);
+
+    return status === gl.FRAMEBUFFER_COMPLETE;
+  } catch {
+    return false;
+  }
+}
+
+function persistRendererMode(nextMode) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(MAP_RENDERER_STORAGE_KEY, nextMode);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function getInitialRendererMode() {
+  if (typeof window === 'undefined') return 'webgl';
+
+  const params = new URLSearchParams(window.location.search);
+  const forced = params.get('map');
+  if (forced === '2d' || forced === 'webgl') {
+    persistRendererMode(forced);
+    return forced;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(MAP_RENDERER_STORAGE_KEY);
+    if (stored === '2d' || stored === 'webgl') {
+      return stored;
+    }
+  } catch {
+    // Ignore storage failures.
+  }
+
+  // Safari + weaker GPU stacks are common sources of unstable WebGL framebuffers.
+  if (!hasWebGL2Support() || isProbablySafari()) {
+    return '2d';
+  }
+
+  return 'webgl';
+}
+
+async function fetchJson(url) {
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function geocodeByCensus(query, limit = 6) {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const url = `/api/census-geocoder/geocoder/locations/onelineaddress?address=${encodeURIComponent(trimmed)}&benchmark=Public_AR_Current&format=json`;
+  const json = await fetchJson(url);
+  const matches = json?.result?.addressMatches || [];
+
+  return matches
+    .slice(0, limit)
+    .map((item) => ({
+      short: shortName(item.matchedAddress || ''),
+      full: item.matchedAddress || '',
+      lat: Number(item?.coordinates?.y),
+      lng: Number(item?.coordinates?.x),
+      type: 'address',
+      cls: 'place',
+    }))
+    .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng));
+}
+
 async function fetchSuggestions(query) {
-  const url = `/api/nominatim/search?q=${encodeURIComponent(query)}&format=json&limit=6&countrycodes=us`;
-  const res = await fetch(url, { headers: { 'Accept-Language': 'en-US,en' } });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return (data || []).map((item) => ({
-    short: shortName(item.display_name),
-    full: item.display_name,
-    lat: parseFloat(item.lat),
-    lng: parseFloat(item.lon),
-    type: item.type,
-    cls: item.class,
-  }));
+  try {
+    return await geocodeByCensus(query, 6);
+  } catch {
+    return [];
+  }
 }
 
 async function geocodeAddress(query) {
-  const url = `/api/nominatim/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=us`;
-  const res = await fetch(url, { headers: { 'Accept-Language': 'en-US,en' } });
-  if (!res.ok) throw new Error('Geocoding service error');
-  const data = await res.json();
-  if (!data?.length) throw new Error('Location not found — try a city name or ZIP code');
-  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  const matches = await geocodeByCensus(query, 1);
+  if (!matches.length) {
+    throw new Error('Location not found — try a US city, address, or ZIP code');
+  }
+  return { lat: matches[0].lat, lng: matches[0].lng };
 }
 
 function SuggestionIcon({ cls }) {
@@ -124,6 +210,7 @@ export default function StreetsGlView({
   const [iframeSrc, setIframeSrc]       = useState(() => buildSrc(lat, lng));
   const [mapError, setMapError]         = useState('');
   const [iframeRetry, setIframeRetry]   = useState(0);
+  const [rendererMode, setRendererMode] = useState(() => getInitialRendererMode());
   const inputRef    = useRef(null);
   const iframeRef   = useRef(null);
   const debounceRef = useRef(null);
@@ -131,9 +218,7 @@ export default function StreetsGlView({
   const lastMoveRef = useRef('');
   const iframeReadyRef = useRef(false);
   const iframeWatchdogRef = useRef(null);
-  const mapRootRef = useRef(null);
-  const mapInstanceRef = useRef(null);
-  const centerMarkerRef = useRef(null);
+  const useFallbackMap = rendererMode === '2d';
 
   const clearIframeWatchdog = useCallback(() => {
     if (iframeWatchdogRef.current) {
@@ -167,16 +252,24 @@ export default function StreetsGlView({
     setIframeSrc((prev) => withRetryParam(prev, nextRetry));
   }
 
-  const teleportMap = useCallback((nextLat, nextLng) => {
-    if (!STREETS_GL_ENABLED) {
-      const map = mapInstanceRef.current;
-      if (map) {
-        map.setView([nextLat, nextLng], Math.max(map.getZoom(), hasData ? 12 : 9), { animate: true });
-      }
-      const marker = centerMarkerRef.current;
-      if (marker) marker.setLatLng([nextLat, nextLng]);
+  function updateRendererMode(nextMode) {
+    setRendererMode(nextMode);
+    persistRendererMode(nextMode);
+
+    if (nextMode === '2d') {
+      clearIframeWatchdog();
+      iframeReadyRef.current = false;
+      setMapError('2D compatibility map enabled.');
       return;
     }
+
+    setMapError('');
+    setIframeRetry(0);
+    setIframeSrc(buildSrc(lat, lng));
+  }
+
+  const teleportMap = useCallback((nextLat, nextLng) => {
+    if (useFallbackMap) return;
 
     const moveKey = `${nextLat.toFixed(5)},${nextLng.toFixed(5)}`;
     if (lastMoveRef.current === moveKey) return;
@@ -201,67 +294,21 @@ export default function StreetsGlView({
       setIframeRetry(0);
       setIframeSrc((prev) => (prev === nextSrc ? prev : nextSrc));
     }
-  }, [hasData]);
+  }, [useFallbackMap]);
 
   useEffect(() => {
     teleportMap(lat, lng);
   }, [lat, lng, teleportMap]);
 
   useEffect(() => {
-    if (!STREETS_GL_ENABLED) return undefined;
+    if (useFallbackMap) {
+      clearIframeWatchdog();
+      return undefined;
+    }
+
     scheduleIframeWatchdog(iframeRetry);
     return () => clearIframeWatchdog();
-  }, [iframeSrc, iframeRetry, scheduleIframeWatchdog, clearIframeWatchdog]);
-
-  useEffect(() => {
-    if (STREETS_GL_ENABLED || mapInstanceRef.current || !mapRootRef.current) return undefined;
-
-    const map = L.map(mapRootRef.current, {
-      center: [lat, lng],
-      zoom: hasData ? 12 : 9,
-      minZoom: 3,
-      maxZoom: 18,
-      zoomControl: true,
-      attributionControl: true,
-    });
-
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap &copy; CARTO',
-      subdomains: 'abcd',
-      maxZoom: 19,
-    }).addTo(map);
-
-    const marker = L.circleMarker([lat, lng], {
-      radius: 8,
-      color: '#00ff99',
-      fillColor: '#22d3ee',
-      fillOpacity: 0.9,
-      weight: 2,
-      opacity: 0.95,
-    }).addTo(map);
-
-    mapInstanceRef.current = map;
-    centerMarkerRef.current = marker;
-
-    return () => {
-      map.remove();
-      mapInstanceRef.current = null;
-      centerMarkerRef.current = null;
-    };
-  }, [hasData, lat, lng]);
-
-  useEffect(() => {
-    if (STREETS_GL_ENABLED) return;
-
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    const targetZoom = hasData ? Math.max(map.getZoom(), 12) : Math.max(map.getZoom(), 9);
-    map.setView([lat, lng], targetZoom, { animate: true });
-
-    const marker = centerMarkerRef.current;
-    if (marker) marker.setLatLng([lat, lng]);
-  }, [hasData, lat, lng]);
+  }, [iframeSrc, iframeRetry, scheduleIframeWatchdog, clearIframeWatchdog, useFallbackMap]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -273,6 +320,51 @@ export default function StreetsGlView({
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, []);
+
+  // Auto-fallback to the 2D map when Streets GL's iframe is hammered with
+  // WebGL framebuffer / tile-404 errors. We can't observe the cross-origin
+  // iframe directly, but tile errors and unhandled rejections that originate
+  // from it bubble up to the parent's window.onerror.
+  useEffect(() => {
+    if (useFallbackMap) return undefined;
+
+    let webglErrorCount = 0;
+    let tileErrorCount = 0;
+    let switched = false;
+
+    function maybeSwitch(reason) {
+      if (switched) return;
+      switched = true;
+      setMapError(`3D map disabled: ${reason}. Switched to 2D fallback.`);
+      updateRendererMode('2d');
+    }
+
+    function onErr(e) {
+      const msg = String(e?.message || e?.reason?.message || '');
+      if (/INVALID_FRAMEBUFFER_OPERATION|INVALID_ENUM|glFramebufferTexture2D/i.test(msg)) {
+        webglErrorCount += 1;
+        if (webglErrorCount >= 4) maybeSwitch('repeated WebGL framebuffer errors');
+      } else if (/Failed to fetch tile|tile:\s*404/i.test(msg)) {
+        tileErrorCount += 1;
+        if (tileErrorCount >= 6) maybeSwitch('tile server unavailable');
+      }
+    }
+
+    window.addEventListener('error', onErr);
+    window.addEventListener('unhandledrejection', onErr);
+    return () => {
+      window.removeEventListener('error', onErr);
+      window.removeEventListener('unhandledrejection', onErr);
+    };
+    // updateRendererMode is intentionally captured by closure — we only
+    // need this watcher to reset when the renderer mode changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useFallbackMap]);
+
+  // Clean up the watchdog when the component unmounts.
+  useEffect(() => {
+    return () => clearIframeWatchdog();
+  }, [clearIframeWatchdog]);
 
   function handleInputChange(value) {
     setQuery(value);
@@ -287,9 +379,14 @@ export default function StreetsGlView({
     }
 
     debounceRef.current = setTimeout(async () => {
-      const results = await fetchSuggestions(value.trim());
-      setSuggestions(results);
-      setShowDrop(results.length > 0);
+      try {
+        const results = await fetchSuggestions(value.trim());
+        setSuggestions(results);
+        setShowDrop(results.length > 0);
+      } catch {
+        setSuggestions([]);
+        setShowDrop(false);
+      }
     }, 280);
   }
 
@@ -366,47 +463,72 @@ export default function StreetsGlView({
 
   return (
     <div className="relative w-full h-full overflow-hidden map-scanlines" style={{ background: '#050608' }}>
-      {STREETS_GL_ENABLED ? (
-        /* Streets GL 3D iframe — shifted up to clip its native toolbar (~56px) */
-        <iframe
-          ref={iframeRef}
-          src={iframeSrc}
-          onLoad={() => {
-            iframeReadyRef.current = true;
-            clearIframeWatchdog();
-            setMapError('');
-          }}
-          onError={() => {
-            iframeReadyRef.current = false;
-            clearIframeWatchdog();
-
-            if (iframeRetry < IFRAME_MAX_RETRIES) {
-              const nextRetry = iframeRetry + 1;
-              setIframeRetry(nextRetry);
-              setMapError('Streets GL failed to load, retrying…');
-              setIframeSrc((prev) => withRetryParam(prev, nextRetry));
-            } else {
-              setMapError('Streets GL failed to load. Tap retry.');
-            }
-          }}
-          className="absolute border-0"
-          title="3D Street Map"
-          loading="eager"
-          allow="fullscreen"
-          style={{
-            zIndex: 1,
-            top: '-56px',
-            left: 0,
-            width: '100%',
-            height: 'calc(100% + 56px)',
-          }}
-        />
+      {/* Streets GL 3D iframe — shifted up to clip its native toolbar (~56px) */}
+      {useFallbackMap ? (
+        <div className="absolute inset-0" style={{ zIndex: 1 }}>
+          <MapView
+            center={{ lat, lng }}
+            pinPosition={hasData ? { lat, lng } : null}
+            isLoading={isLoading}
+            onPinDrop={(nextLat, nextLng) => {
+              setSearchError('');
+              onSearch(nextLat, nextLng);
+            }}
+            showInstruction={!hasData}
+          />
+        </div>
       ) : (
-        <div
-          ref={mapRootRef}
-          className="absolute inset-0"
-          style={{ zIndex: 1 }}
-        />
+        <>
+          <iframe
+            ref={iframeRef}
+            key={`streets-gl-${iframeRetry}`}
+            src={iframeSrc}
+            onLoad={() => {
+              iframeReadyRef.current = true;
+              clearIframeWatchdog();
+              setMapError('');
+            }}
+            onError={() => {
+              iframeReadyRef.current = false;
+              clearIframeWatchdog();
+
+              if (iframeRetry < IFRAME_MAX_RETRIES) {
+                const nextRetry = iframeRetry + 1;
+                setIframeRetry(nextRetry);
+                setMapError('Streets GL failed to load, retrying…');
+                setIframeSrc((prev) => withRetryParam(prev, nextRetry));
+              } else {
+                setMapError('Streets GL failed to load. Tap retry or switch to 2D map.');
+              }
+            }}
+            className="absolute border-0"
+            title="3D Street Map"
+            loading="eager"
+            allow="fullscreen"
+            referrerPolicy="no-referrer-when-downgrade"
+            style={{
+              zIndex: 1,
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+            }}
+          />
+          {/* Mask overlay that hides Streets GL's native top toolbar instead of
+              shifting the iframe upwards (which broke the bottom 56px of the map). */}
+          <div
+            aria-hidden
+            className="absolute pointer-events-none"
+            style={{
+              zIndex: 2,
+              top: 0,
+              left: 0,
+              right: 0,
+              height: '56px',
+              background: 'linear-gradient(180deg, #050608 0%, rgba(5,6,8,0.92) 70%, rgba(5,6,8,0) 100%)',
+            }}
+          />
+        </>
       )}
 
       {/* Decorative overlays */}
@@ -517,6 +639,21 @@ export default function StreetsGlView({
           >
             Fresh Data
           </button>
+
+          <button
+            type="button"
+            onClick={() => updateRendererMode(useFallbackMap ? 'webgl' : '2d')}
+            className="shrink-0 px-3.5 py-2.5 rounded-full text-xs font-semibold transition-all"
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.16)',
+              color: 'rgba(255,255,255,0.78)',
+              backdropFilter: 'blur(20px)',
+            }}
+            title={useFallbackMap ? 'Switch back to 3D Streets GL' : 'Switch to 2D compatibility map'}
+          >
+            {useFallbackMap ? 'Try 3D' : '2D Map'}
+          </button>
         </form>
 
         {/* Suggestions dropdown */}
@@ -576,20 +713,7 @@ export default function StreetsGlView({
           </div>
         )}
 
-        {!STREETS_GL_ENABLED && (
-          <div
-            className="mt-2 px-4 py-2 rounded-xl text-sm animate-fade-slide-up"
-            style={{
-              background: 'rgba(34,211,238,0.10)',
-              border: '1px solid rgba(34,211,238,0.28)',
-              color: 'rgba(186,230,253,0.9)',
-            }}
-          >
-            Stable map mode active (2D fallback).
-          </div>
-        )}
-
-        {STREETS_GL_ENABLED && mapError && (
+        {mapError && (
           <div
             className="mt-2 px-4 py-2 rounded-xl text-sm animate-fade-slide-up flex items-center justify-between gap-3"
             style={{
@@ -599,18 +723,34 @@ export default function StreetsGlView({
             }}
           >
             <span className="leading-tight">{mapError}</span>
-            <button
-              type="button"
-              onClick={retryIframeNow}
-              className="px-2 py-1 rounded text-[11px] font-semibold"
-              style={{
-                border: '1px solid rgba(186,230,253,0.45)',
-                background: 'rgba(186,230,253,0.1)',
-                color: 'rgba(224,242,254,0.95)',
-              }}
-            >
-              Retry
-            </button>
+            <div className="flex items-center gap-2">
+              {!useFallbackMap && (
+                <button
+                  type="button"
+                  onClick={retryIframeNow}
+                  className="px-2 py-1 rounded text-[11px] font-semibold"
+                  style={{
+                    border: '1px solid rgba(186,230,253,0.45)',
+                    background: 'rgba(186,230,253,0.1)',
+                    color: 'rgba(224,242,254,0.95)',
+                  }}
+                >
+                  Retry
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => updateRendererMode(useFallbackMap ? 'webgl' : '2d')}
+                className="px-2 py-1 rounded text-[11px] font-semibold"
+                style={{
+                  border: '1px solid rgba(186,230,253,0.45)',
+                  background: 'rgba(186,230,253,0.1)',
+                  color: 'rgba(224,242,254,0.95)',
+                }}
+              >
+                {useFallbackMap ? 'Try 3D' : 'Use 2D'}
+              </button>
+            </div>
           </div>
         )}
       </div>

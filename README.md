@@ -1,94 +1,94 @@
 # Food Desert Simulator
 
-Food Desert Simulator is an interactive community analysis tool that helps people understand food access barriers and evaluate practical interventions.
+Food Desert Simulator is an explainability-first React app for exploring US food access conditions, classifying designation status, and modeling intervention impact.
 
-## Why This Project Exists
+## Purpose
 
-Many communities face complex food-access problems that are hard to see with a single metric. This project brings key public datasets together and turns them into a transparent, explainable view of local conditions.
+This project combines USDA, CDC, Census, and OSM-derived signals to help users answer three questions:
 
-## Project Goals
+1. What is the current food access designation in this community?
+2. Why did the system make that designation?
+3. What changes are likely if we apply an intervention scenario?
 
-1. Make food-access risk understandable for non-technical audiences.
-2. Show clearly how classification decisions are made.
-3. Provide practical impact estimates for intervention planning.
-4. Keep data provenance visible so people can trust and challenge results.
-5. Support scenario thinking, not just static reporting.
+## Current Feature Set
 
-## Core Features
+1. Location-driven tract analysis with merged public datasets.
+2. Transparent designation output with evidence trace and confidence context.
+3. Community-average supermarket distance model with center-point reference value.
+4. Impact projections for access, health directionality, local economics, and trip true-cost.
+5. Scenario save/compare and threshold sensitivity workflows.
+6. Nationwide US designation map mode with zoom-aware in-view summaries.
+7. Landing experience with animated intro and educational content.
 
-### 1) Location-based Community Analysis
+## Quick Start (Any IDE)
 
-Pick a US location and the app resolves tract context, demographics, health metrics, and food-access indicators.
+This repository is IDE-agnostic and runs from terminal commands only.
 
-### 2) Transparent Food Access Classification
+### Prerequisites
 
-The app reports a final designation and also shows the evidence behind it, including source agreement/disagreement and rule trace details.
+1. Node.js 20+ (recommended) and npm.
+2. Network access for public API/data providers.
 
-### 3) Community-Average Distance Modeling
+### Setup
 
-Instead of relying on a single point distance, the app estimates a sampled community-average grocery distance and keeps center-point nearest distance as a reference.
+1. Install dependencies:
+	- `npm install`
+2. Provide environment values in `.env`:
+	- `VITE_CENSUS_KEY`
+	- `VITE_ANTHROPIC_KEY`
 
-### 4) Health and Economic Impact Projection
+The template file `.env.example` is included.
 
-The projection engine estimates:
+### Run Local Dev Server
 
-1. Residents gaining access.
-2. Diabetes/obesity directional impact.
-3. Local economic impact and job range.
-4. Per-trip true-cost before/after changes.
+- `npm run dev -- --host 127.0.0.1 --port 5173`
 
-### 5) Scenario and Sensitivity Tools
+### Build/Lint/Test
 
-Users can preview threshold sensitivity, compare baseline vs current scenarios, and inspect how assumptions change outcomes.
+1. Lint: `npm run lint`
+2. Unit tests: `npm test`
+3. Production build: `npm run build`
+4. Local preview of built app: `npm run preview`
 
-### 6) Explainability-First Interface
+## IDE Migration Notes
 
-The product includes:
+Use this checklist when switching from VS Code to another IDE (Cursor, WebStorm, Zed, etc.).
 
-1. Source confidence badges.
-2. Evaluation trace drawer.
-3. Policy diagnostics logs.
-4. Clear Unknown states when data is missing.
+1. Open the repository root (`food-desert-simulator`) as the project root.
+2. Confirm Node interpreter points to Node 20+.
+3. Ensure `.env` is loaded for run configurations.
+4. Set run command to `npm run dev -- --host 127.0.0.1 --port 5173`.
+5. Set validation commands to `npm run lint`, `npm test`, and `npm run build`.
+6. If your IDE has import alias settings, keep `@` mapped to `src` to match Vite config.
 
-### 7) Nutritional Health Education Tab
+## Project Structure (High Level)
 
-The landing page includes a Nutritional Health feature with tabbed content that explains:
-
-1. The benefits of proper nutrition, including stronger immunity, better cognitive performance, and reduced chronic disease risk.
-2. The harsh effects of malnutrition, including developmental harm, higher hospitalization burden, and long-term economic stress.
-
-## Intended Audience
-
-1. Community advocates and organizers.
-2. Public health and planning teams.
-3. Students and civic-tech participants.
-4. Nonprofit and policy stakeholders.
+1. App shell and tracker routing:
+	- `src/App.jsx`
+	- `src/TrackerApp.jsx`
+2. Data pipeline:
+	- `src/pipeline/*.js`
+3. Simulation and classification engines:
+	- `src/engine/*.js`
+4. Main UI surfaces:
+	- `src/components/*.jsx`
+	- `src/ui/landing/LandingPage.tsx`
+5. Unit tests:
+	- `tests/*.test.js`
 
 ## Data Sources
 
 1. USDA Food Access Research Atlas
 2. CDC PLACES
 3. US Census ACS
-4. OpenStreetMap via Overpass
+4. OpenStreetMap / Overpass
 
-## Important Notes
+## Caveats
 
-1. Distance values are model estimates, not guaranteed road-network travel distances.
-2. Data coverage quality can vary by geography.
-3. Unknown outcomes are intentional when required evidence is unavailable.
+1. Distance metrics are model estimates (not guaranteed road-network travel distance/time).
+2. Upstream coverage and quality vary by geography.
+3. Unknown outputs are intentional when required evidence is missing.
 
-## Local Development
+## Technical Handoff
 
-Install dependencies and run:
-
-1. npm install
-2. npm run dev
-
-Validation:
-
-1. npm test -- --runInBand
-2. npm run build
-
-## Vision
-
-The long-term vision is a community planning companion that is both analytically rigorous and understandable by everyday users, so local action can be based on evidence rather than guesswork.
+For implementation-level transfer details, see `PROJECT_HANDOFF.md`.

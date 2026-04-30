@@ -4,6 +4,16 @@
 
 :root {
   color-scheme: dark;
+
+  /* Theme color tokens used as `var(--xxx)` throughout the app.
+     Previously undefined — every reference silently fell through to
+     `currentColor` / browser defaults, breaking the mission-control palette. */
+  --void: #050608;
+  --neon: #00ff99;
+  --cyan: #22d3ee;
+  --orange: #f97316;
+  --warning: #facc15;
+  --danger: #ef4444;
 }
 
 html,
@@ -170,4 +180,93 @@ body {
     rgba(0, 0, 0, 0.03) 4px
   );
   z-index: 50;
+}
+
+/* Localized scanlines used by the map surface (StreetsGlView). */
+.map-scanlines::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(255, 255, 255, 0.012) 3px,
+    rgba(255, 255, 255, 0.012) 6px
+  );
+  z-index: 6;
+  mix-blend-mode: overlay;
+}
+
+/* Loading skeleton shimmer used by AICard / CommunityStatsPanel. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    transparent 100%
+  );
+  animation: skeleton-shimmer 1.6s linear infinite;
+}
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Fade + slide-up entrance, used heavily for panels / suggestions / overlays. */
+.animate-fade-slide-up {
+  animation: fade-slide-up 220ms ease-out;
+}
+@keyframes fade-slide-up {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Pulsing neon dot used on the loading indicator + active status pings. */
+@keyframes pulseNeon {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.4);
+  }
+}
+
+/* Custom scrollbar so dark panels don't show bright OS scrollbars. */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
 }

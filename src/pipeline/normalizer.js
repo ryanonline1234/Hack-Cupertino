@@ -125,7 +125,7 @@ export async function buildCommunityData(lat, lng, options = {}) {
     nearestSupermarketMiles: communityAverageSupermarketMiles,
     isTwentyFivePlusMiles: storeDistanceData?.isTwentyFivePlusMiles,
     usdaLilaFlag: usdaData.usdaLilaFlag,
-    unavailableMode: 'usda_fallback',
+    unavailableMode: 'unknown',
   });
 
   const modelFoodDesertAssumption = designation.isFoodDesert == null

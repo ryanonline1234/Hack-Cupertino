@@ -1,17 +1,32 @@
+async function fetchJsonWithFallback(requests) {
+  let lastError = null;
+
+  for (const req of requests) {
+    try {
+      const res = await fetch(req.url, req.options || {});
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      return await res.json();
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('All provider requests failed');
+}
+
 export async function coordsToGeo(lat, lng) {
   try {
-    const [censusRes, nominatimRes] = await Promise.all([
-      fetch(
-        `/api/census-geocoder/geocoder/geographies/coordinates?x=${lng}&y=${lat}&benchmark=Public_AR_Current&vintage=Current_Current&layers=all&format=json`
-      ),
-      fetch(
-        `/api/nominatim/reverse?lat=${lat}&lon=${lng}&format=json`
-      ),
+    const censusJson = await fetchJsonWithFallback([
+      {
+        url: `/api/census-geocoder/geocoder/geographies/coordinates?x=${lng}&y=${lat}&benchmark=Public_AR_Current&vintage=Current_Current&layers=all&format=json`,
+      },
+      {
+        url: `https://geocoding.geo.census.gov/geocoder/geographies/coordinates?x=${lng}&y=${lat}&benchmark=Public_AR_Current&vintage=Current_Current&layers=all&format=json`,
+      },
     ]);
 
-    if (!censusRes.ok) return null;
-
-    const censusJson = await censusRes.json();
     const geo = censusJson?.result?.geographies;
 
     if (!geo?.['Census Tracts']?.[0]) return null;
@@ -26,9 +41,20 @@ export async function coordsToGeo(lat, lng) {
     const stateAbbr = state?.STUSAB ?? '';
 
     let zip = '';
-    if (nominatimRes.ok) {
-      const nomData = await nominatimRes.json();
+    try {
+      const nomData = await fetchJsonWithFallback([
+        {
+          url: `/api/nominatim/reverse?lat=${lat}&lon=${lng}&format=jsonv2`,
+          options: { headers: { 'Accept-Language': 'en-US,en' } },
+        },
+        {
+          url: `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=jsonv2`,
+          options: { headers: { 'Accept-Language': 'en-US,en' } },
+        },
+      ]);
       zip = nomData?.address?.postcode ?? '';
+    } catch {
+      zip = '';
     }
 
     return { fips, countyFips, stateFips, stateAbbr, zip };

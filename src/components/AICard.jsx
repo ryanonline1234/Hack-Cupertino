@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 /*
  * Judge Notes: Top 10 Complexity Hotspots
@@ -91,18 +91,26 @@ function wait(ms) {
 async function fetchNarrative(prompt, apiKey, signal) {
   let lastError = null;
 
+  // In production we route through our own /api/llmapi serverless function,
+  // which uses a server-only LLMAPI_KEY and avoids both CORS and the
+  // accidental shipping of the API key in the browser bundle.
+  // In dev we route through the vite proxy at /api/llmapi/v1/chat/completions
+  // (the dev proxy still requires the bearer token).
+  const isDev = import.meta.env.DEV;
+  const url = isDev
+    ? '/api/llmapi/v1/chat/completions'
+    : '/api/llmapi';
+
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const url = import.meta.env.DEV
-        ? '/api/llmapi/v1/chat/completions'
-        : 'https://api.llmapi.ai/v1/chat/completions';
+      const headers = { 'Content-Type': 'application/json' };
+      if (isDev && apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
       const res = await fetch(url, {
         method: 'POST',
         signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
+        headers,
         body: JSON.stringify({
           model: 'claude-3-5-haiku',
           max_tokens: 600,
@@ -157,18 +165,12 @@ function toMoney(value) {
   return Number(value).toLocaleString();
 }
 
-export default function AICard({ communityData, impactData, onPipelineEvent }) {
+export default function AICard({ communityData, impactData }) {
   const [narrative, setNarrative] = useState('');
   const [status, setStatus] = useState('idle');
   const [cacheMeta, setCacheMeta] = useState(null);
   const [fetchNonce, setFetchNonce] = useState(0);
   const [refreshFips, setRefreshFips] = useState('');
-
-  const emitPipelineEvent = useCallback((text, type = 'info') => {
-    if (typeof onPipelineEvent === 'function') {
-      onPipelineEvent(text, type);
-    }
-  }, [onPipelineEvent]);
 
   const fips = communityData?.meta?.fips;
   const summarySeed = communityData?.meta?.retrievedAt || '';
@@ -219,23 +221,21 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
       }
 
       const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
-      if (!apiKey) {
-        emitPipelineEvent('Narrative stage unavailable: VITE_ANTHROPIC_KEY missing.', 'warning');
+      // In dev we still require the bearer token client-side to hit
+      // /api/llmapi/v1/chat/completions via the vite proxy.
+      // In production the server-side /api/llmapi serverless function reads
+      // LLMAPI_KEY from env, so a missing client-side key is fine.
+      if (import.meta.env.DEV && !apiKey) {
         setStatus('error');
         setNarrative('');
         setCacheMeta(null);
         return;
       }
 
-      emitPipelineEvent('Narrative stage: checking memory/local cache…', 'info');
       const cached = getCachedNarrativeEntry(fips);
       const forceRefresh = refreshFips === fips && fetchNonce > 0;
 
       if (cached && !forceRefresh) {
-        emitPipelineEvent(
-          `Narrative cache hit: ${cached.source} (${formatRelativeMinutes(cached.ts)})`,
-          'success',
-        );
         setNarrative(cached.text);
         setCacheMeta({ source: cached.source, ts: cached.ts });
         setStatus('ready');
@@ -243,7 +243,6 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
       }
 
       if (!cached && !forceRefresh) {
-        emitPipelineEvent('Narrative cache miss: waiting for manual Generate action.', 'info');
         setNarrative('');
         setCacheMeta(null);
         setStatus('idle');
@@ -251,15 +250,10 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
       }
 
       try {
-        if (forceRefresh) {
-          emitPipelineEvent('Narrative refresh requested: bypassing cached narrative.', 'info');
-        }
         setStatus('loading');
 
         let request = inFlightByFips.get(fips);
-        const isReusedRequest = Boolean(request);
         if (!request) {
-          emitPipelineEvent('Narrative cache miss: requesting fresh model response…', 'info');
           request = fetchNarrative(prompt, apiKey, controller.signal)
             .then((text) => {
               memoryCache.set(fips, { text, ts: Date.now() });
@@ -268,8 +262,6 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
             })
             .finally(() => { inFlightByFips.delete(fips); });
           inFlightByFips.set(fips, request);
-        } else {
-          emitPipelineEvent('Narrative request deduplicated: joined in-flight generation.', 'info');
         }
 
         const text = await request;
@@ -277,17 +269,10 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
         setNarrative(text);
         setCacheMeta({ source: 'fresh', ts: Date.now() });
         setStatus('ready');
-        emitPipelineEvent(
-          isReusedRequest
-            ? 'Narrative generation complete: received shared in-flight result.'
-            : 'Narrative generation complete: cached to memory and local storage.',
-          'success',
-        );
       } catch (err) {
         if (err?.name === 'AbortError') return;
         console.error(err);
         if (cancelled) return;
-        emitPipelineEvent(`Narrative stage error: ${err?.message || 'generation failed'}`, 'error');
         setStatus('error');
         setNarrative('');
       }
@@ -298,7 +283,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
       cancelled = true;
       controller.abort();
     };
-  }, [emitPipelineEvent, fips, fetchNonce, prompt, refreshFips]);
+  }, [fips, fetchNonce, prompt, refreshFips]);
 
   const executiveSummary = useMemo(() => {
     if (!summarySeed) return [];
@@ -328,7 +313,10 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
     .filter(Boolean)
     .slice(0, 2);
 
-  const canGenerate = Boolean(communityData && prompt && import.meta.env.VITE_ANTHROPIC_KEY);
+  // In production the key lives on the server and the client never sees it.
+  const canGenerate = Boolean(
+    communityData && prompt && (!import.meta.env.DEV || import.meta.env.VITE_ANTHROPIC_KEY)
+  );
   const hasNarrative = paragraphs.length > 0;
   const cacheLabel = cacheMeta
     ? `${cacheMeta.source === 'fresh' ? 'Generated' : `Cache: ${cacheMeta.source}`} · ${formatRelativeMinutes(cacheMeta.ts)}`
@@ -416,9 +404,9 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
 
         {status === 'idle' && communityData && (
           <p className="text-xs text-white/30 italic">
-            {import.meta.env.VITE_ANTHROPIC_KEY
+            {canGenerate
               ? 'Narrative is on-demand. Click Generate Narrative when you want an update.'
-              : 'Add VITE_ANTHROPIC_KEY to .env to enable AI narrative.'}
+              : 'Add VITE_ANTHROPIC_KEY to .env (or set LLMAPI_KEY on the server) to enable AI narrative.'}
           </p>
         )}
       </div>

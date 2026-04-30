@@ -72,6 +72,14 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/llmapi/, ''),
       },
+      // Overpass needs a server-side proxy because overpass-api.de returns
+      // 406 with no CORS header to browser origins (e.g. *.vercel.app).
+      // Deployed to Vercel via /api/overpass.js; vite proxies in dev.
+      '/api/overpass': {
+        target: 'https://overpass-api.de',
+        changeOrigin: true,
+        rewrite: () => '/api/interpreter',
+      },
     },
   },
 })

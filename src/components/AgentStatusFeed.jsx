@@ -46,7 +46,7 @@ export default function AgentStatusFeed({ logs, loading }) {
             <div
               key={log.id}
               className="flex items-start gap-2 text-[11px] leading-5 animate-fade-slide-left"
-              style={{ animationDelay: `${Math.min(idx * 0.04, 0.3)}s` }}
+              style={{ animationDelay: `${Math.min(idx * 0.04, 0.3)}s`, opacity: 0, animationFillMode: 'forwards' }}
             >
               <span
                 className="shrink-0 text-[10px] font-bold w-7 mt-0.5"
