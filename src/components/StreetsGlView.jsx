@@ -429,57 +429,48 @@ export default function StreetsGlView({
           />
         </div>
       ) : (
-        <>
-          <iframe
-            ref={iframeRef}
-            key={`streets-gl-${iframeRetry}`}
-            src={iframeSrc}
-            onLoad={() => {
-              iframeReadyRef.current = true;
-              clearIframeWatchdog();
-              setMapError('');
-            }}
-            onError={() => {
-              iframeReadyRef.current = false;
-              clearIframeWatchdog();
+        <iframe
+          ref={iframeRef}
+          key={`streets-gl-${iframeRetry}`}
+          src={iframeSrc}
+          onLoad={() => {
+            iframeReadyRef.current = true;
+            clearIframeWatchdog();
+            setMapError('');
+          }}
+          onError={() => {
+            iframeReadyRef.current = false;
+            clearIframeWatchdog();
 
-              if (iframeRetry < IFRAME_MAX_RETRIES) {
-                const nextRetry = iframeRetry + 1;
-                setIframeRetry(nextRetry);
-                setMapError('Streets GL failed to load, retrying…');
-                setIframeSrc((prev) => withRetryParam(prev, nextRetry));
-              } else {
-                setMapError('Streets GL failed to load. Tap retry or switch to 2D map.');
-              }
-            }}
-            className="absolute border-0"
-            title="3D Street Map"
-            loading="eager"
-            allow="fullscreen"
-            referrerPolicy="no-referrer-when-downgrade"
-            style={{
-              zIndex: 1,
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-            }}
-          />
-          {/* Mask overlay that hides Streets GL's native top toolbar instead of
-              shifting the iframe upwards (which broke the bottom 56px of the map). */}
-          <div
-            aria-hidden
-            className="absolute pointer-events-none"
-            style={{
-              zIndex: 2,
-              top: 0,
-              left: 0,
-              right: 0,
-              height: '56px',
-              background: 'linear-gradient(180deg, #050608 0%, rgba(5,6,8,0.92) 70%, rgba(5,6,8,0) 100%)',
-            }}
-          />
-        </>
+            if (iframeRetry < IFRAME_MAX_RETRIES) {
+              const nextRetry = iframeRetry + 1;
+              setIframeRetry(nextRetry);
+              setMapError('Streets GL failed to load, retrying…');
+              setIframeSrc((prev) => withRetryParam(prev, nextRetry));
+            } else {
+              setMapError('Streets GL failed to load. Tap retry or switch to 2D map.');
+            }
+          }}
+          className="absolute border-0"
+          title="3D Street Map"
+          loading="eager"
+          allow="fullscreen"
+          referrerPolicy="no-referrer-when-downgrade"
+          style={{
+            // Shift the iframe up by 56px so Streets GL's native toolbar
+            // (search bar, mode pills, etc.) renders ABOVE the visible
+            // viewport. The container has overflow:hidden, so the toolbar
+            // is clipped out entirely — no peeking through, no double
+            // search bar, no fade-gradient compromise. The visible map
+            // area still fills the container top-to-bottom because the
+            // iframe is also 56px taller (height + 56px).
+            zIndex: 1,
+            top: '-56px',
+            left: 0,
+            width: '100%',
+            height: 'calc(100% + 56px)',
+          }}
+        />
       )}
 
       {/* Decorative overlays */}
