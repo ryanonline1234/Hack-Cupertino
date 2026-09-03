@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import apiDevPlugin from './vite-plugin-api-dev.js'
 
 const srcPath = fileURLToPath(new URL('./src', import.meta.url))
 
@@ -9,6 +10,8 @@ const srcPath = fileURLToPath(new URL('./src', import.meta.url))
 export default defineConfig({
   plugins: [
     react(),
+    // Runs api/*.js in dev so local testing exercises the real handlers.
+    apiDevPlugin(),
     /*
      * Service worker via Workbox. Strategy:
      *   • App shell (HTML/CSS/JS) is precached on install — full offline
@@ -124,24 +127,6 @@ export default defineConfig({
         target: 'https://data.cdc.gov',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/cdc/, ''),
-      },
-      '/api/census': {
-        target: 'https://api.census.gov',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/census/, ''),
-      },
-      '/api/llmapi': {
-        target: 'https://api.llmapi.ai',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/llmapi/, ''),
-      },
-      // Overpass needs a server-side proxy because overpass-api.de returns
-      // 406 with no CORS header to browser origins (e.g. *.vercel.app).
-      // Deployed to Vercel via /api/overpass.js; vite proxies in dev.
-      '/api/overpass': {
-        target: 'https://overpass-api.de',
-        changeOrigin: true,
-        rewrite: () => '/api/interpreter',
       },
     },
   },
