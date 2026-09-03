@@ -1,14 +1,13 @@
 // Production deployments must avoid direct browser→Overpass calls because
 // overpass-api.de returns 406 with no Access-Control-Allow-Origin header for
 // browser origins like vercel.app. We try (in order):
-//   1. Same-origin proxy (`/api/overpass`) — works in dev via vite.config.js
-//      proxy and in production if a serverless function is deployed.
-//   2. overpass.kumi.systems — community endpoint with permissive CORS.
-//   3. overpass.private.coffee — additional mirror with permissive CORS.
-//   4. overpass-api.de — last-ditch direct call (will fail in prod due to CORS,
-//      kept for local/dev environments with relaxed CORS).
-const OVERPASS_ENDPOINTS = [
-  '/api/overpass',
+//   1. Same-origin proxy (`/api/overpass`) — the hardened serverless function.
+//      It takes JSON ({lat, lng, radiusMiles}) and builds the query itself;
+//      it no longer accepts caller-supplied Overpass QL.
+//   2-4. Community mirrors with permissive CORS, called directly with QL as a
+//      fallback when our own function is unavailable.
+const PROXY_ENDPOINT = '/api/overpass';
+const DIRECT_ENDPOINTS = [
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
   'https://overpass-api.de/api/interpreter',
@@ -102,7 +101,12 @@ export function computeCommunityDistanceMetrics(elements, lat, lng) {
   return {
     centerNearestSupermarketMiles,
     communityAverageSupermarketMiles,
-    sampleCount: samplePoints.length,
+    // Report the samples that actually produced a distance, not the number we
+    // started with. Sample points that found no store are filtered out above,
+    // so the old `samplePoints.length` claimed 9 contributing samples even
+    // when only 3 did — a transparency figure the UI shows to the user.
+    sampleCount: distancesByPoint.length,
+    sampleAttemptCount: samplePoints.length,
   };
 }
 
@@ -137,21 +141,57 @@ export function extractStorePoints(elements, centerLat, centerLng, limit = 200) 
 
 function makeResult(metrics, source, stores = []) {
   const nearestMiles = metrics.communityAverageSupermarketMiles;
+
+  /*
+   * This used to read `nearestMiles == null ? true : nearestMiles >= 25`.
+   *
+   * A successful Overpass response that simply contains no supermarkets gives
+   * a null distance, so that expression asserted "at least 25 miles to a
+   * store" — which the evaluator treats as an automatic food-desert
+   * designation regardless of the configured threshold. In other words, a gap
+   * in OpenStreetMap tagging produced a confident designation.
+   *
+   * We now only claim >=25 miles when we measured a distance. "Queried, found
+   * nothing" is reported as its own state so the evaluator can return Unknown
+   * and the UI can say the coverage was thin rather than implying certainty.
+   */
+  const measured = Number.isFinite(nearestMiles);
+
   return {
     // Backward-compatible field name now carries community-average distance.
     nearestSupermarketMiles: nearestMiles,
     communityAverageSupermarketMiles: metrics.communityAverageSupermarketMiles,
     centerNearestSupermarketMiles: metrics.centerNearestSupermarketMiles,
     communityDistanceSampleCount: metrics.sampleCount,
+    communityDistanceSampleAttempts: metrics.sampleAttemptCount,
     distanceModel: 'community_average_sampled',
-    isTwentyFivePlusMiles: nearestMiles == null ? true : nearestMiles >= 25,
+    isTwentyFivePlusMiles: measured ? nearestMiles >= 25 : null,
+    // True when the query succeeded but OSM had no supermarket within the
+    // search radius. Distinct from `source: 'unavailable'`, which means the
+    // query itself failed.
+    noStoresFound: !measured,
+    storeCount: stores.length,
     checkedRadiusMiles: SEARCH_RADIUS_MILES,
     stores,
     source,
   };
 }
 
-async function fetchFromEndpoint(endpoint, query, signal) {
+// Our own proxy validates {lat, lng, radiusMiles} and builds the query
+// server-side; the public mirrors still speak raw Overpass QL.
+async function fetchFromProxy(lat, lng, signal) {
+  const res = await fetch(PROXY_ENDPOINT, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lat, lng, radiusMiles: SEARCH_RADIUS_MILES }),
+  });
+
+  if (!res.ok) throw new Error(`Overpass proxy failed: ${res.status}`);
+  return res.json();
+}
+
+async function fetchFromMirror(endpoint, query, signal) {
   const res = await fetch(endpoint, {
     method: 'POST',
     body: query,
@@ -173,16 +213,23 @@ export async function getNearestSupermarketDistance(lat, lng) {
   if (cached) cache.delete(key);
 
   const query = buildQuery(lat, lng);
+  const attempts = [
+    { label: PROXY_ENDPOINT, run: (signal) => fetchFromProxy(lat, lng, signal) },
+    ...DIRECT_ENDPOINTS.map((endpoint) => ({
+      label: endpoint,
+      run: (signal) => fetchFromMirror(endpoint, query, signal),
+    })),
+  ];
 
-  for (const endpoint of OVERPASS_ENDPOINTS) {
+  for (const attempt of attempts) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const json = await fetchFromEndpoint(endpoint, query, controller.signal);
+      const json = await attempt.run(controller.signal);
       const metrics = computeCommunityDistanceMetrics(json?.elements, lat, lng);
       const stores = extractStorePoints(json?.elements, lat, lng);
-      const result = makeResult(metrics, `osm_overpass:${endpoint}`, stores);
+      const result = makeResult(metrics, `osm_overpass:${attempt.label}`, stores);
       cache.set(key, { result, cachedAt: Date.now() });
       return result;
     } catch {
@@ -192,13 +239,19 @@ export async function getNearestSupermarketDistance(lat, lng) {
     }
   }
 
+  // Every endpoint failed. This is different from a successful query that
+  // found no stores: there, `noStoresFound` is true and the source names the
+  // endpoint. Here we know nothing at all.
   return {
     nearestSupermarketMiles: null,
     communityAverageSupermarketMiles: null,
     centerNearestSupermarketMiles: null,
     communityDistanceSampleCount: 0,
+    communityDistanceSampleAttempts: COMMUNITY_SAMPLE_OFFSETS_MILES.length,
     distanceModel: 'community_average_sampled',
     isTwentyFivePlusMiles: null,
+    noStoresFound: false,
+    storeCount: 0,
     checkedRadiusMiles: SEARCH_RADIUS_MILES,
     stores: [],
     source: 'unavailable',

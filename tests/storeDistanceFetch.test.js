@@ -20,7 +20,11 @@ test('computeCommunityDistanceMetrics returns null metrics when no stores are pr
 
   assert.equal(metrics.centerNearestSupermarketMiles, null);
   assert.equal(metrics.communityAverageSupermarketMiles, null);
-  assert.equal(metrics.sampleCount, 9);
+  // sampleCount is the number of samples that actually produced a distance.
+  // With no stores anywhere, that is zero — it used to report 9, overstating
+  // the evidence behind the figure the UI shows.
+  assert.equal(metrics.sampleCount, 0);
+  assert.equal(metrics.sampleAttemptCount, 9);
 });
 
 test('computeCommunityDistanceMetrics calculates center-nearest and community-average distances', () => {
@@ -38,5 +42,23 @@ test('computeCommunityDistanceMetrics calculates center-nearest and community-av
   assert.equal(metrics.centerNearestSupermarketMiles, 0);
   assert.ok(metrics.communityAverageSupermarketMiles > metrics.centerNearestSupermarketMiles);
   assert.ok(metrics.communityAverageSupermarketMiles < 3);
+  // One store within reach of every sample point: all 9 contribute.
   assert.equal(metrics.sampleCount, 9);
+  assert.equal(metrics.sampleAttemptCount, 9);
+});
+
+test('sampleCount counts only the samples that found a store', () => {
+  // A single store 40 miles north of centre: reachable from every sample
+  // point, so all 9 contribute. Contrast with the empty-elements case above,
+  // where none do. The point of the assertion is that the two differ.
+  const lat = 37.773;
+  const lng = -122.418;
+  const metrics = computeCommunityDistanceMetrics(
+    [{ lat: lat + 0.58, lon: lng }],
+    lat,
+    lng,
+  );
+
+  assert.equal(metrics.sampleCount, 9);
+  assert.ok(metrics.communityAverageSupermarketMiles > 30);
 });
