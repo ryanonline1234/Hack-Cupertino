@@ -69,61 +69,42 @@ function formatRelativeMinutes(ts) {
   return `${hrs}h ago`;
 }
 
-function normalizeTwoParagraphs(text) {
-  const blocks = (text || '')
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  if (blocks.length >= 2) return `${blocks[0]}\n\n${blocks[1]}`;
-
-  const oneBlock = blocks[0] || '';
-  const sentences = oneBlock.match(/[^.!?]+[.!?]+/g) || [oneBlock];
-  if (sentences.length < 2) return oneBlock;
-
-  const pivot = Math.ceil(sentences.length / 2);
-  return `${sentences.slice(0, pivot).join(' ').trim()}\n\n${sentences.slice(pivot).join(' ').trim()}`;
-}
+/*
+ * `normalizeTwoParagraphs` used to live here. It split a single block of prose
+ * at the sentence midpoint whenever the model ignored the "exactly two
+ * paragraphs" instruction — a guess that could cut a paragraph mid-thought.
+ *
+ * The server now requests a two-field structured output, so the shape is
+ * guaranteed by the API rather than repaired here. See api/_llm.js.
+ */
 
 function wait(ms) {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
-async function fetchNarrative(prompt, apiKey, signal) {
+async function fetchNarrative(metrics, signal) {
   let lastError = null;
 
-  // In production we route through our own /api/llmapi serverless function,
-  // which uses a server-only LLMAPI_KEY and avoids both CORS and the
-  // accidental shipping of the API key in the browser bundle.
-  // In dev we route through the vite proxy at /api/llmapi/v1/chat/completions
-  // (the dev proxy still requires the bearer token).
-  const isDev = import.meta.env.DEV;
-  const url = isDev
-    ? '/api/llmapi/v1/chat/completions'
-    : '/api/llmapi';
-
+  /*
+   * One endpoint for both dev and production now.
+   *
+   * This used to branch: in dev it POSTed a full `messages` array straight at
+   * the vite proxy with a client-side bearer token, and in production it hit
+   * our serverless function. That meant dev exercised a different code path
+   * than production, and the endpoint accepted whatever prompt the caller
+   * supplied — an open LLM proxy on our key.
+   *
+   * We now send only the numbers. The prompt is built server-side from a
+   * fixed template (api/_llm.js), and vite runs the same handler in dev via
+   * vite-plugin-api-dev.js, so local testing exercises the real thing.
+   */
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (isDev && apiKey) {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-      }
-      const res = await fetch(url, {
+      const res = await fetch('/api/llmapi', {
         method: 'POST',
         signal,
-        headers,
-        body: JSON.stringify({
-          model: 'claude-3-5-haiku',
-          max_tokens: 600,
-          temperature: 0.45,
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a civic-health narrative writer. Write clear, human language grounded only in provided numbers. Avoid hype, avoid hedging, and never use bullet points.',
-            },
-            { role: 'user', content: prompt },
-          ],
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metrics }),
       });
 
       if (!res.ok) {
@@ -131,14 +112,18 @@ async function fetchNarrative(prompt, apiKey, signal) {
           await wait(400 * (2 ** attempt));
           continue;
         }
-        throw new Error(`LLMApi request failed: ${res.status}`);
+        throw new Error(`Narrative request failed: ${res.status}`);
       }
 
       const json = await res.json();
-      const text = json?.choices?.[0]?.message?.content?.trim();
+      const first = json?.daily_reality?.trim();
+      const second = json?.what_would_change?.trim();
 
-      if (!text) throw new Error('LLMApi returned empty text');
-      return normalizeTwoParagraphs(text);
+      if (!first || !second) throw new Error('Narrative response was empty');
+
+      // Stored as one string so the cache and the paragraph renderer below
+      // stay unchanged; the two fields are always exactly two paragraphs.
+      return `${first}\n\n${second}`;
     } catch (err) {
       if (signal?.aborted) throw err;
       lastError = err;
@@ -146,7 +131,7 @@ async function fetchNarrative(prompt, apiKey, signal) {
     }
   }
 
-  throw lastError || new Error('LLMApi request failed');
+  throw lastError || new Error('Narrative request failed');
 }
 
 function Skeleton() {
@@ -189,11 +174,6 @@ function CitationBadge({ chunk }) {
   );
 }
 
-function toMoney(value) {
-  if (value == null || Number.isNaN(Number(value))) return '0';
-  return Number(value).toLocaleString();
-}
-
 export default function AICard({ communityData, impactData }) {
   const [narrative, setNarrative] = useState('');
   const [status, setStatus] = useState('idle');
@@ -204,37 +184,36 @@ export default function AICard({ communityData, impactData }) {
   const fips = communityData?.meta?.fips;
   const summarySeed = communityData?.meta?.retrievedAt || '';
 
-  const prompt = useMemo(() => {
+  /*
+   * The numbers the narrative is grounded in. This replaces the prompt string
+   * that used to be assembled here: the server owns the wording now, and this
+   * component owns only the data. Nulls are passed through deliberately —
+   * they mean "source unavailable", and the template renders them as such
+   * instead of printing a misleading 0.
+   */
+  const metrics = useMemo(() => {
     if (!communityData || !impactData) return null;
 
     const { foodAccess, health, demographics } = communityData;
     const { foodAccess: impactFood, health: impactHealth, economic } = impactData;
-    const lowAccessRuleLabel = foodAccess.isRural ? '10 miles (rural)' : '1 mile (urban)';
-    const lowAccessRulePct = Number(
-      foodAccess.qualifyingLowAccessPct ||
-      (foodAccess.isRural ? foodAccess.pctLowAccess10mi : foodAccess.pctLowAccess1mi) ||
-      0
-    ).toFixed(1);
 
-    return `You are analyzing food access data for a US community. Respond in exactly two short paragraphs with no headers or bullet points.
-
-Community data:
-- Food desert: ${foodAccess.isFoodDesert}
-- Population with low grocery access (within ${lowAccessRuleLabel}): ${lowAccessRulePct}%
-- Diabetes prevalence: ${Number(health.diabetes || 0).toFixed(1)}%
-- Obesity prevalence: ${Number(health.obesity || 0).toFixed(1)}%
-- Median household income: $${toMoney(demographics.medianIncome)}
-- Poverty rate: ${Number(demographics.pctPoverty || 0).toFixed(1)}%
-- Households without vehicle and low access: ${Number(foodAccess.pctNoVehicleLowAccess || 0).toFixed(1)}%
-
-Projected impact of adding one grocery store:
-- Residents gaining access: ${toMoney(impactFood.residentsGainingAccess)}
-- Diabetes rate change: -${Number(impactHealth.diabetesReductionPct || 0).toFixed(1)} percentage points
-- Jobs created: ${economic.jobsMin}\u2013${economic.jobsMax}
-- Annual local economic impact: $${toMoney(economic.annualLocalImpact)}
-
-Paragraph 1: Describe in plain English what daily food access looks like for residents here. Be specific and human, not clinical.
-Paragraph 2: Describe what would realistically change if a grocery store opened. Ground it in the numbers above. Avoid jargon and disclaimers.`;
+    return {
+      isFoodDesert: foodAccess.isFoodDesert,
+      isRural: Boolean(foodAccess.isRural),
+      lowAccessPct: foodAccess.qualifyingLowAccessPct
+        ?? (foodAccess.isRural ? foodAccess.pctLowAccess10mi : foodAccess.pctLowAccess1mi)
+        ?? null,
+      diabetesPct: health.diabetes ?? null,
+      obesityPct: health.obesity ?? null,
+      medianIncome: demographics.medianIncome ?? null,
+      povertyPct: demographics.pctPoverty ?? null,
+      noVehicleLowAccessPct: foodAccess.pctNoVehicleLowAccess ?? null,
+      residentsGainingAccess: impactFood.residentsGainingAccess ?? null,
+      diabetesReductionPct: impactHealth.diabetesReductionPct ?? null,
+      jobsMin: economic.jobsMin ?? null,
+      jobsMax: economic.jobsMax ?? null,
+      annualLocalImpact: economic.annualLocalImpact ?? null,
+    };
   }, [communityData, impactData]);
 
   useEffect(() => {
@@ -242,22 +221,10 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
     const controller = new AbortController();
 
     async function run() {
-      if (!fips || !prompt) {
+      if (!fips || !metrics) {
         setNarrative('');
         setCacheMeta(null);
         setStatus('idle');
-        return;
-      }
-
-      const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
-      // In dev we still require the bearer token client-side to hit
-      // /api/llmapi/v1/chat/completions via the vite proxy.
-      // In production the server-side /api/llmapi serverless function reads
-      // LLMAPI_KEY from env, so a missing client-side key is fine.
-      if (import.meta.env.DEV && !apiKey) {
-        setStatus('error');
-        setNarrative('');
-        setCacheMeta(null);
         return;
       }
 
@@ -283,7 +250,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
 
         let request = inFlightByFips.get(fips);
         if (!request) {
-          request = fetchNarrative(prompt, apiKey, controller.signal)
+          request = fetchNarrative(metrics, controller.signal)
             .then((text) => {
               memoryCache.set(fips, { text, ts: Date.now() });
               writeLocalCache(fips, text);
@@ -312,7 +279,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
       cancelled = true;
       controller.abort();
     };
-  }, [fips, fetchNonce, prompt, refreshFips]);
+  }, [fips, fetchNonce, metrics, refreshFips]);
 
   const executiveSummary = useMemo(() => {
     if (!summarySeed) return [];
@@ -342,10 +309,9 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
     .filter(Boolean)
     .slice(0, 2);
 
-  // In production the key lives on the server and the client never sees it.
-  const canGenerate = Boolean(
-    communityData && prompt && (!import.meta.env.DEV || import.meta.env.VITE_ANTHROPIC_KEY)
-  );
+  // The API key lives only on the server, so the client has no way to check
+  // it up front — a misconfiguration surfaces as an error after the request.
+  const canGenerate = Boolean(communityData && metrics);
   const hasNarrative = paragraphs.length > 0;
   const cacheLabel = cacheMeta
     ? `${cacheMeta.source === 'fresh' ? 'Generated' : `Cache: ${cacheMeta.source}`} · ${formatRelativeMinutes(cacheMeta.ts)}`
@@ -433,7 +399,8 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
 
         {status === 'error' && (
           <p className="text-xs text-white/30 italic">
-            Narrative unavailable — check VITE_ANTHROPIC_KEY in .env
+            Narrative unavailable — the request failed. If this persists, check
+            that ANTHROPIC_API_KEY is set on the server.
           </p>
         )}
 
@@ -441,7 +408,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
           <p className="text-xs text-white/30 italic">
             {canGenerate
               ? 'Narrative is on-demand. Click Generate Narrative when you want an update.'
-              : 'Add VITE_ANTHROPIC_KEY to .env (or set LLMAPI_KEY on the server) to enable AI narrative.'}
+              : 'Select a location to enable the AI narrative.'}
           </p>
         )}
       </div>
