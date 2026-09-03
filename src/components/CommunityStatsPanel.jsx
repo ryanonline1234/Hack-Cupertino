@@ -164,7 +164,13 @@ function TraceRow({ label, actual, threshold, pass, note }) {
 
 function EvaluationTraceDrawer({ foodAccess, demographics, cacheMeta }) {
   const [open, setOpen] = useState(false);
-  const povertyRate = Number(foodAccess?.povertyRate || demographics?.pctPoverty || 0);
+  // `|| 0` here turned an unavailable Census poverty rate into a displayed
+  // 0%, which reads as a finding rather than as missing data. Keep null.
+  const povertyRate = Number.isFinite(foodAccess?.povertyRate)
+    ? Number(foodAccess.povertyRate)
+    : Number.isFinite(demographics?.pctPoverty)
+      ? Number(demographics.pctPoverty)
+      : null;
   const lowAccessCount = Number(foodAccess?.lowAccessPopulationCount || 0);
   const lowAccessPct = Number(foodAccess?.qualifyingLowAccessPct || 0);
   const incomeThreshold = Number(foodAccess?.incomeThreshold80Pct || 0);
@@ -217,7 +223,7 @@ function EvaluationTraceDrawer({ foodAccess, demographics, cacheMeta }) {
           />
           <TraceRow
             label="Low-income poverty"
-            actual={`${povertyRate.toFixed(1)}%`}
+            actual={povertyRate == null ? 'Census unavailable' : `${povertyRate.toFixed(1)}%`}
             threshold=">= 20%"
             pass={Boolean(foodAccess?.lowIncomeByPoverty)}
           />
@@ -235,7 +241,9 @@ function EvaluationTraceDrawer({ foodAccess, demographics, cacheMeta }) {
           />
           <TraceRow
             label="Vehicle indicator"
-            actual={`${Math.round(Number(demographics?.noVehicleHouseholds || 0)).toLocaleString()} no-vehicle HH`}
+            actual={Number.isFinite(demographics?.noVehicleHouseholds)
+              ? `${Math.round(demographics.noVehicleHouseholds).toLocaleString()} no-vehicle HH`
+              : 'Census unavailable'}
             threshold=">= 100 HH + low-access exposure"
             pass={Boolean(foodAccess?.vehicleAccessConcern)}
           />

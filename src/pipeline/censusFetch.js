@@ -1,61 +1,74 @@
+/*
+ * Census ACS demographics for one tract.
+ *
+ * Two things changed here, for different reasons.
+ *
+ * 1. The API key moved server-side.
+ *    This module used to read VITE_CENSUS_KEY and put it in a URL query
+ *    parameter. Vite inlines every VITE_-prefixed variable into the production
+ *    bundle, so the key was readable by anyone who viewed source. It now lives
+ *    in CENSUS_KEY on the server and this module calls POST /api/census.
+ *
+ * 2. Missing data is null, not zero.
+ *    The old failure path returned { medianIncome: 0, population: 0,
+ *    pctPoverty: 0, ... }. Downstream, nothing could tell that apart from real
+ *    data: the UI printed "$0" and "0%" as findings, projectImpact computed
+ *    zero residents helped and zero economic impact, and the USDA low-income
+ *    test silently evaluated false because 0 is not >= 20.
+ *
+ *    The app already handles unknown distance honestly — designation goes to
+ *    UNKNOWN rather than guessing. Demographics now work the same way: every
+ *    field is a number or null, and null means "we do not know", which the UI
+ *    renders as "unavailable".
+ */
+
+const UNAVAILABLE = {
+  medianIncome: null,
+  population: null,
+  adultPopulation: null,
+  households: null,
+  pctPoverty: null,
+  noVehicleHouseholds: null,
+  stateMedianFamilyIncome: null,
+  source: 'unavailable',
+};
+
 export async function getCensusData(fips) {
   try {
-    const key = import.meta.env.VITE_CENSUS_KEY;
-    if (!key) {
-      console.warn('VITE_CENSUS_KEY not set — skipping Census fetch');
-      return defaultCensus();
+    const res = await fetch('/api/census', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fips }),
+    });
+
+    if (!res.ok) {
+      console.warn(`Census request failed (${res.status}) — demographics unavailable`);
+      return { ...UNAVAILABLE };
     }
-
-    const state = fips.slice(0, 2);
-    const county = fips.slice(2, 5);
-    const tract = fips.slice(5);
-
-    const url =
-      `/api/census/data/2022/acs/acs5?get=B19013_001E,B01003_001E,B17001_002E,B25044_003E,B25044_010E` +
-      `&for=tract:${tract}&in=state:${state}%20county:${county}&key=${key}`;
-
-    const stateMedianFamilyIncomeUrl =
-      `/api/census/data/2022/acs/acs5?get=B19113_001E` +
-      `&for=state:${state}&key=${key}`;
-
-    const [res, stateMedianRes] = await Promise.all([
-      fetch(url),
-      fetch(stateMedianFamilyIncomeUrl),
-    ]);
-
-    if (!res.ok) return defaultCensus();
 
     const json = await res.json();
-    // json[0] = headers, json[1] = values
-    if (!json?.[1]) return defaultCensus();
 
-    let stateMedianFamilyIncome = 0;
-    if (stateMedianRes.ok) {
-      const stateJson = await stateMedianRes.json();
-      stateMedianFamilyIncome = Number(stateJson?.[1]?.[0]) || 0;
-    }
-
-    const [medianIncome, population, povertyPop, ownerNoVeh, renterNoVeh] =
-      json[1].map(Number);
+    // Poverty rate is derived, so it is only meaningful when both parts are
+    // present and the denominator is non-zero.
+    const population = json.population;
+    const povertyPopulation = json.povertyPopulation;
+    const pctPoverty =
+      Number.isFinite(population) && population > 0 && Number.isFinite(povertyPopulation)
+        ? (povertyPopulation / population) * 100
+        : null;
 
     return {
-      medianIncome: medianIncome > 0 ? medianIncome : 0,
-      population: population > 0 ? population : 0,
-      pctPoverty: population > 0 ? (povertyPop / population) * 100 : 0,
-      noVehicleHouseholds: (ownerNoVeh || 0) + (renterNoVeh || 0),
-      stateMedianFamilyIncome: stateMedianFamilyIncome > 0 ? stateMedianFamilyIncome : 0,
+      medianIncome: json.medianIncome ?? null,
+      population: population ?? null,
+      adultPopulation: json.adultPopulation ?? null,
+      households: json.households ?? null,
+      pctPoverty,
+      noVehicleHouseholds: json.noVehicleHouseholds ?? null,
+      stateMedianFamilyIncome: json.stateMedianFamilyIncome ?? null,
+      source: 'census_acs_2022',
     };
-  } catch {
-    return defaultCensus();
+  } catch (err) {
+    console.warn('Census request threw — demographics unavailable:', err?.message || err);
+    return { ...UNAVAILABLE };
   }
-}
-
-function defaultCensus() {
-  return {
-    medianIncome: 0,
-    population: 0,
-    pctPoverty: 0,
-    noVehicleHouseholds: 0,
-    stateMedianFamilyIncome: 0,
-  };
 }

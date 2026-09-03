@@ -80,12 +80,64 @@ export async function buildCommunityData(lat, lng, options = {}) {
     }
   }
 
-  const [usdaData, cdcData, censusData, storeDistanceData] = await Promise.all([
+  /*
+   * Promise.allSettled, not Promise.all.
+   *
+   * With Promise.all a single rejecting source rejected the whole payload:
+   * TrackerApp set dataError and the panel rendered one red line of text in
+   * place of everything, discarding the three sources that had succeeded. A
+   * transient Overpass outage would blank out USDA, CDC and Census data that
+   * had already arrived.
+   *
+   * Each source now degrades on its own and reports its status, so the UI can
+   * show what it has and label what it is missing.
+   */
+  const settled = await Promise.allSettled([
     getUsdaData(fips),
     getCdcData(stateAbbr, fips),
     getCensusData(fips),
     getNearestSupermarketDistance(lat, lng),
   ]);
+
+  const [usdaSettled, cdcSettled, censusSettled, distanceSettled] = settled;
+
+  function valueOr(result, fallback, label) {
+    if (result.status === 'fulfilled' && result.value != null) return result.value;
+    console.warn(`[pipeline] ${label} unavailable:`, result.reason?.message || result.reason);
+    return fallback;
+  }
+
+  const usdaData = valueOr(usdaSettled, {}, 'USDA');
+  const cdcData = valueOr(cdcSettled, {}, 'CDC PLACES');
+  const censusData = valueOr(censusSettled, {
+    medianIncome: null,
+    population: null,
+    adultPopulation: null,
+    households: null,
+    pctPoverty: null,
+    noVehicleHouseholds: null,
+    stateMedianFamilyIncome: null,
+    source: 'unavailable',
+  }, 'Census ACS');
+  const storeDistanceData = valueOr(distanceSettled, null, 'Store distance');
+
+  // Per-source status, surfaced on the payload so the UI can badge each one.
+  const sourceStatus = {
+    usda: usdaSettled.status === 'fulfilled' ? 'ok' : 'failed',
+    cdc: cdcSettled.status === 'fulfilled' ? 'ok' : 'failed',
+    census: censusSettled.status === 'fulfilled' && censusData.source !== 'unavailable'
+      ? 'ok'
+      : 'failed',
+    distance: distanceSettled.status !== 'fulfilled'
+      ? 'failed'
+      : storeDistanceData?.source === 'unavailable'
+        ? 'failed'
+        : storeDistanceData?.noStoresFound
+          // The query worked; OSM simply had no supermarket in range. Not a
+          // failure, but not a confident measurement either.
+          ? 'no_stores_found'
+          : 'ok',
+  };
 
   const qualifyingLowAccessPct = Number(
     usdaData.qualifyingLowAccessPct ||
@@ -97,8 +149,13 @@ export async function buildCommunityData(lat, lng, options = {}) {
   const lowAccessByCount = lowAccessPopulationCount >= 500;
   const isLowAccess = lowAccessByShare || lowAccessByCount;
 
+  // censusData.pctPoverty is null when ACS is unavailable. `Number(null || 0)`
+  // silently produced 0, which is < 20, so a failed Census lookup quietly
+  // decided the tract was not low-income. Only consider the ACS figure when
+  // we actually have one.
   const lowIncomeByPoverty =
-    Boolean(usdaData.lowIncomeByPoverty) || Number(censusData.pctPoverty || 0) >= 20;
+    Boolean(usdaData.lowIncomeByPoverty)
+    || (Number.isFinite(censusData.pctPoverty) && censusData.pctPoverty >= 20);
 
   const tractMedianFamilyIncome = Number(usdaData.medianFamilyIncome || 0);
   const stateMedianFamilyIncome = Number(censusData.stateMedianFamilyIncome || 0);
@@ -137,7 +194,8 @@ export async function buildCommunityData(lat, lng, options = {}) {
     : 'model_assumption_final_designation';
 
   const vehicleAccessConcern =
-    Number(censusData.noVehicleHouseholds || 0) >= 100 &&
+    Number.isFinite(censusData.noVehicleHouseholds) &&
+    censusData.noVehicleHouseholds >= 100 &&
     Number(usdaData.pctNoVehicleLowAccess || 0) > 0;
 
   const foodAccess = {
@@ -170,6 +228,10 @@ export async function buildCommunityData(lat, lng, options = {}) {
     isTwentyFivePlusMiles: storeDistanceData?.isTwentyFivePlusMiles ?? null,
     nearestDistanceCheckedRadiusMiles: storeDistanceData?.checkedRadiusMiles ?? 50,
     nearestDistanceSource: storeDistanceData?.source || 'unavailable',
+    // True when Overpass answered but found no supermarket inside the search
+    // radius — distinct from the query failing. See storeDistanceFetch.js.
+    noStoresFound: storeDistanceData?.noStoresFound ?? false,
+    communityDistanceSampleAttempts: storeDistanceData?.communityDistanceSampleAttempts ?? 0,
     // Raw point list of supermarkets near this community, used by the map
     // overlay layer to highlight food sources in green.
     stores: Array.isArray(storeDistanceData?.stores) ? storeDistanceData.stores : [],
@@ -185,6 +247,7 @@ export async function buildCommunityData(lat, lng, options = {}) {
       lng,
       stateAbbr,
       retrievedAt: new Date().toISOString(),
+      sourceStatus,
     },
     foodAccess,
     health: { ...cdcData },

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { evaluateFoodDesertDesignation } from '../src/engine/foodDesertEvaluation.js';
+import { DESIGNATION_STATUS, evaluateFoodDesertDesignation } from '../src/engine/foodDesertEvaluation.js';
 
 test('urban tracts require at least 1 mile', () => {
   const belowThreshold = evaluateFoodDesertDesignation({
@@ -151,4 +151,42 @@ test('custom threshold overrides can flip the final designation', () => {
 
   assert.equal(baseline.finalDesignation, 'not_designated');
   assert.equal(loweredThreshold.finalDesignation, 'designated');
+});
+
+test('a successful query that finds no stores yields Unknown, not Designated', () => {
+  /*
+   * Regression guard for the storeDistanceFetch bug: `isTwentyFivePlusMiles`
+   * used to be set to `true` whenever the distance came back null, including
+   * when Overpass answered normally but OpenStreetMap simply had no
+   * supermarket tagged in range. That satisfied the >=25-mile trigger below
+   * and produced a confident "food desert" designation out of a data gap.
+   *
+   * With no measured distance and no 25-mile signal, the rule is not
+   * evaluable and the designation must be Unknown.
+   */
+  const result = evaluateFoodDesertDesignation({
+    isRural: false,
+    nearestSupermarketMiles: null,
+    isTwentyFivePlusMiles: null,
+    usdaLilaFlag: null,
+  });
+
+  assert.equal(result.finalDesignation, DESIGNATION_STATUS.UNKNOWN);
+  assert.equal(result.isFoodDesert, null);
+  assert.equal(result.distanceRuleEvaluable, false);
+  assert.equal(result.designationMethod, 'distance_rule_unavailable_unknown');
+});
+
+test('a genuine 25-plus-mile signal still designates', () => {
+  // The flag itself is still meaningful when it reflects a real measurement;
+  // the fix was to stop inferring it from missing data.
+  const result = evaluateFoodDesertDesignation({
+    isRural: true,
+    nearestSupermarketMiles: null,
+    isTwentyFivePlusMiles: true,
+    usdaLilaFlag: null,
+  });
+
+  assert.equal(result.finalDesignation, DESIGNATION_STATUS.DESIGNATED);
+  assert.equal(result.isFoodDesert, true);
 });

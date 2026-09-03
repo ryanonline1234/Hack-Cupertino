@@ -23,6 +23,11 @@ function makeCommunityData(overrides = {}) {
     },
     demographics: {
       population: 12000,
+      // ~2.7 people per household, and ~77% of residents 18+. Both are
+      // separate ACS variables now: grocery trips are per household, and CDC
+      // prevalence rates are adults-only.
+      households: 4500,
+      adultPopulation: 9200,
       noVehicleHouseholds: 800,
       medianIncome: 55000,
       pctPoverty: 18,
@@ -72,4 +77,101 @@ test('higher low-access need produces higher local impact', () => {
   );
 
   assert.ok(higherNeed.economic.annualLocalImpact > lowerNeed.economic.annualLocalImpact);
+});
+
+// ── Commute-hours saved: a per-household figure ─────────────────────────────
+
+test('commute-hours saved scales with household count, not population', () => {
+  // The regression this guards: commuteHoursSavedAnnual used to be derived
+  // from `population`, so it moved when population moved and ignored
+  // households entirely. Holding households fixed while doubling population
+  // must leave the figure unchanged.
+  const base = projectImpact(makeCommunityData());
+  const morePeopleSameHouseholds = projectImpact(
+    makeCommunityData({ demographics: { population: 24000 } }),
+  );
+
+  assert.equal(
+    base.simulation.commuteHoursSavedAnnual,
+    morePeopleSameHouseholds.simulation.commuteHoursSavedAnnual,
+  );
+});
+
+test('commute-hours saved doubles when households double', () => {
+  const base = projectImpact(makeCommunityData());
+  const doubled = projectImpact(
+    makeCommunityData({ demographics: { households: 9000 } }),
+  );
+
+  assert.ok(base.simulation.commuteHoursSavedAnnual > 0);
+  assert.ok(
+    Math.abs(doubled.simulation.commuteHoursSavedAnnual - base.simulation.commuteHoursSavedAnnual * 2) < 1e-6,
+  );
+});
+
+test('commute-hours saved is null when household count is unavailable', () => {
+  const impact = projectImpact(
+    makeCommunityData({ demographics: { households: null } }),
+  );
+
+  // Null, not 0: "we do not know" must not render as "no benefit".
+  assert.equal(impact.simulation.commuteHoursSavedAnnual, null);
+  assert.ok(
+    impact.simulation.executiveSummary.some((line) => line.includes('cannot be estimated')),
+  );
+});
+
+// ── Diabetes cases avoided: an adults-only figure ───────────────────────────
+
+test('diabetes cases avoided is based on the adult population', () => {
+  const base = projectImpact(makeCommunityData());
+  const moreAdults = projectImpact(
+    makeCommunityData({ demographics: { adultPopulation: 18400 } }),
+  );
+
+  assert.ok(base.health.estimatedCasesAvoided > 0);
+  assert.equal(moreAdults.health.estimatedCasesAvoided, base.health.estimatedCasesAvoided * 2);
+});
+
+test('diabetes cases avoided ignores total population', () => {
+  // Children are not in the CDC prevalence denominator, so a larger total
+  // population with the same adult count must not change the estimate.
+  const base = projectImpact(makeCommunityData());
+  const moreChildren = projectImpact(
+    makeCommunityData({ demographics: { population: 30000 } }),
+  );
+
+  assert.equal(base.health.estimatedCasesAvoided, moreChildren.health.estimatedCasesAvoided);
+});
+
+test('diabetes cases avoided is null when adult population is unavailable', () => {
+  const impact = projectImpact(
+    makeCommunityData({ demographics: { adultPopulation: null } }),
+  );
+
+  assert.equal(impact.health.estimatedCasesAvoided, null);
+});
+
+// ── Missing demographics must not read as zero impact ───────────────────────
+
+test('economic projections are null when population is unavailable', () => {
+  const impact = projectImpact(
+    makeCommunityData({ demographics: { population: null } }),
+  );
+
+  // Previously censusFetch returned population: 0 on failure, so this path
+  // produced a confident "$0 annual impact, 3 jobs" instead of "unknown".
+  assert.equal(impact.economic.annualLocalImpact, null);
+  assert.equal(impact.economic.annualCapturedSales, null);
+  assert.equal(impact.economic.jobsMin, null);
+  assert.equal(impact.economic.jobsMax, null);
+  assert.equal(impact.foodAccess.residentsGainingAccess, null);
+});
+
+test('no-vehicle households helped is null when the source count is unavailable', () => {
+  const impact = projectImpact(
+    makeCommunityData({ demographics: { noVehicleHouseholds: null } }),
+  );
+
+  assert.equal(impact.foodAccess.noVehicleHouseholdsHelped, null);
 });
