@@ -1,6 +1,11 @@
 # Food Desert Simulator - Technical Project Handoff
 
-Last updated: 2026-04-12
+Last updated: 2026-09-03
+
+> **Note:** a security and correctness pass has landed since the bulk of this
+> document was written. Where the two disagree, `docs/CHANGES.md` is current.
+> Sections 5, 8 and 11 below have been updated; the rest still reflects the
+> original design.
 Primary audience: engineers and coding agents taking over implementation.
 Secondary audience: technical product owners needing implementation-level detail.
 
@@ -111,10 +116,22 @@ Returned distance payload fields:
 7. checkedRadiusMiles
 8. source
 
+Returned distance payload also carries:
+
+9. noStoresFound — query succeeded but OSM had no supermarket in radius
+10. storeCount
+11. communityDistanceSampleAttempts
+
 Failure behavior:
 
-- Endpoint failover attempts second Overpass host.
+- Endpoint failover attempts the remaining Overpass hosts.
 - On full failure, returns null distance fields and source=unavailable.
+- A successful query with zero results sets noStoresFound=true and leaves
+  isTwentyFivePlusMiles null. It previously set that flag to true, which forced
+  a Designated result out of an OSM data gap; both states now yield Unknown.
+
+Note on sampleCount: it reports the samples that produced a distance, not the
+number attempted. It previously always reported 9.
 
 Known caveats:
 
@@ -196,6 +213,16 @@ Maintained by tests/formulas:
 
 - annualLocalImpact == round(annualCapturedSales * economicMultiplier)
 
+Corrected since the original handoff (see docs/CHANGES.md for magnitudes):
+
+- commuteHoursSavedAnnual is now derived from ACS household count
+  (B11001_001E), not population. It was overstated by roughly average
+  household size.
+- estimatedCasesAvoided is now derived from the 18+ population
+  (B09021_001E), matching the adults-only CDC prevalence denominator.
+- Every population- or household-derived projection returns null, not 0, when
+  its input is unavailable.
+
 ## 9. Caching and Freshness
 
 Community payload cache:
@@ -237,18 +264,25 @@ Logs now explicitly call out:
 
 ## 11. Environment and Runtime Configuration
 
-Current env vars used:
+Current env vars used (all server-side; never `VITE_`-prefixed, which would
+inline them into the public bundle):
 
-1. VITE_CENSUS_KEY
-2. VITE_ANTHROPIC_KEY
+1. ANTHROPIC_API_KEY — community narrative
+2. CENSUS_KEY — ACS demographics
+3. LLM_MODEL — optional, defaults to claude-opus-5
+4. ALLOWED_ORIGINS — optional, extra allowed origins for api/ endpoints
 
-Vite proxy routes:
+Serverless functions (real logic; run in dev too, via vite-plugin-api-dev.js):
+
+1. /api/llmapi — narrative generation, Anthropic SDK
+2. /api/overpass — supermarket lookup, query built server-side
+3. /api/census — ACS demographics
+
+Pure proxy rewrites (no secrets, vercel.json + vite dev proxy):
 
 1. /api/census-geocoder
 2. /api/nominatim
 3. /api/cdc
-4. /api/census
-5. /api/llmapi
 
 ## 12. Testing and Build Commands
 

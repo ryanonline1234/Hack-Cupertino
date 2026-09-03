@@ -34,10 +34,17 @@ This repository is IDE-agnostic and runs from terminal commands only.
 1. Install dependencies:
 	- `npm install`
 2. Provide environment values in `.env`:
-	- `VITE_CENSUS_KEY`
-	- `VITE_ANTHROPIC_KEY`
+	- `ANTHROPIC_API_KEY` (community narrative)
+	- `CENSUS_KEY` (ACS demographics)
+	- `LLM_MODEL` (optional; defaults to `claude-opus-5`)
 
 The template file `.env.example` is included.
+
+These are **server-side** variables, read by the serverless functions in `api/`.
+Do not prefix them with `VITE_`: Vite inlines every `VITE_*` variable into the
+production bundle, which would publish the key. The former `VITE_CENSUS_KEY`,
+`VITE_ANTHROPIC_KEY` and `LLMAPI_KEY` are no longer read — see
+`docs/CHANGES.md`.
 
 ### Run Local Dev Server
 
@@ -73,7 +80,9 @@ Use this checklist when switching from VS Code to another IDE (Cursor, WebStorm,
 4. Main UI surfaces:
 	- `src/components/*.jsx`
 	- `src/ui/landing/LandingPage.tsx`
-5. Unit tests:
+5. Serverless API endpoints (keys and prompt live here, never in the browser):
+	- `api/*.js`
+6. Unit tests:
 	- `tests/*.test.js`
 
 ## Data Sources
@@ -87,7 +96,17 @@ Use this checklist when switching from VS Code to another IDE (Cursor, WebStorm,
 
 1. Distance metrics are model estimates (not guaranteed road-network travel distance/time).
 2. Upstream coverage and quality vary by geography.
-3. Unknown outputs are intentional when required evidence is missing.
+3. Unknown outputs are intentional when required evidence is missing. This now
+   applies to demographics as well as distance: a field the upstream source did
+   not supply renders as `—`, never as `0`.
+4. The distance sample points used for classification are a fixed offset grid,
+   not the tract's actual boundary. This is the largest known methodological
+   gap — see the backlog in `docs/CHANGES.md`.
+
+## Recent Changes
+
+For the security and correctness pass on the `api/` layer, the AI integration,
+and the projection formulas, see `docs/CHANGES.md`.
 
 ## Technical Handoff
 
