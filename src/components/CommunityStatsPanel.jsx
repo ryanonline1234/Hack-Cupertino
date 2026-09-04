@@ -116,15 +116,66 @@ function SourcePill({ label, level }) {
   );
 }
 
+/*
+ * How the distance was sampled, in plain language.
+ *
+ * The four values correspond to the rungs of the sampling ladder in
+ * src/pipeline/storeDistanceFetch.js. They are shown because a designation
+ * derived from real block-group polygons deserves more confidence than one
+ * from a fixed offset grid, and the UI previously presented all of them
+ * identically.
+ */
+const DISTANCE_MODEL_LABELS = {
+  block_group_population_weighted: {
+    short: 'population-weighted',
+    detail: 'sampled inside block-group boundaries, weighted by resident population',
+    level: 'high',
+  },
+  block_group_uniform: {
+    short: 'block-group polygons',
+    detail: 'sampled inside block-group boundaries; population weights unavailable',
+    level: 'high',
+  },
+  tract_area_scaled_grid: {
+    short: 'area-scaled grid',
+    detail: 'tract boundaries unavailable; sample spread scaled to tract land area',
+    level: 'medium',
+  },
+  fixed_offset_grid: {
+    short: 'fixed grid',
+    detail: 'neither boundaries nor land area available; fixed 1-1.5 mile offsets that may fall outside this tract',
+    level: 'low',
+  },
+};
+
+function describeDistanceModel(model) {
+  return DISTANCE_MODEL_LABELS[model] || {
+    short: model || 'unknown',
+    detail: 'sampling model not reported',
+    level: 'low',
+  };
+}
+
 function SourceConfidenceBadges({ foodAccess, cacheMeta }) {
   let usda = { label: 'USDA: missing row', level: 'low' };
   if (foodAccess?.hasUsdaMatch && foodAccess?.matchQuality === 'exact') usda = { label: 'USDA: exact tract', level: 'high' };
   else if (foodAccess?.hasUsdaMatch && foodAccess?.matchQuality === 'county_nearest') usda = { label: 'USDA: county-nearest', level: 'medium' };
 
+  /*
+   * Three distinct outcomes, previously collapsed into two.
+   *
+   * `noStoresFound` means the OSM query succeeded and returned nothing --
+   * a real finding about the area, but one that depends on OpenStreetMap
+   * coverage. It used to be indistinguishable from the query having failed.
+   */
   let distance = { label: 'Distance: unavailable', level: 'low' };
-  if (String(foodAccess?.nearestDistanceSource || '').startsWith('osm_overpass:')) {
+  if (foodAccess?.noStoresFound) {
+    distance = { label: 'Distance: no stores in 50 mi (OSM)', level: 'medium' };
+  } else if (String(foodAccess?.nearestDistanceSource || '').startsWith('osm_overpass:')) {
     distance = { label: 'Distance: live OSM', level: 'high' };
   }
+
+  const sampling = describeDistanceModel(foodAccess?.distanceModel);
 
   let cache = { label: 'Data: fresh', level: 'high' };
   if (cacheMeta?.status === 'memory') cache = { label: `Data: memory cache (${Math.ceil((cacheMeta.expiresInMs || 0) / 60000)}m)`, level: 'medium' };
@@ -143,6 +194,7 @@ function SourceConfidenceBadges({ foodAccess, cacheMeta }) {
       <div className="flex flex-wrap gap-1.5">
         <SourcePill label={usda.label} level={usda.level} />
         <SourcePill label={distance.label} level={distance.level} />
+        <SourcePill label={`Sampling: ${sampling.short}`} level={sampling.level} />
         <SourcePill label={decision.label} level={decision.level} />
         <SourcePill label={cache.label} level={cache.level} />
       </div>
@@ -253,8 +305,15 @@ function EvaluationTraceDrawer({ foodAccess, demographics, cacheMeta }) {
             threshold={`>= ${distanceThresholdMiles.toFixed(0)} miles (${foodAccess?.isRural ? 'rural' : 'urban'})`}
             pass={Boolean(distanceEvaluable && foodAccess?.isFoodDesertByDistanceRule)}
             note={distanceEvaluable
-              ? `Primary designation rule in use (model: ${foodAccess?.distanceModel || 'community_average_sampled'}; samples: ${Math.max(0, Number(foodAccess?.communityDistanceSampleCount || 0))}).`
-              : 'Distance source unavailable; final designation can be Unknown.'}
+              ? `Primary designation rule in use — ${describeDistanceModel(foodAccess?.distanceModel).detail}. `
+                + `${Math.max(0, Number(foodAccess?.communityDistanceSampleCount || 0))} of `
+                + `${Math.max(0, Number(foodAccess?.communityDistanceSampleAttempts || 0))} samples found a store`
+                + `${Number(foodAccess?.communityDistanceBlockGroups) > 0
+                  ? ` across ${foodAccess.communityDistanceBlockGroups} block group(s)`
+                  : ''}.`
+              : foodAccess?.noStoresFound
+                ? 'OpenStreetMap reported no supermarket within 50 miles. Treated as Unknown rather than Designated, because this may reflect incomplete OSM coverage rather than genuine distance.'
+                : 'Distance source unavailable; final designation can be Unknown.'}
           />
           <TraceRow
             label="Final designation"
