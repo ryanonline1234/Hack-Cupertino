@@ -64,7 +64,7 @@ export async function buildCommunityData(lat, lng, options = {}) {
   const geo = await coordsToGeo(lat, lng);
   if (!geo) return null;
 
-  const { fips, stateAbbr, zip } = geo;
+  const { fips, stateAbbr, zip, arealandSqMeters, internalLat, internalLng } = geo;
   const key = cacheKey(fips, lat, lng);
 
   if (!forceRefresh) {
@@ -96,7 +96,15 @@ export async function buildCommunityData(lat, lng, options = {}) {
     getUsdaData(fips),
     getCdcData(stateAbbr, fips),
     getCensusData(fips),
-    getNearestSupermarketDistance(lat, lng),
+    // Tract context lets the sampler use real block-group polygons, or at
+    // least scale its grid to the tract's own size, instead of fixed offsets
+    // that can exceed the whole tract. See storeDistanceFetch buildSamplePlan.
+    getNearestSupermarketDistance(lat, lng, {
+      fips,
+      arealandSqMeters,
+      internalLat,
+      internalLng,
+    }),
   ]);
 
   const [usdaSettled, cdcSettled, censusSettled, distanceSettled] = settled;
@@ -223,7 +231,7 @@ export async function buildCommunityData(lat, lng, options = {}) {
     nearestSupermarketMiles: designation.nearestSupermarketMiles,
     communityAverageSupermarketMiles,
     centerNearestSupermarketMiles,
-    distanceModel: storeDistanceData?.distanceModel || 'community_average_sampled',
+    distanceModel: storeDistanceData?.distanceModel || 'unavailable',
     communityDistanceSampleCount: Number(storeDistanceData?.communityDistanceSampleCount || 0),
     isTwentyFivePlusMiles: storeDistanceData?.isTwentyFivePlusMiles ?? null,
     nearestDistanceCheckedRadiusMiles: storeDistanceData?.checkedRadiusMiles ?? 50,
@@ -232,6 +240,11 @@ export async function buildCommunityData(lat, lng, options = {}) {
     // radius — distinct from the query failing. See storeDistanceFetch.js.
     noStoresFound: storeDistanceData?.noStoresFound ?? false,
     communityDistanceSampleAttempts: storeDistanceData?.communityDistanceSampleAttempts ?? 0,
+    // How many block groups contributed, and which rung of the sampling
+    // ladder produced the number. Surfaced in the evidence trace so a
+    // designation from a fallback model is not presented with the same
+    // confidence as one from real polygons.
+    communityDistanceBlockGroups: storeDistanceData?.communityDistanceBlockGroups ?? 0,
     // Raw point list of supermarkets near this community, used by the map
     // overlay layer to highlight food sources in green.
     stores: Array.isArray(storeDistanceData?.stores) ? storeDistanceData.stores : [],

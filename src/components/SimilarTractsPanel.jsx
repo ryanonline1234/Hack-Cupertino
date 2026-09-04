@@ -34,8 +34,13 @@ export default function SimilarTractsPanel({ communityData, onJump }) {
         <span className="text-[10px] uppercase tracking-wider text-white/45">
           Similar tracts
         </span>
-        <span className="text-[10px] text-white/30">
-          K-nearest neighbours · 4-D demographic vector
+        <span
+          className="text-[10px] text-white/30"
+          title={'Reference distances in this comparison set were measured under the previous '
+            + 'sampling model (fixed offsets), while the selected tract is sampled inside real '
+            + 'block-group boundaries. Matches are indicative until the reference set is recomputed.'}
+        >
+          K-nearest neighbours · 4-D · indicative
         </span>
       </div>
 

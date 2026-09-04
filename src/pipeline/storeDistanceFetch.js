@@ -6,6 +6,12 @@
 //      it no longer accepts caller-supplied Overpass QL.
 //   2-4. Community mirrors with permissive CORS, called directly with QL as a
 //      fallback when our own function is unavailable.
+import {
+  samplePointsInPolygon,
+  tractEdgeMiles,
+  weightedMean,
+} from './tractGeometry.js';
+
 const PROXY_ENDPOINT = '/api/overpass';
 const DIRECT_ENDPOINTS = [
   'https://overpass.kumi.systems/api/interpreter',
@@ -17,6 +23,12 @@ const SEARCH_RADIUS_MILES = 50;
 const SEARCH_RADIUS_METERS = Math.round(SEARCH_RADIUS_MILES * 1609.34);
 const REQUEST_TIMEOUT_MS = 8000;
 const CACHE_TTL_MS = 1000 * 60 * 15;
+
+/*
+ * Legacy fixed offsets, in miles, kept as the last rung of the sampling
+ * ladder below. Nine points: the anchor plus four cardinals at 1.5 mi and four
+ * diagonals at 1 mi.
+ */
 const COMMUNITY_SAMPLE_OFFSETS_MILES = [
   [0, 0],
   [1.5, 0],
@@ -29,7 +41,21 @@ const COMMUNITY_SAMPLE_OFFSETS_MILES = [
   [-1, -1],
 ];
 
+/*
+ * Divisor that maps a tract's equivalent-square edge onto the offset pattern
+ * above. The largest offset is 1.5, so dividing the edge by 4.5 puts the
+ * outermost samples at one third of the edge from the anchor — comfortably
+ * inside the tract. A 4.5-mile tract reproduces the legacy spacing exactly;
+ * a 0.3-mile urban tract shrinks to about ±0.1 mi instead of sampling its
+ * neighbours.
+ */
+const AREA_SCALE_DIVISOR = 4.5;
+
+// How many sample points to take inside each block group.
+const POINTS_PER_BLOCK_GROUP = 12;
+
 const cache = new Map();
+const geometryCache = new Map();
 
 function toRad(degrees) {
   return (degrees * Math.PI) / 180;
@@ -55,9 +81,9 @@ function offsetPointMiles(lat, lng, eastMiles, northMiles) {
   };
 }
 
-export function buildCommunitySamplePoints(lat, lng) {
+export function buildCommunitySamplePoints(lat, lng, scale = 1) {
   return COMMUNITY_SAMPLE_OFFSETS_MILES.map(([eastMiles, northMiles]) =>
-    offsetPointMiles(lat, lng, eastMiles, northMiles)
+    offsetPointMiles(lat, lng, eastMiles * scale, northMiles * scale)
   );
 }
 
@@ -65,48 +91,180 @@ function buildQuery(lat, lng) {
   return `[out:json][timeout:20];(node["shop"="supermarket"](around:${SEARCH_RADIUS_METERS},${lat},${lng});way["shop"="supermarket"](around:${SEARCH_RADIUS_METERS},${lat},${lng});relation["shop"="supermarket"](around:${SEARCH_RADIUS_METERS},${lat},${lng}););out center;`;
 }
 
-function cacheKey(lat, lng) {
-  return `${lat.toFixed(4)},${lng.toFixed(4)}`;
+function cacheKey(lat, lng, fips) {
+  // Prefer the tract: the result is a property of the tract now, not of the
+  // exact click coordinate, so keying on FIPS also raises the hit rate.
+  return fips || `${lat.toFixed(4)},${lng.toFixed(4)}`;
 }
 
+/*
+ * Nearest store to one point, in miles.
+ *
+ * Single pass. This used to map every element to a distance, filter, then sort
+ * the whole array to take element [0] — O(n log n) to find a minimum, re-run
+ * once per sample point. The ladder below can ask for dozens of sample points
+ * instead of nine, so that cost now matters.
+ */
 function parseNearestMiles(elements, lat, lng) {
-  const withDistances = (elements || [])
-    .map((el) => {
-      const eLat = el.lat ?? el.center?.lat;
-      const eLng = el.lon ?? el.center?.lon;
-      if (!Number.isFinite(eLat) || !Number.isFinite(eLng)) return null;
-      return haversineMiles(lat, lng, eLat, eLng);
-    })
-    .filter((d) => Number.isFinite(d))
-    .sort((a, b) => a - b);
+  let nearest = null;
 
-  return withDistances.length > 0 ? withDistances[0] : null;
+  for (const el of elements || []) {
+    const eLat = el.lat ?? el.center?.lat;
+    const eLng = el.lon ?? el.center?.lon;
+    if (!Number.isFinite(eLat) || !Number.isFinite(eLng)) continue;
+
+    const miles = haversineMiles(lat, lng, eLat, eLng);
+    if (!Number.isFinite(miles)) continue;
+    if (nearest == null || miles < nearest) nearest = miles;
+  }
+
+  return nearest;
 }
 
-function average(values) {
-  if (!values.length) return null;
-  const total = values.reduce((sum, value) => sum + value, 0);
-  return total / values.length;
+// ── Sampling plan ───────────────────────────────────────────────────────────
+/*
+ * Which points to sample, and how to combine them.
+ *
+ * The old model used nine points at fixed 1-1.5 mile offsets from the tract
+ * centroid regardless of tract size. A dense urban tract is around 0.1 sq mi,
+ * so eight of nine samples landed in *other tracts*; a large rural tract can
+ * exceed 1,000 sq mi, so all nine clustered near the middle. Since the urban
+ * designation rule fires at >= 1 mile, an offset of 1.5 miles was larger than
+ * the entire decision threshold — the sampling geometry could flip a
+ * designation by itself.
+ *
+ * There are four rungs, in descending order of trustworthiness. Each sets its
+ * own `distanceModel` so the evidence trace can say which one produced the
+ * number, rather than presenting all four with equal confidence.
+ */
+export function legacySamplePlan(lat, lng) {
+  return {
+    distanceModel: 'fixed_offset_grid',
+    groups: [{ geoid: null, population: null, points: buildCommunitySamplePoints(lat, lng) }],
+  };
 }
 
-export function computeCommunityDistanceMetrics(elements, lat, lng) {
-  const samplePoints = buildCommunitySamplePoints(lat, lng);
-  const distancesByPoint = samplePoints
-    .map((point) => parseNearestMiles(elements, point.lat, point.lng))
-    .filter((distanceMiles) => Number.isFinite(distanceMiles));
+function areaScaledPlan(anchorLat, anchorLng, edgeMiles) {
+  return {
+    distanceModel: 'tract_area_scaled_grid',
+    groups: [{
+      geoid: null,
+      population: null,
+      points: buildCommunitySamplePoints(anchorLat, anchorLng, edgeMiles / AREA_SCALE_DIVISOR),
+    }],
+  };
+}
 
-  const centerNearestSupermarketMiles = parseNearestMiles(elements, lat, lng);
-  const communityAverageSupermarketMiles = average(distancesByPoint);
+async function fetchTractGeometry(fips, signal) {
+  const cached = geometryCache.get(fips);
+  if (cached !== undefined) return cached;
+
+  try {
+    const res = await fetch('/api/tract-geometry', {
+      method: 'POST',
+      signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fips }),
+    });
+    if (!res.ok) throw new Error(`tract geometry ${res.status}`);
+    const json = await res.json();
+    geometryCache.set(fips, json);
+    return json;
+  } catch {
+    // Cache the miss too: without this, every failed lookup re-requests on
+    // each pan, and geometry outages tend not to resolve within a session.
+    geometryCache.set(fips, null);
+    return null;
+  }
+}
+
+export async function buildSamplePlan(lat, lng, tract = {}, signal) {
+  const { fips, arealandSqMeters, internalLat, internalLng } = tract;
+
+  // Rungs 1 and 2: real block-group polygons.
+  if (fips) {
+    const geometry = await fetchTractGeometry(fips, signal);
+    const groups = (geometry?.blockGroups || [])
+      .map((bg) => ({
+        geoid: bg.geoid,
+        population: Number.isFinite(bg.population) ? bg.population : null,
+        points: samplePointsInPolygon(bg.rings, POINTS_PER_BLOCK_GROUP),
+      }))
+      // A block group too thin to catch a grid point contributes nothing.
+      .filter((group) => group.points.length > 0);
+
+    if (groups.length > 0) {
+      const weighted = groups.some((g) => Number.isFinite(g.population) && g.population > 0);
+      return {
+        distanceModel: weighted ? 'block_group_population_weighted' : 'block_group_uniform',
+        groups,
+      };
+    }
+  }
+
+  /*
+   * Rung 3: no polygon, but the Census geocoder gave us the tract's land area
+   * for free, so at least scale the grid to the tract instead of assuming
+   * 1.5 miles. Anchor on the Census internal point when we have it — unlike a
+   * centroid it is guaranteed to sit inside the tract, which matters for the
+   * crescent shapes coastlines and rivers produce.
+   */
+  const edgeMiles = tractEdgeMiles(arealandSqMeters);
+  if (edgeMiles) {
+    return areaScaledPlan(
+      Number.isFinite(internalLat) ? internalLat : lat,
+      Number.isFinite(internalLng) ? internalLng : lng,
+      edgeMiles,
+    );
+  }
+
+  // Rung 4: the old behaviour, and the least trustworthy.
+  return legacySamplePlan(lat, lng);
+}
+
+// ── Metrics ─────────────────────────────────────────────────────────────────
+export function computeCommunityDistanceMetrics(elements, lat, lng, plan) {
+  const activePlan = plan || legacySamplePlan(lat, lng);
+
+  const groupMeans = [];
+  const groupWeights = [];
+  let contributingSamples = 0;
+  let attemptedSamples = 0;
+
+  for (const group of activePlan.groups) {
+    const distances = [];
+    for (const point of group.points) {
+      attemptedSamples += 1;
+      const miles = parseNearestMiles(elements, point.lat, point.lng);
+      if (Number.isFinite(miles)) {
+        distances.push(miles);
+        contributingSamples += 1;
+      }
+    }
+
+    if (distances.length === 0) continue;
+    groupMeans.push(distances.reduce((sum, d) => sum + d, 0) / distances.length);
+    groupWeights.push(group.population);
+  }
+
+  /*
+   * Weighted across block groups by population, so the average reflects where
+   * people actually live rather than how much land there is. Without this, a
+   * large rural tract whose residents all live in one town near the one store
+   * would still report "far from stores", because parks, farmland and water
+   * would carry the same weight as the town.
+   */
+  const communityAverageSupermarketMiles = weightedMean(groupMeans, groupWeights);
 
   return {
-    centerNearestSupermarketMiles,
+    centerNearestSupermarketMiles: parseNearestMiles(elements, lat, lng),
     communityAverageSupermarketMiles,
-    // Report the samples that actually produced a distance, not the number we
-    // started with. Sample points that found no store are filtered out above,
-    // so the old `samplePoints.length` claimed 9 contributing samples even
-    // when only 3 did — a transparency figure the UI shows to the user.
-    sampleCount: distancesByPoint.length,
-    sampleAttemptCount: samplePoints.length,
+    // Samples that produced a distance, not samples attempted. Reporting the
+    // latter overstated the evidence behind the number the UI shows.
+    sampleCount: contributingSamples,
+    sampleAttemptCount: attemptedSamples,
+    blockGroupCount: activePlan.groups.length,
+    distanceModel: activePlan.distanceModel,
   };
 }
 
@@ -139,8 +297,16 @@ export function extractStorePoints(elements, centerLat, centerLng, limit = 200) 
   return points.slice(0, limit);
 }
 
+/*
+ * Single constructor for the result shape, used by both the success and the
+ * total-failure paths.
+ *
+ * The failure path used to be a hand-written duplicate of this object literal,
+ * which meant any field added here silently went missing when every endpoint
+ * was down.
+ */
 function makeResult(metrics, source, stores = []) {
-  const nearestMiles = metrics.communityAverageSupermarketMiles;
+  const nearestMiles = metrics?.communityAverageSupermarketMiles ?? null;
 
   /*
    * This used to read `nearestMiles == null ? true : nearestMiles >= 25`.
@@ -151,25 +317,24 @@ function makeResult(metrics, source, stores = []) {
    * designation regardless of the configured threshold. In other words, a gap
    * in OpenStreetMap tagging produced a confident designation.
    *
-   * We now only claim >=25 miles when we measured a distance. "Queried, found
-   * nothing" is reported as its own state so the evaluator can return Unknown
-   * and the UI can say the coverage was thin rather than implying certainty.
+   * We now only claim >=25 miles when we measured a distance.
    */
   const measured = Number.isFinite(nearestMiles);
 
   return {
     // Backward-compatible field name now carries community-average distance.
     nearestSupermarketMiles: nearestMiles,
-    communityAverageSupermarketMiles: metrics.communityAverageSupermarketMiles,
-    centerNearestSupermarketMiles: metrics.centerNearestSupermarketMiles,
-    communityDistanceSampleCount: metrics.sampleCount,
-    communityDistanceSampleAttempts: metrics.sampleAttemptCount,
-    distanceModel: 'community_average_sampled',
+    communityAverageSupermarketMiles: nearestMiles,
+    centerNearestSupermarketMiles: metrics?.centerNearestSupermarketMiles ?? null,
+    communityDistanceSampleCount: metrics?.sampleCount ?? 0,
+    communityDistanceSampleAttempts: metrics?.sampleAttemptCount ?? 0,
+    communityDistanceBlockGroups: metrics?.blockGroupCount ?? 0,
+    distanceModel: metrics?.distanceModel ?? 'unavailable',
     isTwentyFivePlusMiles: measured ? nearestMiles >= 25 : null,
     // True when the query succeeded but OSM had no supermarket within the
     // search radius. Distinct from `source: 'unavailable'`, which means the
     // query itself failed.
-    noStoresFound: !measured,
+    noStoresFound: source !== 'unavailable' && !measured,
     storeCount: stores.length,
     checkedRadiusMiles: SEARCH_RADIUS_MILES,
     stores,
@@ -203,14 +368,18 @@ async function fetchFromMirror(endpoint, query, signal) {
   return res.json();
 }
 
-export async function getNearestSupermarketDistance(lat, lng) {
-  const key = cacheKey(lat, lng);
+export async function getNearestSupermarketDistance(lat, lng, tract = {}) {
+  const key = cacheKey(lat, lng, tract.fips);
   const cached = cache.get(key);
   if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
     return cached.result;
   }
   // Drop expired entries proactively so the Map doesn't grow unbounded.
   if (cached) cache.delete(key);
+
+  // Resolved once and reused across endpoint attempts: which points to sample
+  // does not depend on which Overpass mirror answered.
+  const plan = await buildSamplePlan(lat, lng, tract);
 
   const query = buildQuery(lat, lng);
   const attempts = [
@@ -227,7 +396,7 @@ export async function getNearestSupermarketDistance(lat, lng) {
 
     try {
       const json = await attempt.run(controller.signal);
-      const metrics = computeCommunityDistanceMetrics(json?.elements, lat, lng);
+      const metrics = computeCommunityDistanceMetrics(json?.elements, lat, lng, plan);
       const stores = extractStorePoints(json?.elements, lat, lng);
       const result = makeResult(metrics, `osm_overpass:${attempt.label}`, stores);
       cache.set(key, { result, cachedAt: Date.now() });
@@ -239,21 +408,11 @@ export async function getNearestSupermarketDistance(lat, lng) {
     }
   }
 
-  // Every endpoint failed. This is different from a successful query that
-  // found no stores: there, `noStoresFound` is true and the source names the
-  // endpoint. Here we know nothing at all.
-  return {
-    nearestSupermarketMiles: null,
-    communityAverageSupermarketMiles: null,
-    centerNearestSupermarketMiles: null,
-    communityDistanceSampleCount: 0,
-    communityDistanceSampleAttempts: COMMUNITY_SAMPLE_OFFSETS_MILES.length,
-    distanceModel: 'community_average_sampled',
-    isTwentyFivePlusMiles: null,
-    noStoresFound: false,
-    storeCount: 0,
-    checkedRadiusMiles: SEARCH_RADIUS_MILES,
-    stores: [],
-    source: 'unavailable',
-  };
+  // Every endpoint failed. Distinct from a successful query that found no
+  // stores: there, `noStoresFound` is true and the source names the endpoint.
+  // Routed through makeResult so it cannot drift from the success shape.
+  return makeResult(
+    { distanceModel: plan.distanceModel, sampleAttemptCount: 0, blockGroupCount: plan.groups.length },
+    'unavailable',
+  );
 }

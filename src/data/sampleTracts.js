@@ -6,6 +6,19 @@
  * Each entry carries the four-dimensional vector used by lib/similarTracts:
  *   povertyPct, medianIncome, communityAvgDistMiles, pctNoVehicleLowAccess
  *
+ * CAVEAT — communityAvgDistMiles predates the sampling model change.
+ * These values were measured under the old fixed-offset grid (nine points at
+ * 1-1.5 miles from the tract centroid, regardless of tract size). Live tracts
+ * are now sampled inside real block-group polygons and weighted by
+ * population, which produces systematically different numbers -- generally
+ * smaller for dense urban tracts, where the old grid was measuring
+ * neighbouring tracts.
+ *
+ * similarTracts.js weights this dimension at 1.4, the highest of the four, so
+ * until these reference values are recomputed the k-NN is comparing a
+ * new-model query against old-model references. Treat "similar tracts" as
+ * indicative rather than precise.
+ *
  * Vectors are approximations from publicly cited USDA Atlas + ACS values
  * around 2020-2022. They are intentionally not exhaustive — the goal is
  * "show the user a handful of named comparison cases," not a research
