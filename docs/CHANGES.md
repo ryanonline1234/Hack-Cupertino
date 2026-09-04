@@ -1,4 +1,223 @@
-# Change log — security and correctness pass
+# Change log
+
+<!-- Newest first. -->
+
+# Round 2 — tract-polygon sampling + OpenRouter
+
+**Branch:** `claude/food-desert-ai-improvements-skyrmp`
+
+Two changes: the classification distance is now sampled from real tract
+geometry weighted by population, and the narrative runs on OpenRouter instead
+of Anthropic. Plus four smaller fixes found along the way.
+
+**Action required before deploy:** set `OPENROUTER_API_KEY`. `ANTHROPIC_API_KEY`
+is now optional — only needed if you set `LLM_PROVIDER=anthropic`. `CENSUS_KEY`
+is unchanged but now does double duty: ACS demographics *and* block-group
+population weighting.
+
+---
+
+## 1. The sampling bug — and what it was doing to designations
+
+`storeDistanceFetch.js` sampled nine points at fixed 1–1.5 mile offsets from
+the tract centroid, regardless of tract size, and fed their mean straight into
+the designation rule. A dense urban tract is ~0.1 sq mi, so most samples landed
+in **other tracts**. Since the urban rule fires at ≥1 mile, a 1.5-mile offset
+was larger than the entire decision threshold.
+
+Concretely, on a ~0.4 sq mi urban tract with a supermarket just past its
+western edge:
+
+| sampling model | distance | designation |
+|---|---:|---|
+| `fixed_offset_grid` (old) | 1.40 mi | **designated** |
+| `block_group_population_weighted` (new) | 0.51 mi | **not designated** |
+
+*8 of the old model's 9 sample points fell outside that tract.* It was calling
+a neighbourhood a food desert when it has a supermarket half a mile away.
+
+### What replaces it
+
+Block groups tile a tract exactly, so one TIGERweb query gets both the geometry
+to sample within and the unit to weight by. For each block group: grid points
+inside its polygon, nearest-store distance at each, averaged — then combined
+across block groups weighted by ACS population.
+
+Weighting matters as much as the polygon. Uniform sampling over a polygon still
+over-weights parks, industrial land and water. In a large rural tract where
+everyone lives in one town near the one store, unweighted sampling reports "far
+from stores"; population weighting reports what residents actually experience.
+
+### The degradation ladder
+
+Sampling degrades through four rungs, each labelled so the evidence trace can
+say which one produced the number. This is the point: a designation from rung 4
+should not be presented with the same confidence as one from rung 1, and
+previously the UI could not tell them apart.
+
+| Rung | `distanceModel` | When | Confidence shown |
+|---|---|---|---|
+| 1 | `block_group_population_weighted` | Geometry + populations | high |
+| 2 | `block_group_uniform` | Geometry only | high |
+| 3 | `tract_area_scaled_grid` | Land area only | medium |
+| 4 | `fixed_offset_grid` | Nothing — the old behaviour | low |
+
+Rung 3 came free: **`AREALAND` was already in the geocoder response and being
+discarded.** `geocoder.js` bound the tract object and kept only the FIPS codes,
+dropping the land area and `INTPTLAT`/`INTPTLON` — the Census "internal point",
+which unlike a centroid is guaranteed to fall inside the tract (centroids fall
+outside crescent-shaped tracts, which coastlines and rivers produce). Both are
+now used; neither costs a request.
+
+### Knock-on you should know about
+
+`src/data/sampleTracts.js` holds reference distances measured under the **old**
+model, and `similarTracts.js` weights that dimension at 1.4 — the highest of
+the four. Until those references are recomputed, "similar tracts" compares a
+new-model query against old-model references. Both files now carry the caveat
+and the panel label reads "indicative". Recomputing them is follow-up work.
+
+---
+
+## 2. OpenRouter
+
+The narrative now goes through OpenRouter by default, with Anthropic retained
+behind `LLM_PROVIDER=anthropic` so switching back is an env change.
+
+`api/_llm.js` split into: `_llm-prompt.js` (prompt, schema, sanitisation —
+provider-neutral), `_llm-errors.js` (typed errors), `_llm-openrouter.js`,
+`_llm-anthropic.js`, and a dispatcher. Adding a provider means one module
+exporting `generateNarrative(metrics)`.
+
+### Two things about the free tier
+
+**Free models do not reliably honour JSON schemas.** OpenRouter forwards
+`strict: true`, but enforcement depends on the underlying provider. So this
+change **reintroduces the text-parsing fallback the last round deleted** —
+`parseNarrativeContent` recovers from five shapes, ending with the
+sentence-midpoint split. That heuristic is back because a free model cannot
+promise the shape. It is a real cost of the free tier, not an oversight.
+
+**The budget is shared, not per-user:** ~20 requests/minute and 200/day *per
+key*, across every visitor. Our per-IP limit dropped 10 → 6/min so one client
+cannot monopolise it, and a 429 now passes through as 429 with its own UI
+message instead of being retried three times into the cap. The 6-hour narrative
+cache absorbs repeat traffic, but 200/day is a hard ceiling for a public demo.
+
+`LLM_MODEL` defaults to `openrouter/free` — a router that picks among available
+free models and filters for the capabilities a request needs. Free model IDs
+are retired without notice, so pinning one is a maintenance liability; the cost
+is that narrative tone varies between tracts. Pin a specific model via
+`LLM_MODEL` if you prefer consistency.
+
+### Three seam leaks closed
+
+`api/_llm.js` claimed to be the only file knowing about Anthropic. It nearly
+was, and the nearly would have cost us:
+
+1. `api/llmapi.js` detected misconfiguration by string-matching
+   `'ANTHROPIC_API_KEY'` in the error message → now typed `LlmConfigError`.
+2. It assumed the SDK sets a numeric `err.status`. A raw `fetch` client does
+   not, so every upstream failure would have collapsed to 502 and the browser's
+   429-aware backoff would have **silently stopped working** — which matters a
+   great deal on a 200/day cap. → `LlmUpstreamError` carries `status`.
+3. `AICard.jsx` named the env var in user-facing copy → now neutral.
+
+---
+
+## 3. Smaller fixes
+
+**A bug introduced by the last round.** `sanitizeMetrics` coerced with
+`Number()` before checking for absence — and `Number(null)` is `0`, which
+passes `isFinite`. An explicitly-null metric became a hard zero, so a tract
+with no Census data told the model it had **$0 median income**. That is the
+exact failure the null handling exists to prevent, reintroduced at the
+boundary. Fixed, with tests for both null and a genuine zero.
+
+**CDC zeros (`cdcFetch.js`).** Same bug `censusFetch` had: a missing measure
+became `0`, so a tract outside PLACES coverage displayed "0% diabetes
+prevalence" as a finding and projected zero health benefit. Now null. This
+required extending the `isNum` guards into the projection engine's health
+block — `diabetesReductionPct`, `obesityReductionPct`, `diabetesNewRate`,
+`obesityNewRate` and `estimatedCasesAvoided` are all nullable now, and the
+executive summary says "prevalence unavailable" rather than rendering `NaN`.
+A genuine `0.0` reading still projects normally.
+
+**Dead wiring from the last round, now live.** `meta.sourceStatus` and
+`noStoresFound` were written and never read — the previous `docs/CHANGES.md`
+claimed "the UI can badge them", which was not true. Now:
+- A new "Sampling:" confidence pill names the ladder rung.
+- "Distance: no stores in 50 mi (OSM)" is distinct from "Distance:
+  unavailable"; both used to render as an em dash.
+- The trace note explains *why* a zero-result query yields Unknown rather than
+  Designated, and reports contributing samples out of attempted, across how
+  many block groups.
+
+**Duplicated failure shape.** The all-endpoints-failed return in
+`storeDistanceFetch.js` was a hand-written copy of `makeResult`'s object
+literal, so any field added to one silently went missing from the other. Both
+paths now go through `makeResult`.
+
+**`parseNearestMiles` sorted to find a minimum** — O(n log n) per sample point,
+re-run over the full element list once per point. The ladder can ask for dozens
+of points instead of nine, so it is a single pass now.
+
+---
+
+## Environment variables (round 2)
+
+| Variable | Required | Notes |
+|---|---|---|
+| `OPENROUTER_API_KEY` | Yes (default provider) | **New** |
+| `CENSUS_KEY` | Yes | Now also powers block-group population weighting |
+| `ANTHROPIC_API_KEY` | Only if `LLM_PROVIDER=anthropic` | No longer the default |
+| `LLM_PROVIDER` | No | `openrouter` (default) or `anthropic` |
+| `LLM_MODEL` | No | Defaults to `openrouter/free` |
+| `OPENROUTER_SITE_URL` | No | `HTTP-Referer` attribution header |
+| `ALLOWED_ORIGINS` | No | Extra allowed origins |
+
+No other keys are needed. TIGERweb, the Census geocoder, CDC PLACES, Overpass,
+Nominatim, OSM tiles and Streets GL are all keyless.
+
+---
+
+## Verification (round 2)
+
+`npm run lint`, `npm test` (**80 tests**, up from 40), `npm run build` — all
+clean. Endpoint guards re-run against the new `/api/tract-geometry`: foreign
+origin 403, GET 405, malformed FIPS 400, rate limit 429.
+
+New coverage worth knowing about:
+- `pointInRings` against a square, a concave L, a polygon with a hole, and a
+  sliver — the hole case matters because Esri winding order is the usual source
+  of bugs here.
+- A test asserting **8 of 9 legacy sample points fall outside a small urban
+  tract**, which documents the bug being fixed.
+- One test per ladder rung, asserting the right `distanceModel` label.
+- Population weighting pulling the average toward the populated block group.
+- The parser recovering all five response shapes, including braces inside
+  string values.
+
+### Still needs a live run
+
+Outbound network to `tigerweb.geo.census.gov`, `api.census.gov` and
+`openrouter.ai` is blocked in the sandbox this was written in. Verified: every
+guard, every pure function, and clean degradation (a blocked TIGERweb produced
+a 502 and fell through to rung 3/4 rather than failing the lookup).
+
+**Not verified, and the highest-risk piece: the TIGERweb layer-name
+resolution.** Layer IDs are inconsistent across TIGERweb MapServers and
+published references disagree, so `api/tract-geometry.js` resolves the
+block-group layer by matching its `name` rather than hardcoding an ID. That
+logic has never run against the real service. If it fails, the app degrades to
+rung 3 silently — check the server logs for `[tract-geometry]` on first deploy.
+
+A real OpenRouter generation and a real ACS block-group call also need one live
+run each.
+
+---
+
+# Round 1 — security and correctness pass
 
 **Branch:** `claude/food-desert-ai-improvements-skyrmp`
 **Scope:** closed a live security hole in the `api/` endpoints, moved the AI call
