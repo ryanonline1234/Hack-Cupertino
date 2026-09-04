@@ -38,10 +38,14 @@ function toExecutiveSummary({ simulation, pctLowAccessReduction, commuteHoursSav
       : 'Commute-hours saved cannot be estimated: household counts are unavailable for this tract.',
   );
 
+  const diabetesClause = isNum(diabetesReductionPct)
+    ? `diabetes prevalence improving by roughly ${diabetesReductionPct.toFixed(2)} percentage points`
+    : 'diabetes prevalence unavailable for this tract';
+
   lines.push(
     isNum(annualLocalImpact)
-      ? `Modeled local impact is about ${summaryNumber(annualLocalImpact, { prefix: '$' })} annually, with diabetes prevalence improving by roughly ${diabetesReductionPct.toFixed(2)} percentage points.`
-      : `Local economic impact cannot be estimated without tract population; diabetes prevalence would improve by roughly ${diabetesReductionPct.toFixed(2)} percentage points.`,
+      ? `Modeled local impact is about ${summaryNumber(annualLocalImpact, { prefix: '$' })} annually, with ${diabetesClause}.`
+      : `Local economic impact cannot be estimated without tract population; ${diabetesClause}.`,
   );
 
   return lines;
@@ -90,8 +94,19 @@ export function projectImpact(communityData, scenario = {}) {
     : null;
 
   const healthEffectFactor = clamp(simulation.coverageScore * (0.35 + lowAccessIntensity * 0.65), 0.08, 1);
-  const diabetesReductionPct = diabetes * CORRELATIONS.diabetesReductionRelative * healthEffectFactor;
-  const obesityReductionPct = obesity * CORRELATIONS.obesityReductionRelative * healthEffectFactor;
+
+  /*
+   * CDC PLACES measures are nullable (see src/pipeline/cdcFetch.js): a tract
+   * outside PLACES coverage has no prevalence reading at all. Multiplying null
+   * yields NaN, which renders as "NaN%" — worse than the 0 it replaced. A
+   * missing prevalence means no projected reduction can be stated.
+   */
+  const diabetesReductionPct = isNum(diabetes)
+    ? diabetes * CORRELATIONS.diabetesReductionRelative * healthEffectFactor
+    : null;
+  const obesityReductionPct = isNum(obesity)
+    ? obesity * CORRELATIONS.obesityReductionRelative * healthEffectFactor
+    : null;
 
   /*
    * Diabetes cases avoided.
@@ -114,7 +129,7 @@ export function projectImpact(communityData, scenario = {}) {
    * value — see src/engine/correlations.js.
    */
   const DIABETES_PERSISTENCE_FACTOR = 0.55;
-  const diabetesCasesAvoided = isNum(adultPopulation)
+  const diabetesCasesAvoided = isNum(adultPopulation) && isNum(diabetes)
     ? Math.round(
       adultPopulation
         * (diabetes / 100)
@@ -205,9 +220,13 @@ export function projectImpact(communityData, scenario = {}) {
       noVehicleHouseholdsHelped,
     },
     health: {
-      diabetesNewRate: Math.max(diabetes - diabetesReductionPct, 0),
+      diabetesNewRate: isNum(diabetes) && isNum(diabetesReductionPct)
+        ? Math.max(diabetes - diabetesReductionPct, 0)
+        : null,
       diabetesReductionPct,
-      obesityNewRate: Math.max(obesity - obesityReductionPct, 0),
+      obesityNewRate: isNum(obesity) && isNum(obesityReductionPct)
+        ? Math.max(obesity - obesityReductionPct, 0)
+        : null,
       obesityReductionPct,
       estimatedCasesAvoided: diabetesCasesAvoided,
     },

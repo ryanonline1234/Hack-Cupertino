@@ -175,3 +175,41 @@ test('no-vehicle households helped is null when the source count is unavailable'
 
   assert.equal(impact.foodAccess.noVehicleHouseholdsHelped, null);
 });
+
+// ── Missing CDC coverage must not read as zero health burden ────────────────
+
+test('health projections are null when CDC prevalence is unavailable', () => {
+  const impact = projectImpact(
+    makeCommunityData({ health: { diabetes: null, obesity: null } }),
+  );
+
+  // Previously cdcFetch returned 0 for a tract outside PLACES coverage, so
+  // this path produced a confident "0% diabetes, 0 cases avoided". Now null.
+  assert.equal(impact.health.diabetesReductionPct, null);
+  assert.equal(impact.health.obesityReductionPct, null);
+  assert.equal(impact.health.diabetesNewRate, null);
+  assert.equal(impact.health.obesityNewRate, null);
+  assert.equal(impact.health.estimatedCasesAvoided, null);
+});
+
+test('a missing prevalence never renders as NaN in the summary', () => {
+  const impact = projectImpact(
+    makeCommunityData({ health: { diabetes: null, obesity: null } }),
+  );
+
+  for (const line of impact.simulation.executiveSummary) {
+    assert.doesNotMatch(line, /NaN/, `summary line contains NaN: ${line}`);
+  }
+  assert.ok(
+    impact.simulation.executiveSummary.some((l) => l.includes('prevalence unavailable')),
+  );
+});
+
+test('a genuine zero prevalence is still projected, not treated as missing', () => {
+  const impact = projectImpact(
+    makeCommunityData({ health: { diabetes: 0, obesity: 0 } }),
+  );
+
+  assert.equal(impact.health.diabetesReductionPct, 0);
+  assert.equal(impact.health.estimatedCasesAvoided, 0);
+});
