@@ -13,15 +13,33 @@
  * from a template the caller cannot influence. There is no request shape that
  * makes this endpoint say something we did not write.
  *
+ * The provider behind this is chosen by LLM_PROVIDER (default: openrouter)
+ * and is not disclosed to the browser.
+ *
  * Request:  { metrics: { lowAccessPct, diabetesPct, ..., isFoodDesert, isRural } }
  * Response: { daily_reality: string, what_would_change: string }
  */
 
 import { guardRequest } from './_guard.js';
-import { generateNarrative, sanitizeMetrics } from './_llm.js';
+import {
+  LlmConfigError,
+  LlmUpstreamError,
+  generateNarrative,
+  requiredKeyName,
+  sanitizeMetrics,
+} from './_llm.js';
 
-// Deliberately tighter than the other endpoints: every call here costs money.
-const RATE_LIMIT = { limit: 10, windowMs: 60_000 };
+/*
+ * Tighter than the other endpoints, and tighter than it used to be.
+ *
+ * OpenRouter's free tier allows roughly 20 requests/minute and 200/day PER
+ * KEY -- shared across every visitor, not per user. A 10/min per-IP limit is
+ * looser than that in aggregate: three visitors could exhaust the upstream
+ * minute budget while each stays inside their own. 6/min keeps a single
+ * client from monopolising a shared allowance, and the browser's 6-hour
+ * narrative cache absorbs the repeat traffic.
+ */
+const RATE_LIMIT = { limit: 6, windowMs: 60_000 };
 
 export default async function handler(req, res) {
   const guard = guardRequest(req, res, RATE_LIMIT);
@@ -40,20 +58,31 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'no-store');
     res.status(200).json(narrative);
   } catch (err) {
-    const message = String(err?.message || err);
-
-    // A missing key is our misconfiguration, not the caller's fault, and is
-    // worth distinguishing in logs from an upstream failure.
-    if (message.includes('ANTHROPIC_API_KEY')) {
-      console.error('[llmapi] not configured:', message);
+    // Catch by type, not by string-matching the message. The old code looked
+    // for 'ANTHROPIC_API_KEY' in the text, which silently stopped working the
+    // moment a different provider was configured.
+    if (err instanceof LlmConfigError) {
+      console.error(`[llmapi] not configured (need ${requiredKeyName()}):`, err.message);
       res.status(500).json({ error: 'Narrative service is not configured' });
       return;
     }
 
-    console.error('[llmapi] generation failed:', message);
-    // Pass through the upstream status when we have one so the client's
-    // existing backoff can tell 429 and 5xx apart from a hard failure.
-    const status = Number.isInteger(err?.status) ? err.status : 502;
+    const status = err instanceof LlmUpstreamError && err.status ? err.status : 502;
+    console.error(`[llmapi] generation failed (${status}):`, String(err?.message || err));
+
+    /*
+     * 429 is passed through rather than flattened to 502 so the browser's
+     * backoff still works. On a shared free tier the daily cap is a normal
+     * operating condition, so it gets its own message the UI can show.
+     */
+    if (status === 429) {
+      res.status(429).json({
+        error: 'Narrative rate limit reached',
+        detail: 'The shared free-tier request budget is exhausted. Try again shortly.',
+      });
+      return;
+    }
+
     res.status(status).json({ error: 'Narrative generation failed' });
   }
 }

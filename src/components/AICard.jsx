@@ -108,11 +108,21 @@ async function fetchNarrative(metrics, signal) {
       });
 
       if (!res.ok) {
-        if ((res.status === 429 || res.status >= 500) && attempt < 2) {
+        /*
+         * 429 means the shared free-tier budget is exhausted, not that this
+         * request was unlucky -- the server passes the upstream status
+         * through rather than flattening it to 502. Retrying into a daily cap
+         * just burns the remaining allowance, so give it one backoff at most
+         * and then surface it as its own state.
+         */
+        const retryable = res.status >= 500 || (res.status === 429 && attempt < 1);
+        if (retryable && attempt < 2) {
           await wait(400 * (2 ** attempt));
           continue;
         }
-        throw new Error(`Narrative request failed: ${res.status}`);
+        const err = new Error(`Narrative request failed: ${res.status}`);
+        err.status = res.status;
+        throw err;
       }
 
       const json = await res.json();
@@ -269,7 +279,7 @@ export default function AICard({ communityData, impactData }) {
         if (err?.name === 'AbortError') return;
         console.error(err);
         if (cancelled) return;
-        setStatus('error');
+        setStatus(err?.status === 429 ? 'rate_limited' : 'error');
         setNarrative('');
       }
     }
@@ -397,10 +407,17 @@ export default function AICard({ communityData, impactData }) {
           </div>
         )}
 
+        {status === 'rate_limited' && (
+          <p className="text-xs italic" style={{ color: 'rgba(251,191,36,0.75)' }}>
+            The shared free-tier request budget is used up for now. Cached
+            narratives still work — try a new one again shortly.
+          </p>
+        )}
+
         {status === 'error' && (
           <p className="text-xs text-white/30 italic">
             Narrative unavailable — the request failed. If this persists, check
-            that ANTHROPIC_API_KEY is set on the server.
+            the server logs; the narrative provider may not be configured.
           </p>
         )}
 
