@@ -17,7 +17,7 @@
  * are imported per request so edits take effect without restarting the server.
  */
 
-const HANDLED_ROUTES = ['/api/llmapi', '/api/overpass', '/api/census'];
+const HANDLED_ROUTES = ['/api/llmapi', '/api/overpass', '/api/census', '/api/tract-geometry'];
 const MAX_BODY_BYTES = 1024 * 1024;
 
 function readBody(req) {

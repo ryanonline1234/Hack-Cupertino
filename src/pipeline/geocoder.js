@@ -16,6 +16,16 @@ async function fetchJsonWithFallback(requests) {
   throw lastError || new Error('All provider requests failed');
 }
 
+/*
+ * Census returns these as strings, sometimes with a leading '+' on latitudes
+ * ("+37.7749"), and sometimes absent entirely.
+ */
+function toFiniteNumber(value) {
+  if (value == null || value === '') return null;
+  const n = Number(String(value).trim());
+  return Number.isFinite(n) ? n : null;
+}
+
 export async function coordsToGeo(lat, lng) {
   try {
     const censusJson = await fetchJsonWithFallback([
@@ -40,6 +50,25 @@ export async function coordsToGeo(lat, lng) {
     const stateFips = state?.STATE ?? fips.slice(0, 2);
     const stateAbbr = state?.STUSAB ?? '';
 
+    /*
+     * The tract record already carries its land area and an internal point;
+     * we used to bind `tract` and then throw both away.
+     *
+     * AREALAND (square metres) lets the distance sampler scale its grid to the
+     * actual size of the tract when polygon geometry is unavailable, instead
+     * of using a fixed 1.5-mile offset that can exceed the entire tract.
+     *
+     * INTPTLAT/INTPTLON is the Census "internal point": unlike a centroid it
+     * is guaranteed to fall inside the tract, which matters for the crescent
+     * and horseshoe shapes that coastlines and rivers produce.
+     *
+     * Neither costs an extra request — they are in the response we already
+     * fetch and parse.
+     */
+    const arealandSqMeters = toFiniteNumber(tract.AREALAND);
+    const internalLat = toFiniteNumber(tract.INTPTLAT ?? tract.CENTLAT);
+    const internalLng = toFiniteNumber(tract.INTPTLON ?? tract.CENTLON);
+
     let zip = '';
     try {
       const nomData = await fetchJsonWithFallback([
@@ -57,7 +86,16 @@ export async function coordsToGeo(lat, lng) {
       zip = '';
     }
 
-    return { fips, countyFips, stateFips, stateAbbr, zip };
+    return {
+      fips,
+      countyFips,
+      stateFips,
+      stateAbbr,
+      zip,
+      arealandSqMeters,
+      internalLat,
+      internalLng,
+    };
   } catch {
     return null;
   }
