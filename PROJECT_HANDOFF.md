@@ -239,16 +239,22 @@ Logs now explicitly call out:
 
 Current env vars used:
 
-1. VITE_CENSUS_KEY
-2. VITE_ANTHROPIC_KEY
+1. OPEN_ROUTER_API_KEY (server-only, read by api/llmapi.js on Vercel)
+2. VITE_OPEN_ROUTER_API_KEY (local-dev Bearer [REDACTED] for the vite proxy only)
+3. VITE_CENSUS_KEY (optional; Census fetch falls back to defaults without it)
+4. Legacy aliases still honored: LLMAPI_KEY, VITE_ANTHROPIC_KEY
 
-Vite proxy routes:
+Vite proxy routes (local dev only):
 
 1. /api/census-geocoder
 2. /api/nominatim
 3. /api/cdc
 4. /api/census
-5. /api/llmapi
+5. /api/llmapi -> https://openrouter.ai (rewrites /api/llmapi prefix to /)
+
+Production note: vercel.json intentionally has NO /api/llmapi rewrite —
+/api/llmapi is served by the serverless function in api/llmapi.js. Adding a
+rewrite would shadow the function and strip the Authorization header.
 
 ## 12. Testing and Build Commands
 

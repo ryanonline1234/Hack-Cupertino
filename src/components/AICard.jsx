@@ -93,10 +93,10 @@ async function fetchNarrative(prompt, apiKey, signal) {
   let lastError = null;
 
   // In production we route through our own /api/llmapi serverless function,
-  // which uses a server-only LLMAPI_KEY and avoids both CORS and the
+  // which uses the server-only OPEN_ROUTER_API_KEY and avoids both CORS and the
   // accidental shipping of the API key in the browser bundle.
   // In dev we route through the vite proxy at /api/llmapi/v1/chat/completions
-  // (the dev proxy still requires the bearer token).
+  // (the dev proxy still requires the client-side bearer token).
   const isDev = import.meta.env.DEV;
   const url = isDev
     ? '/api/llmapi/v1/chat/completions'
@@ -249,7 +249,11 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
         return;
       }
 
-      const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
+      // Dev-only Bearer [REDACTED] for the vite proxy. Production uses the
+      // server-side /api/llmapi function (OPEN_ROUTER_API_KEY), so a missing
+      // client-side key is fine there. VITE_ANTHROPIC_KEY is a legacy alias.
+      const apiKey = import.meta.env.VITE_OPEN_ROUTER_API_KEY
+        || import.meta.env.VITE_ANTHROPIC_KEY;
       // In dev we still require the bearer token client-side to hit
       // /api/llmapi/v1/chat/completions via the vite proxy.
       // In production the server-side /api/llmapi serverless function reads
@@ -344,7 +348,9 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
 
   // In production the key lives on the server and the client never sees it.
   const canGenerate = Boolean(
-    communityData && prompt && (!import.meta.env.DEV || import.meta.env.VITE_ANTHROPIC_KEY)
+    communityData && prompt && (!import.meta.env.DEV
+      || import.meta.env.VITE_OPEN_ROUTER_API_KEY
+      || import.meta.env.VITE_ANTHROPIC_KEY)
   );
   const hasNarrative = paragraphs.length > 0;
   const cacheLabel = cacheMeta
@@ -433,7 +439,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
 
         {status === 'error' && (
           <p className="text-xs text-white/30 italic">
-            Narrative unavailable — check VITE_ANTHROPIC_KEY in .env
+            Narrative unavailable — check OPEN_ROUTER_API_KEY on the server (or VITE_OPEN_ROUTER_API_KEY in .env for local dev)
           </p>
         )}
 
@@ -441,7 +447,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
           <p className="text-xs text-white/30 italic">
             {canGenerate
               ? 'Narrative is on-demand. Click Generate Narrative when you want an update.'
-              : 'Add VITE_ANTHROPIC_KEY to .env (or set LLMAPI_KEY on the server) to enable AI narrative.'}
+              : 'Set OPEN_ROUTER_API_KEY on the server (or VITE_OPEN_ROUTER_API_KEY in .env for local dev) to enable AI narrative.'}
           </p>
         )}
       </div>

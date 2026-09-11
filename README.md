@@ -1,94 +1,125 @@
-# Food Desert Simulator
+# NutriPlan.AI — Food Desert Impact Simulator
 
-Food Desert Simulator is an explainability-first React app for exploring US food access conditions, classifying designation status, and modeling intervention impact.
+> NutriPlan.AI helps cities and public-health teams turn geography into clarity: type any US address and see whether the community is a food desert, why, and what changes if a grocery store opens.
 
-## Purpose
+An explainability-first React app for exploring US food-access conditions, classifying designation status, and modeling intervention impact. Built for the [Congressional App Challenge](https://www.congressionalappchallenge.us/) — see [`docs/CAC_SUBMISSION.md`](docs/CAC_SUBMISSION.md) for the submission packet (demo-video script, Q&A answers, AI disclosure, judges' checklist).
 
-This project combines USDA, CDC, Census, and OSM-derived signals to help users answer three questions:
+## Purpose (one sentence)
 
-1. What is the current food access designation in this community?
-2. Why did the system make that designation?
-3. What changes are likely if we apply an intervention scenario?
+NutriPlan.AI answers three questions for any US community: what is the current food-access designation, why did the system make that designation, and what is likely to change under an intervention scenario.
 
-## Current Feature Set
+## Target audience
 
-1. Location-driven tract analysis with merged public datasets.
-2. Transparent designation output with evidence trace and confidence context.
-3. Community-average supermarket distance model with center-point reference value.
-4. Impact projections for access, health directionality, local economics, and trip true-cost.
-5. Scenario save/compare and threshold sensitivity workflows.
-6. Nationwide US designation map mode with zoom-aware in-view summaries.
-7. Landing experience with animated intro and educational content.
+- City planners and public-health teams evaluating grocery interventions
+- Students, educators, and community advocates learning how food access is measured
+- Congressional App Challenge judges evaluating idea, implementation, and code quality
 
-## Quick Start (Any IDE)
+## Features
 
-This repository is IDE-agnostic and runs from terminal commands only.
+1. Location-driven tract analysis merging USDA, CDC PLACES, Census ACS, and OpenStreetMap signals.
+2. Transparent designation output with evidence trace, source-confidence badges, and Unknown-when-unsupported handling.
+3. Community-average supermarket distance model (center-point value kept as a reference metric).
+4. Impact projections across access, health directionality, local economics, and trip true-cost.
+5. Scenario save/compare, threshold-sensitivity preview, and shareable URL deep links.
+6. Nationwide designation map mode with zoom-aware in-view summaries and similar-tract comparison.
+7. Landing experience with animated intro and nutrition-education content.
+8. Installable PWA with offline app shell (data calls stay network-only — stale data is never presented as fresh).
 
-### Prerequisites
+## Tech stack
 
-1. Node.js 20+ (recommended) and npm.
-2. Network access for public API/data providers.
+| Layer | Tools / languages |
+|---|---|
+| UI | React 19, Vite, Tailwind CSS, Framer Motion, Leaflet + Streets GL 3D map, Chart.js |
+| Data pipeline | JavaScript (ES modules) over USDA Food Access Research Atlas, CDC PLACES, Census ACS, Overpass/OSM |
+| AI narrative | OpenRouter (OpenAI-compatible `chat/completions`), on-demand two-paragraph community narrative |
+| APIs | Vercel serverless functions in `api/` (Overpass + LLM proxies) |
+| Tests | Node built-in test runner (`node --test`) |
+| PWA | `vite-plugin-pwa` (Workbox) |
 
-### Setup
+## Quick start
 
-1. Install dependencies:
-	- `npm install`
-2. Provide environment values in `.env`:
-	- `VITE_CENSUS_KEY`
-	- `VITE_ANTHROPIC_KEY`
+Prerequisites: Node.js 20+ and npm.
 
-The template file `.env.example` is included.
+```bash
+npm install
+cp .env.example .env   # then fill in keys (optional — see below)
+npm run dev -- --host 127.0.0.1 --port 5173
+```
 
-### Run Local Dev Server
+### Environment variables
 
-- `npm run dev -- --host 127.0.0.1 --port 5173`
+| Variable | Required? | Used by |
+|---|---|---|
+| `OPEN_ROUTER_API_KEY` | No (production AI narrative) | `api/llmapi.js` on Vercel — set in the Vercel dashboard, never in the client bundle |
+| `VITE_OPEN_ROUTER_API_KEY` | No (local-dev AI narrative) | Vite dev proxy → OpenRouter; only for `npm run dev` |
+| `VITE_CENSUS_KEY` | No | Census ACS demographics; app falls back to built-in defaults without it |
 
-### Build/Lint/Test
+**Judges / reviewers without keys:** the app runs fully keyless. Maps, designation classification, evidence trace, impact projections, scenario compare, and sample tracts all work. Only the AI narrative panel shows an on-demand prompt instead of generated text.
 
-1. Lint: `npm run lint`
-2. Unit tests: `npm test`
-3. Production build: `npm run build`
-4. Local preview of built app: `npm run preview`
+Get an OpenRouter key at <https://openrouter.ai/keys>.
 
-## IDE Migration Notes
+### Build / lint / test
 
-Use this checklist when switching from VS Code to another IDE (Cursor, WebStorm, Zed, etc.).
+```bash
+npm run lint     # eslint
+npm test         # unit tests (node --test tests/**/*.test.js)
+npm run build    # production build to dist/
+npm run preview  # serve the production build locally
+```
 
-1. Open the repository root (`food-desert-simulator`) as the project root.
-2. Confirm Node interpreter points to Node 20+.
-3. Ensure `.env` is loaded for run configurations.
-4. Set run command to `npm run dev -- --host 127.0.0.1 --port 5173`.
-5. Set validation commands to `npm run lint`, `npm test`, and `npm run build`.
-6. If your IDE has import alias settings, keep `@` mapped to `src` to match Vite config.
+Current status: tests passing, production build passing (re-verify with the commands above before submitting).
 
-## Project Structure (High Level)
+## Project structure
 
-1. App shell and tracker routing:
-	- `src/App.jsx`
-	- `src/TrackerApp.jsx`
-2. Data pipeline:
-	- `src/pipeline/*.js`
-3. Simulation and classification engines:
-	- `src/engine/*.js`
-4. Main UI surfaces:
-	- `src/components/*.jsx`
-	- `src/ui/landing/LandingPage.tsx`
-5. Unit tests:
-	- `tests/*.test.js`
+```text
+src/
+  App.jsx                  # landing ↔ tracker shell
+  TrackerApp.jsx           # analysis orchestration (location → pipeline → impact → UI)
+  pipeline/                # geocoder, USDA, CDC, Census, OSM distance, normalizer
+  engine/                  # designation evaluator, impact projection, simulation scoring
+  components/              # map, stats/trace panels, AI narrative, impact, atlas views
+  ui/landing/              # NutriPlan.AI landing experience
+  lib/ / utils/ / hooks/   # citations, similar-tract search, URL state, formatting
+api/
+  llmapi.js                # server-side OpenRouter proxy (OPEN_ROUTER_API_KEY stays server-only)
+  overpass.js              # server-side Overpass proxy with mirror failover
+tests/                     # designation behavior, USDA fixtures, projection economics, distance model
+public/data/               # bundled reference datasets
+docs/
+  CAC_SUBMISSION.md        # Congressional App Challenge packet (video script + Q&A + checklist)
+PROJECT_HANDOFF.md         # implementation-level technical handoff
+```
 
-## Data Sources
+## Data sources
 
-1. USDA Food Access Research Atlas
-2. CDC PLACES
-3. US Census ACS
-4. OpenStreetMap / Overpass
+1. USDA Food Access Research Atlas (low-access / low-income context)
+2. CDC PLACES (diabetes, obesity prevalence)
+3. US Census ACS 5-year (income, poverty, vehicle access, population)
+4. OpenStreetMap / Overpass (supermarket locations for the distance model)
 
-## Caveats
+### Caveats (shown in-app where relevant)
 
-1. Distance metrics are model estimates (not guaranteed road-network travel distance/time).
-2. Upstream coverage and quality vary by geography.
-3. Unknown outputs are intentional when required evidence is missing.
+1. Distance metrics are model estimates (Haversine over sampled community points), not road-network travel distance/time.
+2. Upstream coverage and quality vary by geography; OSM tagging completeness affects estimates.
+3. `Unknown` designations are intentional when required evidence is missing — the app refuses to guess.
+4. Health projections are directional planning estimates, not medical predictions.
 
-## Technical Handoff
+## AI disclosure (Congressional App Challenge)
 
-For implementation-level transfer details, see `PROJECT_HANDOFF.md`.
+Per CAC rules, all AI usage is disclosed here and in [`docs/CAC_SUBMISSION.md`](docs/CAC_SUBMISSION.md):
+
+- **What uses AI:** one optional feature — the Community Narrative panel, which turns the already-computed metrics into two short paragraphs via OpenRouter (`anthropic/claude-3-5-haiku` or equivalent). All classification, distance modeling, and impact math is deterministic code in `src/engine/` and `src/pipeline/`, covered by unit tests.
+- **What AI did not do:** app architecture, data pipeline, engines, UI, tests, and docs reflect the student's own design and implementation; AI tools assisted with specific implementation and documentation tasks only.
+- **Human contribution:** the student(s) designed the system, wrote and debugged the code, chose data sources and thresholds, built the evidence-trace UX, and verified behavior with tests and builds.
+
+## IDE setup
+
+Open the repository root (`food-desert-simulator`) as the project root, use Node 20+, ensure `.env` is loaded, and keep the `@` import alias mapped to `src` (see `vite.config.js`).
+
+## Technical handoff
+
+Implementation-level transfer details (thresholds, pipeline contracts, caching, risk register): [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md).
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). Students retain IP ownership of their submission; the license covers the public code repository.

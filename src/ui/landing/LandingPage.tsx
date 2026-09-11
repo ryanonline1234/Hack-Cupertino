@@ -199,9 +199,23 @@ const INTRO_TITLE_HOLD_MS = 1800;
 export function LandingPage({ onLaunchSimulation, className }: LandingPageProps) {
   const [navVisible, setNavVisible] = useState(true);
   const [nutritionTab, setNutritionTab] = useState<keyof typeof NUTRITION_TABS>("benefits");
-  const [showIntroOverlay, setShowIntroOverlay] = useState(true);
+  // Respect reduced-motion: skip the intro overlay entirely instead of
+  // forcing users through animation they asked the OS to minimize.
+  const [showIntroOverlay, setShowIntroOverlay] = useState(
+    () =>
+      typeof window === "undefined" ||
+      !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+  );
   const navRaf = useRef(0);
   const introDismissTimerRef = useRef<number | undefined>(undefined);
+
+  const dismissIntro = () => {
+    if (introDismissTimerRef.current) {
+      window.clearTimeout(introDismissTimerRef.current);
+      introDismissTimerRef.current = undefined;
+    }
+    setShowIntroOverlay(false);
+  };
 
   const scheduleIntroDismiss = (delayMs: number) => {
     if (introDismissTimerRef.current) {
@@ -222,6 +236,16 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
         introDismissTimerRef.current = undefined;
       }
     };
+  }, [showIntroOverlay]);
+
+  // Esc skips the intro for keyboard users (mirrors the Skip button).
+  useEffect(() => {
+    if (!showIntroOverlay) return undefined;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") dismissIntro();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [showIntroOverlay]);
 
   useLayoutEffect(() => {
@@ -352,6 +376,14 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
                 className="opacity-95"
                 onTitlePhase={() => scheduleIntroDismiss(INTRO_TITLE_HOLD_MS)}
               />
+              <button
+                type="button"
+                onClick={dismissIntro}
+                aria-label="Skip intro animation"
+                className="absolute bottom-6 right-6 z-10 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 backdrop-blur transition-[border-color,color] duration-150 hover:border-white/30 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              >
+                Skip intro
+              </button>
             </motion.div>
           )}
         </AnimatePresence>

@@ -27,8 +27,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Food Desert Impact Simulator',
-        short_name: 'FoodDesertSim',
+        name: 'NutriPlan.AI — Food Desert Impact Simulator',
+        short_name: 'NutriPlan.AI',
         description: 'Tract-centric food access analysis with USDA, CDC, Census, and OSM data.',
         theme_color: '#050608',
         background_color: '#050608',
@@ -130,8 +130,14 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/census/, ''),
       },
+      // Local-dev proxy for the AI narrative API. The client posts to
+      // /api/llmapi/v1/chat/completions with its dev Bearer [REDACTED] (see
+      // VITE_OPEN_ROUTER_API_KEY in .env.example); the rewrite strips the
+      // /api/llmapi prefix so upstream receives /v1/chat/completions.
+      // Production does NOT proxy — Vercel routes /api/llmapi to the
+      // serverless function in api/llmapi.js (server-only OPEN_ROUTER_API_KEY).
       '/api/llmapi': {
-        target: 'https://api.llmapi.ai',
+        target: 'https://openrouter.ai',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/llmapi/, ''),
       },
