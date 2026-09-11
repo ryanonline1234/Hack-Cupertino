@@ -108,7 +108,7 @@ PROJECT_HANDOFF.md         # implementation-level technical handoff
 
 Per CAC rules, all AI usage is disclosed here and in [`docs/CAC_SUBMISSION.md`](docs/CAC_SUBMISSION.md):
 
-- **What uses AI:** one optional feature — the Community Narrative panel, which turns the already-computed metrics into two short paragraphs via OpenRouter (`anthropic/claude-haiku-4.5`, fallback `anthropic/claude-3-haiku`). All classification, distance modeling, and impact math is deterministic code in `src/engine/` and `src/pipeline/`, covered by unit tests.
+- **What uses AI:** one optional feature — the Community Narrative panel, which turns the already-computed metrics into two short paragraphs via OpenRouter, free tier only (`google/gemma-4-31b-it:free`, fallback `nvidia/nemotron-3-super-120b-a12b:free`). All classification, distance modeling, and impact math is deterministic code in `src/engine/` and `src/pipeline/`, covered by unit tests.
 - **What AI did not do:** app architecture, data pipeline, engines, UI, tests, and docs reflect the student's own design and implementation; AI tools assisted with specific implementation and documentation tasks only.
 - **Human contribution:** the student(s) designed the system, wrote and debugged the code, chose data sources and thresholds, built the evidence-trace UX, and verified behavior with tests and builds.
 

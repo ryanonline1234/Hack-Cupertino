@@ -23,10 +23,16 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // Kept as a fallback for older deployments that still carry an LLMApi key.
 const LEGACY_LLMAPI_URL = 'https://api.llmapi.ai/v1/chat/completions';
 // Verified against https://openrouter.ai/api/v1/models (public, no auth).
-// The old bare `claude-3-5-haiku` has no such OpenRouter ID and caused
-// upstream 5xx responses, so the server maps it explicitly.
-const OPENROUTER_PRIMARY_MODEL = 'anthropic/claude-haiku-4.5';
-const OPENROUTER_FALLBACK_MODEL = 'anthropic/claude-3-haiku';
+// Free-tier only: no paid/flagship models (no Opus or equivalent) anywhere
+// in this path. Primary is the largest Gemma free option (strongest
+// instruction-following in the free list — matters because the narrative
+// must come back as exactly two paragraphs, no bullets); fallback is a
+// different provider so one outage doesn't take down the feature.
+// NOTE: OpenRouter rotates the free lineup; if an ID disappears, upstream
+// errors are logged server-side ([llmapi] tag) — swap the constants here,
+// no client deploy needed thanks to prefixed-ID passthrough.
+const OPENROUTER_PRIMARY_MODEL = 'google/gemma-4-31b-it:free';
+const OPENROUTER_FALLBACK_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 
 function wait(ms) {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
@@ -62,7 +68,7 @@ export default async function handler(req, res) {
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
 
   // The front end stays provider-agnostic: a bare/legacy model name maps
-  // to the verified primary; an already-prefixed ID passes through
+  // to the verified free primary; an already-prefixed ID passes through
   // unchanged (lets us switch models without a client deploy).
   const requestedModel = body.model || 'claude-3-5-haiku';
   const primaryModel = !useOpenRouter
