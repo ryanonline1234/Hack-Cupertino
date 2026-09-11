@@ -148,7 +148,45 @@ async function geocodeByCensus(query, limit = 6) {
     .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng));
 }
 
+async function fetchNominatimSuggestions(query, limit = 6) {
+  const params = `q=${encodeURIComponent(query)}&format=json&limit=${limit}&countrycodes=us`;
+  // Proxy first (same-origin on Vercel), direct second — mirrors geocoder.js.
+  const urls = [`/api/nominatim/search?${params}`, `https://nominatim.openstreetmap.org/search?${params}`];
+  let lastError = null;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { headers: { 'Accept-Language': 'en-US,en' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const items = (data || [])
+        .map((item) => ({
+          short: shortName(item.display_name),
+          full: item.display_name,
+          lat: parseFloat(item.lat),
+          lng: parseFloat(item.lon),
+          type: item.type,
+          cls: item.class,
+        }))
+        .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng));
+      if (items.length) return items;
+      // Empty result: try the next source before giving up.
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('Nominatim search failed');
+}
+
 async function fetchSuggestions(query) {
+  // Nominatim first: fuzzy autocomplete so partial input ("chicago south",
+  // "austin tx") produces a dropdown. Census second: exact-address fallback
+  // when Nominatim is throttled or returns nothing.
+  try {
+    const fuzzy = await fetchNominatimSuggestions(query, 6);
+    if (fuzzy.length) return fuzzy;
+  } catch {
+    // Fall through to Census.
+  }
   try {
     return await geocodeByCensus(query, 6);
   } catch {
@@ -157,6 +195,12 @@ async function fetchSuggestions(query) {
 }
 
 async function geocodeAddress(query) {
+  try {
+    const fuzzy = await fetchNominatimSuggestions(query, 1);
+    if (fuzzy.length) return { lat: fuzzy[0].lat, lng: fuzzy[0].lng };
+  } catch {
+    // Fall through to Census.
+  }
   const matches = await geocodeByCensus(query, 1);
   if (!matches.length) {
     throw new Error('Location not found — try a US city, address, or ZIP code');
