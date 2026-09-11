@@ -22,7 +22,7 @@ export type HorizontalMenuBarProps = {
 };
 
 export function HorizontalMenuBar({
-  siteName = "NutriPlan.AI",
+  siteName = "Food Desert AI",
   items,
   ctaLabel = "Launch simulation",
   onCtaClick,

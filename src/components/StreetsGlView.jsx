@@ -898,21 +898,24 @@ export default function StreetsGlView({
         </div>
       )}
 
-      {/* Center crosshair */}
-      {hasData && !isLoading && (
+      {/* Center crosshair: marks the analyzed point. Hidden in highlight
+          mode (store markers already cover the map) and while loading. */}
+      {hasData && !isLoading && !highlight && (
         <div
           className="absolute inset-0 flex items-center justify-center pointer-events-none"
           style={{ zIndex: 5 }}
+          aria-hidden
         >
           <svg
-            width="36" height="36" viewBox="0 0 36 36"
-            style={{ color: 'var(--neon)', filter: 'drop-shadow(0 0 8px var(--neon))' }}
+            width="28" height="28" viewBox="0 0 28 28"
+            style={{ color: 'var(--neon)', filter: 'drop-shadow(0 0 4px var(--neon))', opacity: 0.9 }}
           >
-            <circle cx="18" cy="18" r="4" fill="currentColor" />
-            <line x1="18" y1="2"  x2="18" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <line x1="18" y1="24" x2="18" y2="34" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <line x1="2"  y1="18" x2="12" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <line x1="24" y1="18" x2="34" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <circle cx="14" cy="14" r="8" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            <circle cx="14" cy="14" r="2" fill="currentColor" />
+            <line x1="14" y1="0"  x2="14" y2="5"  stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <line x1="14" y1="23" x2="14" y2="28" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <line x1="0"  y1="14" x2="5"  y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <line x1="23" y1="14" x2="28" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
         </div>
       )}

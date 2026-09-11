@@ -42,13 +42,13 @@ function readStoredSize(key, fallback) {
  * 10) State orchestration is intentionally centralized so judges can trace cause/effect in one file.
  */
 
+// Boot lines describe standby state, not readiness: no source has been
+// contacted until the first search, so nothing here claims "ready/online".
 const INITIAL_LOGS = [
-  { id: 0, text: 'System initialized. All data connectors online.', type: 'system' },
-  { id: 1, text: 'USDA Food Access Atlas: ready', type: 'success' },
-  { id: 2, text: 'CDC PLACES API: ready', type: 'success' },
-  { id: 3, text: 'Census ACS pipeline: ready', type: 'success' },
-  { id: 4, text: 'Claude AI narrative engine: ready', type: 'success' },
-  { id: 5, text: 'Awaiting location input…', type: 'info' },
+  { id: 0, text: 'System initialized. Connectors on standby — pick a location to begin.', type: 'system' },
+  { id: 1, text: 'USDA / CDC / Census / OSM are queried per search, not preloaded.', type: 'info' },
+  { id: 2, text: 'AI narrative (OpenRouter, free tier) generates on demand.', type: 'info' },
+  { id: 3, text: 'Awaiting location input…', type: 'info' },
 ];
 
 function Panels({

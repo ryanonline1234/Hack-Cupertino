@@ -27,8 +27,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'NutriPlan.AI — Food Desert Impact Simulator',
-        short_name: 'NutriPlan.AI',
+        name: 'Food Desert AI — Impact Simulator',
+        short_name: 'Food Desert AI',
         description: 'Tract-centric food access analysis with USDA, CDC, Census, and OSM data.',
         theme_color: '#050608',
         background_color: '#050608',

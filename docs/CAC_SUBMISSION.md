@@ -1,6 +1,6 @@
 # Congressional App Challenge — Submission Packet
 
-App: **NutriPlan.AI — Food Desert Impact Simulator**
+App: **Food Desert AI — Impact Simulator**
 Submission deadline: **October 26, 2026, 12:00 PM ET** · Demo video: **1–3 minutes**, public on YouTube or Vimeo.
 
 Fill every `[BRACKET]` placeholder before submitting, then check the boxes in §5.
@@ -13,8 +13,8 @@ Fill every `[BRACKET]` placeholder before submitting, then check the boxes in §
 
 | Time | Say | Show |
 |---|---|---|
-| 0:00–0:15 | "Hi, I'm `[YOUR NAME(S)]`, a `[GRADE]` at `[SCHOOL]` in `[DISTRICT, e.g. CA-16]`. My app is **NutriPlan.AI — Food Desert Impact Simulator**." | Landing page (`NutriPlan.AI` hero) |
-| 0:15–0:35 | Purpose in one sentence: "NutriPlan.AI tells any US community whether it is a food desert, explains exactly why, and simulates what changes if a grocery store opens." Audience: "It's for city planners, public-health teams, and anyone learning how food access is measured." | Scroll the landing: Why we care → Features → How it works |
+| 0:00–0:15 | "Hi, I'm `[YOUR NAME(S)]`, a `[GRADE]` at `[SCHOOL]` in `[DISTRICT, e.g. CA-16]`. My app is **Food Desert AI — Impact Simulator**." | Landing page (`Food Desert AI` hero) |
+| 0:15–0:35 | Purpose in one sentence: "Food Desert AI tells any US community whether it is a food desert, explains exactly why, and simulates what changes if a grocery store opens." Audience: "It's for city planners, public-health teams, and anyone learning how food access is measured." | Scroll the landing: Why we care → Features → How it works |
 | 0:35–0:55 | "I built it with React, Vite, and Tailwind, plus Leaflet and a 3D streets map. Data comes from the USDA, CDC, Census, and OpenStreetMap. The optional AI narrative runs through OpenRouter." | Architecture: `src/pipeline/`, `src/engine/`, `api/` (quick file-tree glance) |
 | 0:55–1:40 | "Watch: I search an address — let's use Chicago's South Side. The app resolves the census tract, pulls the four data sources, and classifies it with a one-mile urban threshold over community-average distance." | Live search → designation result → evidence trace drawer → confidence badges |
 | 1:40–2:10 | "Here's the part I'm proud of: it never guesses. When evidence is missing it says Unknown. And the impact panel projects residents gaining access, health direction, jobs, and trip true-cost — with a save-and-compare scenario table." | Impact panel → threshold-sensitivity slider → scenario compare |
@@ -31,11 +31,11 @@ Recording tips: record at 1080p, zoom the browser to 125% so text is readable, n
 
 ### What is the title of your app?
 
-NutriPlan.AI — Food Desert Impact Simulator
+Food Desert AI — Impact Simulator
 
 ### Explain the app's purpose.
 
-NutriPlan.AI answers three questions for any US community: what is the current food-access designation, why did the system make that designation, and what is likely to change if a grocery store opens. Users search any address; the app resolves the census tract, merges USDA, CDC PLACES, Census ACS, and OpenStreetMap supermarket data, classifies the tract with a transparent distance-first rule (1 mile urban / 5 miles rural over community-average distance), shows the full evidence trace with source-confidence badges, and projects intervention impact across access, health, economics, and trip true-cost — including save/compare scenarios for planning.
+Food Desert AI answers three questions for any US community: what is the current food-access designation, why did the system make that designation, and what is likely to change if a grocery store opens. Users search any address; the app resolves the census tract, merges USDA, CDC PLACES, Census ACS, and OpenStreetMap supermarket data, classifies the tract with a transparent distance-first rule (1 mile urban / 5 miles rural over community-average distance), shows the full evidence trace with source-confidence badges, and projects intervention impact across access, health, economics, and trip true-cost — including save/compare scenarios for planning.
 
 ### What inspired you to create this app?
 

@@ -1,12 +1,12 @@
-# NutriPlan.AI — Food Desert Impact Simulator
+# Food Desert AI — Impact Simulator
 
-> NutriPlan.AI helps cities and public-health teams turn geography into clarity: type any US address and see whether the community is a food desert, why, and what changes if a grocery store opens.
+> Food Desert AI helps cities and public-health teams turn geography into clarity: type any US address and see whether the community is a food desert, why, and what changes if a grocery store opens.
 
 An explainability-first React app for exploring US food-access conditions, classifying designation status, and modeling intervention impact. Built for the [Congressional App Challenge](https://www.congressionalappchallenge.us/) — see [`docs/CAC_SUBMISSION.md`](docs/CAC_SUBMISSION.md) for the submission packet (demo-video script, Q&A answers, AI disclosure, judges' checklist).
 
 ## Purpose (one sentence)
 
-NutriPlan.AI answers three questions for any US community: what is the current food-access designation, why did the system make that designation, and what is likely to change under an intervention scenario.
+Food Desert AI answers three questions for any US community: what is the current food-access designation, why did the system make that designation, and what is likely to change under an intervention scenario.
 
 ## Target audience
 
@@ -78,7 +78,7 @@ src/
   pipeline/                # geocoder, USDA, CDC, Census, OSM distance, normalizer
   engine/                  # designation evaluator, impact projection, simulation scoring
   components/              # map, stats/trace panels, AI narrative, impact, atlas views
-  ui/landing/              # NutriPlan.AI landing experience
+  ui/landing/              # Food Desert AI landing experience
   lib/ / utils/ / hooks/   # citations, similar-tract search, URL state, formatting
 api/
   llmapi.js                # server-side OpenRouter proxy (OPEN_ROUTER_API_KEY stays server-only)

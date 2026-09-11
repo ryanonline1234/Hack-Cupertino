@@ -113,7 +113,7 @@ async function fetchNarrative(prompt, apiKey, signal) {
         signal,
         headers,
         body: JSON.stringify({
-          model: 'claude-3-5-haiku',
+          model: 'google/gemma-4-31b-it:free',
           max_tokens: 600,
           temperature: 0.45,
           messages: [

@@ -301,7 +301,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
           >
             <HorizontalMenuBar
               fixed={false}
-              siteName="NutriPlan.AI"
+              siteName="Food Desert AI"
               items={[
                 {
                   label: "Why we care",
@@ -420,7 +420,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
               transition={{ duration: 0.35, delay: 0.14 }}
               className="mt-5 max-w-lg text-pretty text-base leading-relaxed text-neutral-400 sm:text-[1.05rem]"
             >
-              NutriPlan.AI helps cities and public-health teams turn geography into clarity: simulate
+              Food Desert AI helps cities and public-health teams turn geography into clarity: simulate
               interventions, surface equity tradeoffs, and walk into the room with evidence—not
               anecdotes.
             </motion.p>
@@ -682,7 +682,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
       </section>
 
       <footer className="border-t border-neutral-900 px-4 py-10 text-center text-[12px] text-neutral-600 sm:px-8">
-        <p>NutriPlan.AI — urban food access simulation (demo)</p>
+        <p>Food Desert AI — urban food access simulation (demo)</p>
       </footer>
     </div>
   );

@@ -81,7 +81,7 @@ export default async function handler(req, res) {
   };
   if (useOpenRouter) {
     headers['HTTP-Referer'] = 'https://github.com/ryanonline1234/Hack-Cupertino';
-    headers['X-Title'] = 'NutriPlan.AI - Food Desert Impact Simulator'; // ASCII only: HTTP headers reject non-Latin1 chars
+    headers['X-Title'] = 'Food Desert AI - Impact Simulator'; // ASCII only: HTTP headers reject non-Latin1 chars
   }
 
   const payloadFor = (model) => ({
