@@ -22,6 +22,25 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // Kept as a fallback for older deployments that still carry an LLMApi key.
 const LEGACY_LLMAPI_URL = 'https://api.llmapi.ai/v1/chat/completions';
+// Verified against https://openrouter.ai/api/v1/models (public, no auth).
+// The old bare `claude-3-5-haiku` has no such OpenRouter ID and caused
+// upstream 5xx responses, so the server maps it explicitly.
+const OPENROUTER_PRIMARY_MODEL = 'anthropic/claude-haiku-4.5';
+const OPENROUTER_FALLBACK_MODEL = 'anthropic/claude-3-haiku';
+
+function wait(ms) {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+async function postChatCompletions(url, headers, payload) {
+  const upstream = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  const text = await upstream.text();
+  return { status: upstream.status, text };
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -42,14 +61,13 @@ export default async function handler(req, res) {
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
 
-  // OpenRouter model IDs are provider-prefixed (e.g.
-  // "anthropic/claude-3-5-haiku"). Map the bare client model name so the
-  // front end can stay provider-agnostic; pass through anything already
-  // prefixed unchanged.
-  let model = body.model || 'claude-3-5-haiku';
-  if (useOpenRouter && !model.includes('/')) {
-    model = `anthropic/${model}`;
-  }
+  // The front end stays provider-agnostic: a bare/legacy model name maps
+  // to the verified primary; an already-prefixed ID passes through
+  // unchanged (lets us switch models without a client deploy).
+  const requestedModel = body.model || 'claude-3-5-haiku';
+  const primaryModel = !useOpenRouter
+    ? requestedModel
+    : (requestedModel.includes('/') ? requestedModel : OPENROUTER_PRIMARY_MODEL);
 
   const headers = {
     'Content-Type': 'application/json',
@@ -60,26 +78,37 @@ export default async function handler(req, res) {
     headers['X-Title'] = 'NutriPlan.AI — Food Desert Impact Simulator';
   }
 
-  try {
-    const upstream = await fetch(
-      useOpenRouter ? OPENROUTER_URL : LEGACY_LLMAPI_URL,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model,
-          max_tokens: body.max_tokens ?? 600,
-          temperature: body.temperature ?? 0.45,
-          messages: body.messages || [],
-        }),
-      },
-    );
+  const payloadFor = (model) => ({
+    model,
+    max_tokens: body.max_tokens ?? 600,
+    temperature: body.temperature ?? 0.45,
+    messages: body.messages || [],
+  });
 
-    const text = await upstream.text();
+  const isRetryable = (status) => status === 429 || (status >= 500 && status <= 599);
+
+  try {
+    const url = useOpenRouter ? OPENROUTER_URL : LEGACY_LLMAPI_URL;
+    let result = await postChatCompletions(url, headers, payloadFor(primaryModel));
+
+    // Transient provider errors: retry once, then try the fallback model.
+    if (useOpenRouter && isRetryable(result.status)) {
+      await wait(1200);
+      result = await postChatCompletions(url, headers, payloadFor(primaryModel));
+    }
+    if (useOpenRouter && isRetryable(result.status) && primaryModel !== OPENROUTER_FALLBACK_MODEL) {
+      console.error(`[llmapi] primary model ${primaryModel} -> ${result.status}, trying fallback. Body: ${result.text.slice(0, 300)}`);
+      result = await postChatCompletions(url, headers, payloadFor(OPENROUTER_FALLBACK_MODEL));
+    }
+
+    if (result.status < 200 || result.status >= 300) {
+      console.error(`[llmapi] upstream ${result.status}. Body: ${result.text.slice(0, 300)}`);
+    }
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.status(upstream.status).send(text);
+    res.status(result.status).send(result.text);
   } catch (err) {
+    console.error(`[llmapi] fetch failed: ${String(err?.message || err)}`);
     res.status(502).json({ error: 'Upstream LLM API failed', detail: String(err?.message || err) });
   }
 }

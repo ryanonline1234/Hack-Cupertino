@@ -63,7 +63,7 @@ Two related ones. First, the supermarket-distance provider (Overpass/OSM) return
 
 Per the 2026 CAC rules, AI usage must be fully disclosed and must not constitute the entirety of technical development:
 
-- **Used AI for:** one optional feature — the Community Narrative panel, which renders the already-computed metrics as two short paragraphs via OpenRouter at runtime; plus AI-assisted coding/debugging and documentation drafting during development.
+- **Used AI for:** one optional feature — the Community Narrative panel, which renders the already-computed metrics as two short paragraphs via OpenRouter at runtime (`anthropic/claude-haiku-4.5`, fallback `anthropic/claude-3-haiku`); plus AI-assisted coding/debugging and documentation drafting during development.
 - **Did not use AI for:** the core intellectual work — system design, data-source and threshold choices, the designation evaluator, distance model, projection engine, evidence-trace UX, tests, and verification (tests + production build run green).
 - **Human contribution:** `[NAME(S)]` designed, implemented, debugged, and tested the app and can explain every module listed in README § Project structure. All classification and impact math is deterministic, reviewable code — not model output.
 

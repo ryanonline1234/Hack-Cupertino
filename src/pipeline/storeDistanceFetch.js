@@ -16,7 +16,11 @@ const OVERPASS_ENDPOINTS = [
 
 const SEARCH_RADIUS_MILES = 50;
 const SEARCH_RADIUS_METERS = Math.round(SEARCH_RADIUS_MILES * 1609.34);
-const REQUEST_TIMEOUT_MS = 8000;
+// Measured 2026-09: the 50-mile metro query takes 10-25s per mirror
+// (915 elements / ~520KB around San Jose). An 8s timeout aborted every
+// endpoint and forced Unknown designations — keep this above the slowest
+// mirror with headroom. First success is cached for 15 minutes.
+const REQUEST_TIMEOUT_MS = 30000;
 const CACHE_TTL_MS = 1000 * 60 * 15;
 const COMMUNITY_SAMPLE_OFFSETS_MILES = [
   [0, 0],
@@ -63,7 +67,9 @@ export function buildCommunitySamplePoints(lat, lng) {
 }
 
 function buildQuery(lat, lng) {
-  return `[out:json][timeout:20];(node["shop"="supermarket"](around:${SEARCH_RADIUS_METERS},${lat},${lng});way["shop"="supermarket"](around:${SEARCH_RADIUS_METERS},${lat},${lng});relation["shop"="supermarket"](around:${SEARCH_RADIUS_METERS},${lat},${lng}););out center;`;
+  // Nodes + ways only: supermarkets are mapped as points or building areas;
+  // relations add response weight without changing nearest-store results.
+  return `[out:json][timeout:25];(node["shop"="supermarket"](around:${SEARCH_RADIUS_METERS},${lat},${lng});way["shop"="supermarket"](around:${SEARCH_RADIUS_METERS},${lat},${lng}););out center;`;
 }
 
 function cacheKey(lat, lng) {

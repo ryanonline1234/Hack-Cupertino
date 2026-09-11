@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FeatureNav from './components/FeatureNav';
 import StreetsGlView from './components/StreetsGlView';
+import LocationGate from './components/LocationGate';
 import DesignationAtlasView from './components/DesignationAtlasView';
 import CommunityStatsPanel from './components/CommunityStatsPanel';
 import AICard from './components/AICard';
@@ -121,6 +122,12 @@ export default function TrackerApp() {
       ? { lat: initialUrlState.lat, lng: initialUrlState.lng }
       : { lat: 37.773, lng: -122.418 },
   );
+  // Location-first boot: the heavy Streets GL iframe stays unmounted until
+  // the visitor picks a place (or arrives via a #lat/#lng deep link), so we
+  // never burn load time on a default city nobody asked for.
+  const [locationPicked, setLocationPicked] = useState(() =>
+    Number.isFinite(initialUrlState.lat) && Number.isFinite(initialUrlState.lng),
+  );
   const [logs, setLogs] = useState(INITIAL_LOGS);
   const [dataError, setDataError] = useState('');
   const [layout, setLayout] = useState(initialUrlState.layout || 'bottom');
@@ -203,6 +210,11 @@ export default function TrackerApp() {
     }
     return counts;
   }, [simPins]);
+
+  function handleGateSelect(lat, lng) {
+    setLocationPicked(true);
+    handleLocationSearch(lat, lng);
+  }
 
   async function handleLocationSearch(lat, lng, options = {}) {
     const forceRefresh = Boolean(options?.forceRefresh);
@@ -505,20 +517,24 @@ export default function TrackerApp() {
         {layout === 'bottom' ? (
           <div className="flex flex-col h-full">
             <div className="flex-1 relative min-h-0">
-              <StreetsGlView
-                lat={mapCenter.lat}
-                lng={mapCenter.lng}
-                isLoading={loading}
-                hasData={!!communityData}
-                onSearch={handleLocationSearch}
-                mode={mode}
-                pinCounts={pinCounts}
-                pinTotal={simPins.length}
-                onAddPin={addSimulationPin}
-                onUndoPin={undoSimulationPin}
-                onClearPins={clearSimulationPins}
-                stores={communityData?.foodAccess?.stores || []}
-              />
+              {locationPicked || communityData ? (
+                <StreetsGlView
+                  lat={mapCenter.lat}
+                  lng={mapCenter.lng}
+                  isLoading={loading}
+                  hasData={!!communityData}
+                  onSearch={handleLocationSearch}
+                  mode={mode}
+                  pinCounts={pinCounts}
+                  pinTotal={simPins.length}
+                  onAddPin={addSimulationPin}
+                  onUndoPin={undoSimulationPin}
+                  onClearPins={clearSimulationPins}
+                  stores={communityData?.foodAccess?.stores || []}
+                />
+              ) : (
+                <LocationGate onSelect={handleGateSelect} />
+              )}
             </div>
             <ResizeHandle
               orientation="horizontal"
@@ -533,20 +549,24 @@ export default function TrackerApp() {
         ) : (
           <div className="flex h-full">
             <div className="flex-1 relative min-h-0">
-              <StreetsGlView
-                lat={mapCenter.lat}
-                lng={mapCenter.lng}
-                isLoading={loading}
-                hasData={!!communityData}
-                onSearch={handleLocationSearch}
-                mode={mode}
-                pinCounts={pinCounts}
-                pinTotal={simPins.length}
-                onAddPin={addSimulationPin}
-                onUndoPin={undoSimulationPin}
-                onClearPins={clearSimulationPins}
-                stores={communityData?.foodAccess?.stores || []}
-              />
+              {locationPicked || communityData ? (
+                <StreetsGlView
+                  lat={mapCenter.lat}
+                  lng={mapCenter.lng}
+                  isLoading={loading}
+                  hasData={!!communityData}
+                  onSearch={handleLocationSearch}
+                  mode={mode}
+                  pinCounts={pinCounts}
+                  pinTotal={simPins.length}
+                  onAddPin={addSimulationPin}
+                  onUndoPin={undoSimulationPin}
+                  onClearPins={clearSimulationPins}
+                  stores={communityData?.foodAccess?.stores || []}
+                />
+              ) : (
+                <LocationGate onSelect={handleGateSelect} />
+              )}
             </div>
             <ResizeHandle
               orientation="vertical"
