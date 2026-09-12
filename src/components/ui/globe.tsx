@@ -88,9 +88,18 @@ function hasWebGLContext() {
 }
 
 function GlobeCompatibilityFallback({ className }: GlobeProps) {
+  // The hero mounts this in a wide-short box on phones; a plain
+  // h-full/w-full + rounded-full stretches into an ellipse there (every
+  // iOS browser and installed PWA lands on this path via the Safari UA
+  // check). Constrain to a centered square so the globe is always a
+  // circle: height binds (boxes are wider than tall), 100vw caps the
+  // rare taller-than-wide case.
   return (
-    <div className={cn("h-full w-full min-h-[320px]", className)}>
-      <div className="relative h-full w-full overflow-hidden rounded-full">
+    <div className={cn("flex h-full w-full min-h-[320px] items-center justify-center", className)}>
+      <div
+        className="relative overflow-hidden rounded-full"
+        style={{ height: "min(100%, 100vw)", aspectRatio: "1 / 1" }}
+      >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_32%_28%,#dbeafe_0%,#7aaeff_38%,#1d4ed8_72%,#0b1020_100%)]" />
         <div className="absolute inset-[6%] rounded-full border border-white/20" />
         <div className="absolute inset-[12%] rounded-full border border-cyan-200/20" />

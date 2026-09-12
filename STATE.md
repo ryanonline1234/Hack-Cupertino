@@ -1,10 +1,10 @@
 # State — Food Desert AI
-_Updated: 2026-09-12 (share-URL batch)_
+_Updated: 2026-09-12 (mobile info-only batch)_
 
 ## Now
-Share-URL scenario batch implemented and verified headless (39/39 tests,
-lint, build, drop → Share → fresh-page replay); committing next. Next up:
-mobile info-only results page + stretched PWA globe fix.
+Share-URL batch live in prod. Mobile info-only results page + globe-circle
+fix implemented and verified headless (lint, 39/39 tests, build, 390px
+no-map info replay, iPhone-UA circle screenshot); committing next.
 
 ## Verified
 - scenarioEngine unit tests (5): null-empty, avg drop, rural flip,

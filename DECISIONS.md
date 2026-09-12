@@ -92,3 +92,17 @@ database/slug shortener — no backend state to maintain, and links work offline
 from the URL alone. Verified headless against the real pipeline (geocoder +
 Overpass via a local rewrite-mirroring harness): drop → pins= in hash →
 Share copies link → fresh page replays "With 1 placed store".
+
+## 2026-09-12 — Mobile info-only results page + compat-globe circle (spec docs/02)
+Phones now skip the map shell entirely: `MobileResultsView` reuses
+`LocationGate` pre-search and stacks the existing desktop panels
+(designation, stats, narrative, log) in a page scroll — no iframe, no
+canvas, no WebGL. Atlas mode and place-a-store are desktop-only on mobile
+(atlas is a map with nothing to show; placement needs a surface to point
+at); the footer says so and Share still works for handoff to desktop.
+Rejected alternative: shrinking the desktop map layout to fit — slow,
+fiddly, GPU-hungry, and unnecessary for a lookup that only needs the
+answer. Separately, the iOS/Safari CSS globe fallback was a stretched
+ellipse (rounded-full in a wide-short hero box); it is now a centered
+square (`height: min(100%, 100vw)` + aspect-ratio), so always a circle.
+WebGL path untouched — perspective can't stretch a sphere.

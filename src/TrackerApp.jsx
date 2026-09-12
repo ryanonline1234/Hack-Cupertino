@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FeatureNav from './components/FeatureNav';
 import StreetsGlView from './components/StreetsGlView';
 import LocationGate from './components/LocationGate';
+import MobileResultsView from './components/MobileResultsView';
 import DesignationAtlasView from './components/DesignationAtlasView';
 import CommunityStatsPanel from './components/CommunityStatsPanel';
 import AICard from './components/AICard';
@@ -591,7 +592,10 @@ export default function TrackerApp() {
     // tests always invoke the latest handler.
   });
 
-  if (mode === 'designation') {
+  // The designation atlas is a map; phones get the info-only results page
+  // instead (see the isMobile early-return below), so atlas mode never
+  // renders on small screens.
+  if (mode === 'designation' && !isMobile) {
     return (
       <div
         className="flex flex-col h-screen overflow-hidden"
@@ -653,6 +657,31 @@ export default function TrackerApp() {
       <Panels {...panelProps} />
     </div>
   );
+
+  // Phones skip the map shell entirely: no Streets GL iframe, no 2D canvas.
+  // A designated-area lookup on mobile is an info-only page (designation,
+  // stats, narrative, impact) with search + share. Desktop JSX below is
+  // untouched by this branch.
+  if (isMobile) {
+    return (
+      <div
+        className="flex flex-col h-screen overflow-hidden"
+        style={{ background: 'var(--void)', fontFamily: "'Inter', sans-serif", height: '100dvh' }}
+      >
+        <div className="flex-1 min-h-0">
+          <MobileResultsView
+            locationPicked={locationPicked}
+            communityData={communityData}
+            loading={loading}
+            dataError={dataError}
+            onGateSelect={handleGateSelect}
+            onShareScenario={handleShareScenario}
+            panels={<Panels {...panelProps} />}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
