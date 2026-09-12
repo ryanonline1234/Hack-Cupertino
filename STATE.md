@@ -17,7 +17,7 @@ no-map info replay, iPhone-UA circle screenshot); committing next.
   zero overflow, screenshots inspected.
 
 ## Pending
-- Owner: disable Vercel Deployment Protection (SSO wall blocks judges);
+- Owner: Deployment Protection DISABLED 2026-09-12 (verified: anon curl returns 200 + app HTML);
   fill CAC packet placeholders; record demo video (deadline Oct 26, 2026,
   12pm ET).
 - Proposed, not started: motive-building extras (founder line, who-is-this-for
