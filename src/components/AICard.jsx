@@ -387,7 +387,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
             setRefreshFips(fips);
             setFetchNonce((n) => n + 1);
           }}
-          className="w-full py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
+          className="w-full py-2.5 md:py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
           style={{
             background: 'rgba(34,211,238,0.08)',
             border: '1px solid rgba(34,211,238,0.24)',

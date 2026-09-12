@@ -70,7 +70,7 @@ function ModeToggle({ mode, onModeChange }) {
     >
       <button
         onClick={() => onModeChange('atlas')}
-        className="px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+        className="px-2 py-2 md:py-1 rounded-md text-[11px] font-medium transition-colors"
         style={{
           color: isTracker ? 'var(--cyan)' : 'rgba(255,255,255,0.45)',
           background: isTracker ? 'rgba(34,211,238,0.12)' : 'transparent',
@@ -81,7 +81,7 @@ function ModeToggle({ mode, onModeChange }) {
       </button>
       <button
         onClick={() => onModeChange('designation')}
-        className="px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+        className="px-2 py-2 md:py-1 rounded-md text-[11px] font-medium transition-colors"
         style={{
           color: isDesignation ? 'var(--neon)' : 'rgba(255,255,255,0.45)',
           background: isDesignation ? 'rgba(0,255,153,0.12)' : 'transparent',
@@ -102,7 +102,7 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
 
   return (
     <nav
-      className="h-14 shrink-0 flex items-center justify-between px-5 border-b z-50"
+      className="h-14 shrink-0 flex items-center justify-between gap-2 px-3 sm:px-5 border-b z-50"
       style={{
         background: 'rgba(5, 6, 8, 0.92)',
         borderColor: 'rgba(255,255,255,0.07)',
@@ -122,7 +122,7 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
           <span className="text-sm font-semibold tracking-wide text-white/90 hidden sm:inline">
             FOOD DESERT
           </span>
-          <span className="text-sm font-light tracking-widest" style={{ color: 'var(--cyan)' }}>
+          <span className="text-sm font-light tracking-widest hidden min-[430px]:inline" style={{ color: 'var(--cyan)' }}>
             IMPACT SIMULATOR
           </span>
         </div>
@@ -151,7 +151,7 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
         {!loading && communityData && (
           <div className="flex items-center gap-1.5 animate-fade-slide-up">
             <div
-              className="flex items-center gap-2 rounded-full px-3 py-1 text-xs"
+              className="flex items-center gap-2 rounded-full px-3 py-1 text-xs truncate max-w-[38vw] sm:max-w-none"
               style={{
                 background: 'rgba(0,255,153,0.08)',
                 border: '1px solid rgba(0,255,153,0.2)',
@@ -166,7 +166,7 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
             </div>
             {cacheBadge && (
               <div
-                className="rounded-full px-2 py-1 text-[10px]"
+                className="rounded-full px-2 py-1 text-[10px] hidden sm:block"
                 style={{
                   color: 'rgba(34,211,238,0.85)',
                   border: '1px solid rgba(34,211,238,0.25)',
@@ -193,7 +193,9 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
           </div>
         )}
 
-        <LayoutToggle layout={layout} onToggle={onToggleLayout} />
+        <div className="hidden md:block">
+          <LayoutToggle layout={layout} onToggle={onToggleLayout} />
+        </div>
       </div>
 
       {/* Right: data sources */}

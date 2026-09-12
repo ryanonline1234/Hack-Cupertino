@@ -304,7 +304,7 @@ export default function DesignationAtlasView() {
       <div ref={rootRef} className="w-full h-full" />
 
       <div
-        className="absolute left-3 top-3 z-[1000] rounded-lg px-3 py-2 text-xs"
+        className="absolute left-3 top-3 z-[1000] rounded-lg px-3 py-2 text-xs max-w-[calc(100vw-1.5rem)] sm:max-w-sm"
         style={{
           background: 'rgba(5, 6, 8, 0.84)',
           border: '1px solid rgba(255,255,255,0.1)',
@@ -353,7 +353,7 @@ export default function DesignationAtlasView() {
       </div>
 
       <div
-        className="absolute right-3 bottom-3 z-[1000] rounded-lg px-3 py-2 text-[11px]"
+        className="absolute right-3 bottom-3 z-[1000] rounded-lg px-3 py-2 text-[11px] max-w-[calc(100vw-1.5rem)]"
         style={{
           background: 'rgba(5, 6, 8, 0.84)',
           border: '1px solid rgba(255,255,255,0.1)',

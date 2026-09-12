@@ -189,7 +189,7 @@ export default function LocationGate({ onSelect }) {
               key={loc.label}
               type="button"
               onClick={() => onSelect(loc.lat, loc.lng)}
-              className="px-3 py-1.5 rounded-full text-xs"
+              className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center rounded-full text-xs"
               style={{
                 background: 'rgba(5,6,8,0.75)',
                 border: '1px solid rgba(255,255,255,0.12)',

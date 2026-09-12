@@ -394,9 +394,11 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
         )}
       </AnimatePresence>
 
-      {/* Hero — copy left, globe right */}
+      {/* Hero — copy left, globe right.
+          Mobile top padding clears the wrapped two-row nav + CTA (~200px),
+          which the desktop 6.75rem value doesn't cover. */}
       <section
-        className="relative flex min-h-[100dvh] flex-col justify-center overflow-hidden px-4 pb-20 pt-[6.25rem] sm:px-8 sm:pb-24 sm:pt-[6.75rem]"
+        className="relative flex min-h-[100dvh] flex-col justify-center overflow-hidden px-4 pb-20 pt-[13rem] sm:px-8 sm:pb-24 sm:pt-[6.75rem]"
         aria-labelledby="landing-hero-heading"
       >
         <div className="pointer-events-none absolute inset-0 bg-black" aria-hidden />

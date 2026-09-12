@@ -18,6 +18,24 @@ const MIN_PANEL_WIDTH = 320;
 const DEFAULT_BOTTOM_VH = 0.30;
 const DEFAULT_SPLIT_VW = 0.50;
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 767px)').matches,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return undefined;
+    }
+    const mq = window.matchMedia('(max-width: 767px)');
+    const onChange = (e) => setIsMobile(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return isMobile;
+}
+
 function readStoredSize(key, fallback) {
   if (typeof window === 'undefined') return fallback;
   try {
@@ -67,7 +85,7 @@ function Panels({
 }) {
   return (
     <>
-      <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-0">
+      <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-[150px] md:min-h-0">
         <CommunityStatsPanel
           communityData={communityData}
           loading={loading}
@@ -82,7 +100,7 @@ function Panels({
         />
       </div>
 
-      <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-0">
+      <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-[150px] md:min-h-0">
         {dataError ? (
           <div
             className="h-full flex items-center justify-center text-sm text-center px-4"
@@ -95,7 +113,7 @@ function Panels({
         )}
       </div>
 
-      <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-0">
+      <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-[120px] md:min-h-0">
         <AgentStatusFeed logs={logs} loading={loading} />
       </div>
     </>
@@ -131,6 +149,9 @@ export default function TrackerApp() {
   const [logs, setLogs] = useState(INITIAL_LOGS);
   const [dataError, setDataError] = useState('');
   const [layout, setLayout] = useState(initialUrlState.layout || 'bottom');
+  // Unconditional (above the mode early-return): phones force the bottom
+  // panel arrangement since side-by-side thirds break at 360px wide.
+  const isMobile = useIsMobile();
   const [mode, setMode] = useState('atlas');
   const [simPins, setSimPins] = useState([]);
   const [bottomPanelHeight, setBottomPanelHeight] = useState(() =>
@@ -443,7 +464,7 @@ export default function TrackerApp() {
     return (
       <div
         className="flex flex-col h-screen overflow-hidden"
-        style={{ background: 'var(--void)', fontFamily: "'Inter', sans-serif" }}
+        style={{ background: 'var(--void)', fontFamily: "'Inter', sans-serif", height: '100dvh' }}
       >
         <FeatureNav
           communityData={communityData}
@@ -475,11 +496,13 @@ export default function TrackerApp() {
     logs,
   };
 
+  // Phones stack the three panels vertically in a capped scroll region;
+  // side-by-side thirds would be unreadable at 360px wide.
   const panelStrip = (
     <div
-      className="shrink-0 flex gap-3 p-3"
+      className="shrink-0 flex flex-col md:flex-row gap-3 p-3 overflow-y-auto md:overflow-visible"
       style={{
-        height: `${bottomPanelHeight}px`,
+        height: isMobile ? 'min(52dvh, 460px)' : `${bottomPanelHeight}px`,
         background: 'rgba(5,6,8,0.6)',
       }}
     >
@@ -502,7 +525,7 @@ export default function TrackerApp() {
   return (
     <div
       className="flex flex-col h-screen overflow-hidden"
-      style={{ background: 'var(--void)', fontFamily: "'Inter', sans-serif" }}
+      style={{ background: 'var(--void)', fontFamily: "'Inter', sans-serif", height: '100dvh' }}
     >
       <FeatureNav
         communityData={communityData}
@@ -514,7 +537,7 @@ export default function TrackerApp() {
       />
 
       <div className="flex-1 overflow-hidden min-h-0">
-        {layout === 'bottom' ? (
+        {layout === 'bottom' || isMobile ? (
           <div className="flex flex-col h-full">
             <div className="flex-1 relative min-h-0">
               {locationPicked || communityData ? (

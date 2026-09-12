@@ -624,10 +624,10 @@ export default function StreetsGlView({
         className="absolute top-4 left-1/2 -translate-x-1/2 z-20"
         style={{ width: 'min(520px, calc(100% - 2.5rem))' }}
       >
-        <form onSubmit={handleSubmit} className="flex items-center gap-2">
+        <form onSubmit={handleSubmit} className="flex flex-wrap items-center gap-2">
           {/* Input */}
           <div
-            className="flex-1 flex items-center gap-2.5 px-4 py-2.5 rounded-full"
+            className="flex-1 basis-full sm:basis-auto min-w-[180px] flex items-center gap-2.5 px-4 py-2.5 rounded-full"
             style={{
               background: 'rgba(5, 6, 8, 0.88)',
               border: `1px solid ${showDrop ? 'rgba(34,211,238,0.45)' : 'rgba(34,211,238,0.22)'}`,
@@ -675,7 +675,7 @@ export default function StreetsGlView({
           <button
             type="submit"
             disabled={busy || !query.trim()}
-            className="shrink-0 px-5 py-2.5 rounded-full text-sm font-semibold transition-all disabled:opacity-40"
+            className="shrink-0 px-5 py-3 md:py-2.5 rounded-full text-sm font-semibold transition-all disabled:opacity-40"
             style={{
               background: 'linear-gradient(135deg, rgba(0,255,153,0.15), rgba(34,211,238,0.15))',
               border: '1px solid rgba(34,211,238,0.35)',
@@ -690,7 +690,7 @@ export default function StreetsGlView({
             type="button"
             disabled={busy || !hasData}
             onClick={handleForceRefresh}
-            className="shrink-0 px-3.5 py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40"
+            className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40"
             style={{
               background: 'rgba(34,211,238,0.08)',
               border: '1px solid rgba(34,211,238,0.24)',
@@ -710,7 +710,7 @@ export default function StreetsGlView({
             type="button"
             disabled={useFallbackMap || !hasData}
             onClick={() => setHighlight((v) => !v)}
-            className="shrink-0 px-3.5 py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40"
+            className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40"
             style={{
               background: highlight ? 'rgba(0,255,153,0.18)' : 'rgba(0,255,153,0.06)',
               border: `1px solid ${highlight ? 'rgba(0,255,153,0.55)' : 'rgba(0,255,153,0.22)'}`,
@@ -732,7 +732,7 @@ export default function StreetsGlView({
           <button
             type="button"
             onClick={() => updateRendererMode(useFallbackMap ? 'webgl' : '2d')}
-            className="shrink-0 px-3.5 py-2.5 rounded-full text-xs font-semibold transition-all"
+            className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all"
             style={{
               background: 'rgba(255,255,255,0.06)',
               border: '1px solid rgba(255,255,255,0.16)',
@@ -855,7 +855,7 @@ export default function StreetsGlView({
             <button
               key={loc.label}
               onClick={() => handleExample(loc)}
-              className="px-3 py-1.5 rounded-full text-xs transition-all hover:scale-105"
+              className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center rounded-full text-xs transition-all hover:scale-105"
               style={{
                 background: 'rgba(5,6,8,0.75)',
                 border: '1px solid rgba(255,255,255,0.12)',
