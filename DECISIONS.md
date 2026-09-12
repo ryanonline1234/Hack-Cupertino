@@ -113,7 +113,7 @@ narrative card, so a deterministic `stripInstructionEcho` post-pass drops
 meta-instruction sentences (per-paragraph, decimals shielded) with a
 regression test built from the captured leak; prompts hardened too.
 Generate now logs request/ready/fail lines via drilled onLog. Both
-timeouts removed mailbox-style: Overpass per-mirror abort (slow mirrors
+timeouts removed outright: Overpass per-mirror abort (slow mirrors
 ran to Unknowns) and the 12s iframe watchdog ("timed out" flips); real
 errors still rotate/retry. Example chips carry live-verified verdict
 pills (Greenville MS designated; San Jose + Chicago served) — reputation
