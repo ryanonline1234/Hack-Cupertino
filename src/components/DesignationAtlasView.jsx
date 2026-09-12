@@ -77,12 +77,24 @@ function formatRate(rate) {
   return `${(rate * 100).toFixed(1)}%`;
 }
 
+// Sequential orange scale (pale -> deep): darker means a higher share of
+// designated tracts. Single-hue reads for red-green colorblind viewers,
+// unlike the previous green/red diverging scale.
+const RATE_STOPS = [
+  [254, 232, 200],
+  [253, 187, 132],
+  [227, 74, 51],
+];
+
 function rateToColor(rate) {
   const clamped = Math.min(1, Math.max(0, rate));
-  const red = Math.round(64 + clamped * 180);
-  const green = Math.round(200 - clamped * 140);
-  const blue = Math.round(90 - clamped * 30);
-  return `rgb(${red}, ${green}, ${blue})`;
+  const scaled = clamped * (RATE_STOPS.length - 1);
+  const i = Math.min(RATE_STOPS.length - 2, Math.floor(scaled));
+  const t = scaled - i;
+  const [r1, g1, b1] = RATE_STOPS[i];
+  const [r2, g2, b2] = RATE_STOPS[i + 1];
+  const mix = (a, b) => Math.round(a + (b - a) * t);
+  return `rgb(${mix(r1, r2)}, ${mix(g1, g2)}, ${mix(b1, b2)})`;
 }
 
 function radiusForTracts(totalTracts) {
@@ -199,9 +211,13 @@ export default function DesignationAtlasView() {
       attributionControl: true,
     });
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // CARTO basemaps require an API key on the keyed raster endpoint (no
+    // {s} subdomains there). The key is public-by-design for raster tiles;
+    // override the built-in one with VITE_CARTO_KEY. 'dark_all' also answers
+    // on this endpoint if the light voyager style ever needs swapping.
+    const cartoKey = import.meta.env.VITE_CARTO_KEY || 'cb1_3hwb_1_c5d22856e4cb2fe46ac23f9b';
+    L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=${cartoKey}`, {
       attribution: '&copy; OpenStreetMap &copy; CARTO',
-      subdomains: 'abcd',
       maxZoom: 19,
     }).addTo(map);
 
@@ -259,10 +275,10 @@ export default function DesignationAtlasView() {
       const marker = L.circleMarker(row.centroid, {
         renderer,
         radius: radiusForTracts(row.total) * zoomMultiplier,
-        color,
+        color: dimMarker ? color : '#7c2d12',
         fillColor: color,
-        fillOpacity: dimMarker ? 0.2 : 0.66,
-        weight: dimMarker ? 0.8 : 1.3,
+        fillOpacity: dimMarker ? 0.2 : 0.8,
+        weight: dimMarker ? 0.8 : 1.5,
         opacity: dimMarker ? 0.35 : 0.95,
       });
 
@@ -350,11 +366,11 @@ export default function DesignationAtlasView() {
         <div className="mt-1 text-white/55">Zoom ≥ {DETAIL_ZOOM_THRESHOLD}: focus in-view stats</div>
         <div className="mt-1 flex items-center gap-2">
           <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: rateToColor(0.1) }} />
-          More not-designated (greener)
+          Lower share designated
         </div>
         <div className="mt-1 flex items-center gap-2">
           <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: rateToColor(0.9) }} />
-          More designated (redder)
+          Higher share designated
         </div>
       </div>
 
