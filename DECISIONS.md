@@ -3,6 +3,24 @@
 Append-only. New decisions go on top with today's date; old entries are never
 edited. Each entry names the rejected alternative.
 
+## 2026-09-12 — User-placed stores recompute distance/designation with no network
+`scenarioEngine.evaluatePlacedStoreScenario` regenerates the deterministic
+pipeline sample points and re-runs the evaluator over fetched stores + placed
+pins. Rejected alternative: refetching per scenario (wasteful — static layers
+don't move) and travel-time routing (unlabeled precision the Haversine model
+doesn't claim).
+
+## 2026-09-12 — Placement is 2D-exact, 3D-drops-at-center, banner says so
+Iframe clicks are unreadable cross-origin and the crosshair marks the analysis
+point, not the camera target — so exact placement lives in the 2D fallback
+and 3D drops at the analysis center. Rejected alternative: implying pan-to-aim
+works in 3D, which would silently misplace stores.
+
+## 2026-09-12 — PWA icons rendered from the brand SVG, CARTO tiles cached
+PNG 192/512 (+maskable, +Apple touch) rendered headless from favicon.svg;
+keyed CARTO tiles join the service-worker cache. Rejected alternative: SVG-only
+manifest icons (iOS ignores them — app wouldn't be installable on iPhones).
+
 ## 2026-09-12 — Highlight is a hash-teleport overlay toggle, camera stays free
 Toggling food-source highlight moves the Streets GL camera hash-only to a
 top-down view instead of rebuilding the iframe URL (which reloaded the whole

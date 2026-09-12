@@ -194,7 +194,7 @@ function toMoney(value) {
   return Number(value).toLocaleString();
 }
 
-export default function AICard({ communityData, impactData }) {
+export default function AICard({ communityData, impactData, scenario }) {
   const [narrative, setNarrative] = useState('');
   const [status, setStatus] = useState('idle');
   const [cacheMeta, setCacheMeta] = useState(null);
@@ -216,6 +216,12 @@ export default function AICard({ communityData, impactData }) {
       0
     ).toFixed(1);
 
+    const hasScenario = scenario && scenario.placedCount > 0;
+    const fmtMi = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} miles` : 'n/a');
+    const scenarioBlock = hasScenario
+      ? `\nUser-placed store experiment (${scenario.placedCount} placed supermarket${scenario.placedCount === 1 ? '' : 's'}):\n- Community average distance: ${fmtMi(scenario.beforeAvg)} → ${fmtMi(scenario.afterAvg)}\n- Designation: ${scenario.beforeLabel} → ${scenario.afterLabel}\n`
+      : '';
+
     return `You are analyzing food access data for a US community. Respond in exactly two short paragraphs with no headers or bullet points.
 
 Community data:
@@ -232,10 +238,10 @@ Projected impact of adding one grocery store:
 - Diabetes rate change: -${Number(impactHealth.diabetesReductionPct || 0).toFixed(1)} percentage points
 - Jobs created: ${economic.jobsMin}\u2013${economic.jobsMax}
 - Annual local economic impact: $${toMoney(economic.annualLocalImpact)}
-
+${scenarioBlock}
 Paragraph 1: Describe in plain English what daily food access looks like for residents here. Be specific and human, not clinical.
-Paragraph 2: Describe what would realistically change if a grocery store opened. Ground it in the numbers above. Avoid jargon and disclaimers.`;
-  }, [communityData, impactData]);
+Paragraph 2: Describe what would realistically change if a grocery store opened. Ground it in the numbers above.${hasScenario ? ' Name what the placed-store experiment changes, using its numbers.' : ''} Avoid jargon and disclaimers.`;
+  }, [communityData, impactData, scenario]);
 
   useEffect(() => {
     let cancelled = false;
@@ -322,10 +328,20 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
     if (!summarySeed) return [];
 
     const nextSummary = impactData?.simulation?.executiveSummary;
-    return Array.isArray(nextSummary) && nextSummary.length > 0
+    const base = Array.isArray(nextSummary) && nextSummary.length > 0
       ? nextSummary.slice(0, 3)
       : [];
-  }, [summarySeed, impactData]);
+    // The scenario delta carries the experiment's punchline; it rides along
+    // instead of replacing a baseline line.
+    if (scenario && scenario.placedCount > 0) {
+      const fmt = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} mi` : 'n/a');
+      return [
+        ...base,
+        `With ${scenario.placedCount} placed store${scenario.placedCount === 1 ? '' : 's'}: community average ${fmt(scenario.beforeAvg)} → ${fmt(scenario.afterAvg)}; designation ${scenario.beforeLabel} → ${scenario.afterLabel}.`,
+      ];
+    }
+    return base;
+  }, [summarySeed, impactData, scenario]);
 
   // ── Idle: no community selected ──
   if (!communityData) {

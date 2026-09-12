@@ -25,17 +25,20 @@ export default defineConfig({
      */
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.svg', 'pwa-192x192.png', 'pwa-512x512.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'Food Desert AI — Impact Simulator',
         short_name: 'Food Desert AI',
         description: 'Tract-centric food access analysis with USDA, CDC, Census, and OSM data.',
+        id: '/',
         theme_color: '#050608',
         background_color: '#050608',
         display: 'standalone',
         start_url: '/',
         icons: [
-          { src: 'favicon.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' },
+          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'pwa-512x512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
@@ -50,6 +53,15 @@ export default defineConfig({
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'osm-tiles',
+              expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 7 },
+            },
+          },
+          {
+            // US map mode basemap (keyed rastertiles endpoint).
+            urlPattern: ({ url }) => url.hostname === 'basemaps.cartocdn.com',
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'carto-tiles',
               expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 7 },
             },
           },

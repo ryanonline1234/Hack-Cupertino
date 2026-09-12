@@ -25,12 +25,22 @@ export default function MapView({
   showInstruction = true,
   stores = [],
   showStores = false,
+  placeArmed = false,
+  onPlaceAt,
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markerRef = useRef(null);
   const storesLayerRef = useRef(null);
+  // Refs mirror the latest props for the once-bound map click handler.
+  const placeArmedRef = useRef(placeArmed);
+  const onPlaceAtRef = useRef(onPlaceAt);
   const [hasDropped, setHasDropped] = useState(false);
+
+  useEffect(() => {
+    placeArmedRef.current = placeArmed;
+    onPlaceAtRef.current = onPlaceAt;
+  }, [placeArmed, onPlaceAt]);
 
   useEffect(() => {
     if (mapInstance.current) return;
@@ -48,6 +58,12 @@ export default function MapView({
 
     map.on('click', (e) => {
       const { lat, lng } = e.latlng;
+
+      // Armed: clicks place a hypothetical store instead of analyzing.
+      if (placeArmedRef.current) {
+        onPlaceAtRef.current?.(lat, lng);
+        return;
+      }
 
       // Remove existing marker
       if (markerRef.current) {
@@ -101,9 +117,9 @@ export default function MapView({
         .filter((s) => Number.isFinite(s?.lat) && Number.isFinite(s?.lng))
         .slice(0, 300)
         .map((s) => L.circleMarker([s.lat, s.lng], {
-          radius: 6,
-          color: '#052e22',
-          fillColor: '#00ff99',
+          radius: s.placed ? 8 : 6,
+          color: s.placed ? '#083344' : '#052e22',
+          fillColor: s.placed ? '#22d3ee' : '#00ff99',
           fillOpacity: 0.85,
           weight: 1.5,
         }).bindTooltip(
@@ -144,9 +160,16 @@ export default function MapView({
       <div ref={mapRef} className="w-full h-full z-0" />
 
       {/* Instruction overlay — disappears after first pin drop */}
-      {showInstruction && !hasDropped && (
+      {showInstruction && !hasDropped && !placeArmed && (
         <div className="absolute top-3 left-3 z-[1000] bg-white/90 backdrop-blur-sm px-3 py-2 rounded-lg shadow text-sm text-gray-700 pointer-events-none">
           Click anywhere to drop a pin and analyze food access
+        </div>
+      )}
+      {placeArmed && (
+        <div className="absolute top-3 left-3 z-[1000] px-3 py-2 rounded-lg shadow text-sm pointer-events-none"
+          style={{ background: 'rgba(5,6,8,0.9)', border: '1px solid rgba(34,211,238,0.4)', color: 'var(--cyan)' }}
+        >
+          Click the map to place a hypothetical store
         </div>
       )}
 

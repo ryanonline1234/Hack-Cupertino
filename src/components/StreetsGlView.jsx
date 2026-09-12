@@ -144,6 +144,8 @@ export default function StreetsGlView({
   onUndoPin,
   onClearPins,
   stores = [],
+  placedStores = [],
+  onPlaceStore,
 }) {
   const [query, setQuery]               = useState('');
   const [geocoding, setGeocoding]       = useState(false);
@@ -158,6 +160,9 @@ export default function StreetsGlView({
   // Highlight mode: locks the iframe camera to top-down + paints our own
   // green grocery-store markers on top using Mercator projection.
   const [highlight, setHighlight]       = useState(false);
+  // Place-store arming: while armed, 2D clicks drop a hypothetical grocery
+  // store (3D drops at the analysis center — iframe clicks are unreadable).
+  const [placeArmed, setPlaceArmed]       = useState(false);
   const [viewport, setViewport]         = useState({ width: 0, height: 0 });
   const [hoveredStoreId, setHoveredStoreId] = useState(null);
   const inputRef    = useRef(null);
@@ -439,8 +444,10 @@ export default function StreetsGlView({
               onSearch(nextLat, nextLng);
             }}
             showInstruction={!hasData}
-            stores={stores}
-            showStores={highlight}
+            stores={[...stores, ...placedStores]}
+            showStores={highlight || placeArmed}
+            placeArmed={placeArmed}
+            onPlaceAt={(plat, plng) => onPlaceStore?.(plat, plng)}
           />
         </div>
       ) : (
@@ -502,7 +509,7 @@ export default function StreetsGlView({
           className="absolute inset-0 pointer-events-none animate-fade-slide-up"
           style={{ zIndex: 6 }}
         >
-          {stores
+          {[...stores, ...placedStores]
             .map((store) => ({ store, pos: projector({ lat: store.lat, lng: store.lng }) }))
             .filter(({ pos }) => pos !== null)
             .map(({ store, pos }) => (
@@ -527,9 +534,11 @@ export default function StreetsGlView({
                   style={{
                     width: 14,
                     height: 14,
-                    background: 'var(--neon)',
+                    background: store.placed ? 'var(--cyan)' : 'var(--neon)',
                     border: '2px solid rgba(5,6,8,0.8)',
-                    boxShadow: '0 0 14px var(--neon), 0 0 4px rgba(0,0,0,0.6)',
+                    boxShadow: store.placed
+                      ? '0 0 14px var(--cyan), 0 0 4px rgba(0,0,0,0.6)'
+                      : '0 0 14px var(--neon), 0 0 4px rgba(0,0,0,0.6)',
                   }}
                 />
                 {hoveredStoreId === store.id && (
@@ -573,10 +582,13 @@ export default function StreetsGlView({
         </div>
       )}
 
+      {/* Bottom-center banner stack: highlight + placement status share one
+          dock so neither covers the search toolbar. */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 max-w-[calc(100%-1rem)]">
       {/* Highlight-mode banner */}
       {highlight && !useFallbackMap && (
         <div
-          className="absolute top-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] animate-fade-slide-up"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] animate-fade-slide-up whitespace-nowrap max-w-full overflow-x-auto"
           style={{
             background: 'rgba(5,6,8,0.85)',
             border: '1px solid rgba(0,255,153,0.35)',
@@ -610,6 +622,69 @@ export default function StreetsGlView({
           </button>
         </div>
       )}
+
+      {/* Place-store banner: experiment controls while armed. */}
+      {placeArmed && hasData && (
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] animate-fade-slide-up whitespace-nowrap max-w-full overflow-x-auto"
+          style={{
+            background: 'rgba(5,6,8,0.85)',
+            border: '1px solid rgba(34,211,238,0.35)',
+            color: 'rgba(255,255,255,0.85)',
+            backdropFilter: 'blur(12px)',
+          }}
+        >
+          <span className="text-white/60">
+            {useFallbackMap
+              ? 'Click the map to place a store'
+              : '3D drops at analysis center · 2D places exactly'}
+          </span>
+          <span className="font-semibold" style={{ color: 'var(--cyan)' }}>
+            {placedStores.length} placed
+          </span>
+          <button
+            type="button"
+            onClick={() => onPlaceStore?.(lat, lng)}
+            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            style={{
+              background: 'rgba(34,211,238,0.15)',
+              border: '1px solid rgba(34,211,238,0.4)',
+              color: 'var(--cyan)',
+            }}
+          >
+            Drop here
+          </button>
+          <button
+            type="button"
+            onClick={() => onUndoPin?.()}
+            className="rounded-full px-2 py-0.5 text-[11px] transition-colors"
+            style={{ border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)' }}
+          >
+            Undo
+          </button>
+          <button
+            type="button"
+            onClick={() => onClearPins?.()}
+            className="rounded-full px-2 py-0.5 text-[11px] transition-colors"
+            style={{ border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)' }}
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => setPlaceArmed(false)}
+            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            style={{
+              background: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: 'rgba(255,255,255,0.85)',
+            }}
+          >
+            Done
+          </button>
+        </div>
+      )}
+      </div>
 
       {/* Decorative overlays */}
       <ParticleDrift />
@@ -743,6 +818,25 @@ export default function StreetsGlView({
             }
           >
             {highlight ? 'Hide Sources' : 'Highlight Food'}
+          </button>
+
+          {/* Place-a-store arming. Disabled without analysis data; placing
+              needs a community to reason about. */}
+          <button
+            type="button"
+            disabled={!hasData}
+            onClick={() => setPlaceArmed((v) => !v)}
+            className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40"
+            style={{
+              background: placeArmed ? 'rgba(34,211,238,0.18)' : 'rgba(34,211,238,0.06)',
+              border: `1px solid ${placeArmed ? 'rgba(34,211,238,0.55)' : 'rgba(34,211,238,0.22)'}`,
+              color: 'var(--cyan)',
+              backdropFilter: 'blur(20px)',
+              boxShadow: placeArmed ? '0 0 12px rgba(34,211,238,0.25)' : 'none',
+            }}
+            title={placeArmed ? 'Cancel store placement' : 'Place a hypothetical grocery store and see what changes'}
+          >
+            {placeArmed ? 'Placing…' : 'Place store'}
           </button>
 
           <button

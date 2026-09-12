@@ -42,7 +42,7 @@ function toRad(degrees) {
   return (degrees * Math.PI) / 180;
 }
 
-function haversineMiles(aLat, aLng, bLat, bLng) {
+export function haversineMiles(aLat, aLng, bLat, bLng) {
   const dLat = toRad(bLat - aLat);
   const dLng = toRad(bLng - aLng);
 

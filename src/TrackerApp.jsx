@@ -9,6 +9,8 @@ import AgentStatusFeed from './components/AgentStatusFeed';
 import ResizeHandle from './components/ResizeHandle';
 import { buildCommunityData } from './pipeline/normalizer';
 import { projectImpact } from './engine/projectionEngine';
+import { evaluatePlacedStoreScenario } from './engine/scenarioEngine';
+import { haversineMiles } from './pipeline/storeDistanceFetch';
 import { decodeAppState, writeAppStateToHash } from './lib/urlState';
 
 const PANEL_HEIGHT_KEY = 'fds:layout:bottomHeight';
@@ -72,6 +74,7 @@ const INITIAL_LOGS = [
 function Panels({
   communityData,
   impactData,
+  scenario,
   baselineImpact,
   savedScenario,
   onSaveScenario,
@@ -109,7 +112,7 @@ function Panels({
             {dataError}
           </div>
         ) : (
-          <AICard communityData={communityData} impactData={impactData} />
+          <AICard communityData={communityData} impactData={impactData} scenario={scenario} />
         )}
       </div>
 
@@ -158,6 +161,29 @@ export default function TrackerApp() {
   // can resolve out of order. The nonce drops stale responses; the newest
   // search owns the loading flag and all state updates.
   const searchNonceRef = useRef(0);
+
+  // Placed-store scenario state: grocery pins with real coordinates feed
+  // the no-network recompute below; the newest pin set always wins.
+  // (Defined up here: Panels/AICard below consume scenarioResult.)
+  const placedStores = useMemo(
+    () => simPins
+      .filter((p) => p.type === 'grocery' && Number.isFinite(p?.lat) && Number.isFinite(p?.lng))
+      .map((p) => ({
+        id: `placed-${p.id}`,
+        lat: p.lat,
+        lng: p.lng,
+        name: 'Placed store',
+        distanceMiles: haversineMiles(mapCenter.lat, mapCenter.lng, p.lat, p.lng),
+        placed: true,
+      })),
+    [simPins, mapCenter.lat, mapCenter.lng],
+  );
+
+  const scenarioResult = useMemo(
+    () => evaluatePlacedStoreScenario(communityData, placedStores, mapCenter),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [communityData, placedStores, mapCenter.lat, mapCenter.lng],
+  );
   const [bottomPanelHeight, setBottomPanelHeight] = useState(() =>
     Number.isFinite(initialUrlState.bottomPanelHeight)
       ? initialUrlState.bottomPanelHeight
@@ -389,7 +415,16 @@ export default function TrackerApp() {
     }
   }
 
-  function addSimulationPin(type) {
+  useEffect(() => {
+    if (!scenarioResult) return;
+    const fmt = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} mi` : 'n/a');
+    addLog(
+      `Scenario: ${scenarioResult.placedCount} placed store${scenarioResult.placedCount === 1 ? '' : 's'} — avg ${fmt(scenarioResult.beforeAvg)} → ${fmt(scenarioResult.afterAvg)}, ${scenarioResult.beforeLabel} → ${scenarioResult.afterLabel}`,
+      scenarioResult.flipped ? 'success' : 'info',
+    );
+  }, [scenarioResult, addLog]);
+
+  function addSimulationPin(type, plat, plng) {
     if (!communityData) {
       addLog('Load a location before running Sim Lab.', 'warning');
       return;
@@ -402,8 +437,8 @@ export default function TrackerApp() {
     const pin = {
       id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type,
-      lat: mapCenter.lat,
-      lng: mapCenter.lng,
+      lat: Number.isFinite(plat) ? plat : mapCenter.lat,
+      lng: Number.isFinite(plng) ? plng : mapCenter.lng,
       createdAt: Date.now(),
     };
 
@@ -497,6 +532,7 @@ export default function TrackerApp() {
   const panelProps = {
     communityData,
     impactData,
+    scenario: scenarioResult,
     baselineImpact,
     savedScenario,
     onSaveScenario: saveScenarioSnapshot,
@@ -566,6 +602,8 @@ export default function TrackerApp() {
                   onAddPin={addSimulationPin}
                   onUndoPin={undoSimulationPin}
                   onClearPins={clearSimulationPins}
+                  placedStores={placedStores}
+                  onPlaceStore={(plat, plng) => addSimulationPin('grocery', plat, plng)}
                   stores={communityData?.foodAccess?.stores || []}
                 />
               ) : (
@@ -598,6 +636,8 @@ export default function TrackerApp() {
                   onAddPin={addSimulationPin}
                   onUndoPin={undoSimulationPin}
                   onClearPins={clearSimulationPins}
+                  placedStores={placedStores}
+                  onPlaceStore={(plat, plng) => addSimulationPin('grocery', plat, plng)}
                   stores={communityData?.foodAccess?.stores || []}
                 />
               ) : (
