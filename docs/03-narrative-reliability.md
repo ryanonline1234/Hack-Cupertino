@@ -1,6 +1,10 @@
 # 03 — Narrative reliability, no-timeout maps, labeled examples, dual renderers
 
-Status: implemented 2026-09-12.
+Status: implemented + live in prod 2026-09-12. Gate: lint zero warnings,
+43/43 tests, build green; headless vs production: pipeline → Generate →
+"AI narrative ready" log line, narrative with zero instruction markers,
+2D↔3D toggle with iframe mounted throughout, src unchanged, 18 Leaflet
+tiles after toggle.
 Self-review corrections folded in before ship: sentence sanitizer works
 per-paragraph with decimal shielding (first cut mangled "0.0%" and collapsed
 breaks — caught by its own regression test); probe verdicts read the badge

@@ -5,7 +5,7 @@ _Updated: 2026-09-12 (narrative-reliability batch)_
 Share-URL batch live in prod. Mobile batch live in prod. Narrative-reliability batch (docs/03):
 prompt-echo sanitizer + regression test, Generate log lines, both timeouts
 removed, verified example-chip verdicts, dual renderers always mounted;
-committing next.
+live in prod, all headless gates passed.
 
 ## Verified
 - scenarioEngine unit tests (5): null-empty, avg drop, rural flip,
