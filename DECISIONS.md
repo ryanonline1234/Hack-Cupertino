@@ -80,3 +80,15 @@ CARTO basemaps need an API key; the atlas uses the keyed rastertiles endpoint
 (VITE_CARTO_KEY override, built-in public key). The marker scale switched
 green/red → sequential orange for red-green colorblind readers. Rejected
 alternative: unkeyed tiles (rate-limited/blocked) and the diverging scale.
+
+## 2026-09-12 — Share-URL scenarios with no database (hash pins=)
+Placed-store scenarios share via the URL hash: dropping a store appends
+`pins=lat,lng;…` (4 decimals, 10-pin cap), a banner Share button force-writes
+the hash and copies the link (clipboard API → execCommand → log fallback),
+and a shared link auto-runs the pipeline then batch-restores the pins as
+grocery pins with one impact recompute. Manual re-search clears pending link
+pins so they never leak into a picked location. Rejected alternative: a
+database/slug shortener — no backend state to maintain, and links work offline
+from the URL alone. Verified headless against the real pipeline (geocoder +
+Overpass via a local rewrite-mirroring harness): drop → pins= in hash →
+Share copies link → fresh page replays "With 1 placed store".

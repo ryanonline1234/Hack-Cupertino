@@ -1,9 +1,10 @@
 # State — Food Desert AI
-_Updated: 2026-09-12_
+_Updated: 2026-09-12 (share-URL batch)_
 
 ## Now
-Place-a-store + PWA batch implemented and green (lint, 34/34 tests, build,
-headless flow gate with inspected screenshot); committing next.
+Share-URL scenario batch implemented and verified headless (39/39 tests,
+lint, build, drop → Share → fresh-page replay); committing next. Next up:
+mobile info-only results page + stretched PWA globe fix.
 
 ## Verified
 - scenarioEngine unit tests (5): null-empty, avg drop, rural flip,
@@ -20,7 +21,7 @@ headless flow gate with inspected screenshot); committing next.
   fill CAC packet placeholders; record demo video (deadline Oct 26, 2026,
   12pm ET).
 - Proposed, not started: motive-building extras (founder line, who-is-this-for
-  strip); share-URL for scenarios; SimLabControls dead UI (mode never simlab).
+  strip); SimLabControls dead UI (mode never simlab).
 
 ## Pending spec patches
 - None. docs/01-place-a-store.md marked implemented with gate results.

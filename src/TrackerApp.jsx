@@ -161,6 +161,13 @@ export default function TrackerApp() {
   // can resolve out of order. The nonce drops stale responses; the newest
   // search owns the loading flag and all state updates.
   const searchNonceRef = useRef(0);
+  // Shared-link scenario pins (#pins=…) decoded on load. Restored as grocery
+  // pins once the hydrate search delivers communityData (addSimulationPin
+  // needs it); any user-initiated search clears them so link pins never leak
+  // into a manually picked location.
+  const pendingPinsRef = useRef(
+    Array.isArray(initialUrlState.pins) ? initialUrlState.pins : null,
+  );
 
   // Placed-store scenario state: grocery pins with real coordinates feed
   // the no-network recompute below; the newest pin set always wins.
@@ -221,19 +228,28 @@ export default function TrackerApp() {
   }, []);
 
   // Mirror app state into the URL hash so refreshing or sharing a link
-  // restores the same view. Debounced to avoid churn during splitter drags.
+  // restores the same view — location plus placed-store pins, so the URL
+  // alone replays a full "place a store" scenario with no database.
+  // Debounced to avoid churn during splitter drags. Extracted so the Share
+  // button can force a synchronous write before copying the link.
+  // (Plain function, not useCallback: callers below always want fresh state.)
+  function writeHashNow() {
+    writeAppStateToHash({
+      lat: communityData ? mapCenter.lat : null,
+      lng: communityData ? mapCenter.lng : null,
+      layout,
+      bottomPanelHeight,
+      splitPanelWidth,
+      // Only grocery-sourced pins feed the scenario; encode bare coords —
+      // grocery is the only pin type producible in the current UI.
+      pins: communityData ? simPins : [],
+    });
+  }
   useEffect(() => {
-    const t = setTimeout(() => {
-      writeAppStateToHash({
-        lat: communityData ? mapCenter.lat : null,
-        lng: communityData ? mapCenter.lng : null,
-        layout,
-        bottomPanelHeight,
-        splitPanelWidth,
-      });
-    }, 250);
+    const t = setTimeout(writeHashNow, 250);
     return () => clearTimeout(t);
-  }, [communityData, mapCenter.lat, mapCenter.lng, layout, bottomPanelHeight, splitPanelWidth]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communityData, mapCenter.lat, mapCenter.lng, layout, bottomPanelHeight, splitPanelWidth, simPins]);
 
   const maxBottomHeight = typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.85) : 1200;
   const maxSplitWidth = typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.85) : 1600;
@@ -280,6 +296,9 @@ export default function TrackerApp() {
     setShowImpact(false);
     setMapCenter({ lat, lng });
     setSimPins([]);
+    // A manual search discards shared-link pins; the hydrate search passes
+    // fromSharedLink to keep them for the restore effect below.
+    if (!options?.fromSharedLink) pendingPinsRef.current = null;
 
     addLog(`Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}`, 'system');
     if (forceRefresh) {
@@ -479,6 +498,70 @@ export default function TrackerApp() {
     addLog('Scenario snapshot cleared', 'info');
   }
 
+  // Batch-restore shared-link pins as grocery pins. One update (not a loop
+  // over addSimulationPin — each call would close over the same stale
+  // simPins and only the last pin would survive).
+  function restoreSharedPins(coords) {
+    if (!communityData || !Array.isArray(coords) || coords.length === 0) return;
+    const room = Math.max(10 - simPins.length, 0);
+    const fresh = coords.slice(0, room).map((c, i) => ({
+      id: `shared-${Date.now()}-${i}`,
+      type: 'grocery',
+      lat: c.lat,
+      lng: c.lng,
+      createdAt: Date.now(),
+    }));
+    if (fresh.length === 0) return;
+    const next = [...simPins, ...fresh];
+    setSimPins(next);
+    setImpactData(buildImpact(communityData, next, mapCenter));
+    addLog(
+      `Shared link: restored ${fresh.length} placed store${fresh.length === 1 ? '' : 's'} — scenario replayed`,
+      'success',
+    );
+  }
+
+  // Fires once the hydrate search delivers data: shared-link pins become
+  // real scenario pins and the delta banner recomputes from them.
+  useEffect(() => {
+    if (!communityData || !pendingPinsRef.current) return;
+    const coords = pendingPinsRef.current;
+    pendingPinsRef.current = null;
+    restoreSharedPins(coords);
+    // Runs once per hydrate; communityData arriving is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communityData]);
+
+  // Copy a replay link for the current location + placed stores. Forces a
+  // synchronous hash write first so the copied URL never lags the 250 ms
+  // debounced mirror.
+  async function handleShareScenario() {
+    if (!communityData) return;
+    writeHashNow();
+    const url = window.location.href;
+    const confirm = () => addLog('Scenario link copied — opening it replays this location and placed stores', 'success');
+    try {
+      await navigator.clipboard.writeText(url);
+      confirm();
+    } catch {
+      // Clipboard API blocked (permissions / insecure context): legacy
+      // execCommand fallback, then fall back to showing the link in the log.
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        confirm();
+      } catch {
+        addLog(`Copy this link to share the scenario: ${url}`, 'warning');
+      }
+    }
+  }
+
   // Auto-run the pipeline once on mount when a lat/lng was supplied via the
   // URL hash. We guard with a ref so this fires exactly once per page load,
   // and only if no analysis is already in flight.
@@ -488,7 +571,7 @@ export default function TrackerApp() {
     didHydrateRef.current = true;
     if (Number.isFinite(initialUrlState.lat) && Number.isFinite(initialUrlState.lng)) {
       addLog('Restoring location from shared link…', 'system');
-      handleLocationSearch(initialUrlState.lat, initialUrlState.lng);
+      handleLocationSearch(initialUrlState.lat, initialUrlState.lng, { fromSharedLink: true });
     }
     // We only want the URL hydrate to run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -602,6 +685,7 @@ export default function TrackerApp() {
                   onAddPin={addSimulationPin}
                   onUndoPin={undoSimulationPin}
                   onClearPins={clearSimulationPins}
+                  onShareScenario={handleShareScenario}
                   placedStores={placedStores}
                   onPlaceStore={(plat, plng) => addSimulationPin('grocery', plat, plng)}
                   stores={communityData?.foodAccess?.stores || []}
@@ -636,6 +720,7 @@ export default function TrackerApp() {
                   onAddPin={addSimulationPin}
                   onUndoPin={undoSimulationPin}
                   onClearPins={clearSimulationPins}
+                  onShareScenario={handleShareScenario}
                   placedStores={placedStores}
                   onPlaceStore={(plat, plng) => addSimulationPin('grocery', plat, plng)}
                   stores={communityData?.foodAccess?.stores || []}

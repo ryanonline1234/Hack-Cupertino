@@ -3,7 +3,7 @@
  * page reload (or a copied link) restores the same view.
  *
  * Format:
- *   #lat=37.339&lng=-121.894&layout=split&bh=320&sw=560&hl=1
+ *   #lat=37.339&lng=-121.894&layout=split&bh=320&sw=560&hl=1&pins=37.3390,-121.8940;37.3412,-121.8901
  *
  * Fields:
  *   lat, lng → analyzed location (will trigger pipeline run on hydrate)
@@ -12,10 +12,35 @@
  *   sw       → split-column panel width in px
  *   hl       → '1' if highlight food sources mode was on (informational
  *              hint for child components; the feature lives in StreetsGlView)
+ *   pins     → placed-store scenario pins as lat,lng pairs joined by ';'.
+ *              Restored as grocery pins after the pipeline runs on hydrate,
+ *              so a copied link replays the full "place a store" scenario
+ *              with no database — the URL is the share payload.
  *
  * We use the URL hash (not search params) so the history doesn't pollute
  * server-side rendering or bust the cache when the user shares a link.
  */
+
+// Placed pins share the Sim Lab 10-pin cap so a link can never encode more
+// pins than the UI itself allows.
+export const MAX_SHARED_PINS = 10;
+
+// 4 decimals ≈ 11 m precision — plenty for a scenario pin, keeps links short.
+function formatPin(pin) {
+  if (!pin || !Number.isFinite(pin.lat) || !Number.isFinite(pin.lng)) return null;
+  if (Math.abs(pin.lat) > 90 || Math.abs(pin.lng) > 180) return null;
+  return `${Number(pin.lat).toFixed(4)},${Number(pin.lng).toFixed(4)}`;
+}
+
+function parsePin(segment) {
+  const parts = String(segment || '').split(',');
+  if (parts.length !== 2) return null;
+  const lat = Number(parts[0]);
+  const lng = Number(parts[1]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
 
 export function encodeAppState(state) {
   const params = new URLSearchParams();
@@ -34,6 +59,11 @@ export function encodeAppState(state) {
     params.set('sw', String(Math.round(state.splitPanelWidth)));
   }
   if (state.highlight) params.set('hl', '1');
+
+  if (Array.isArray(state.pins) && state.pins.length > 0) {
+    const encoded = state.pins.slice(0, MAX_SHARED_PINS).map(formatPin).filter(Boolean);
+    if (encoded.length > 0) params.set('pins', encoded.join(';'));
+  }
 
   return params.toString();
 }
@@ -68,6 +98,12 @@ export function decodeAppState(hashOrSearch) {
 
   if (params.get('hl') === '1') {
     result.highlight = true;
+  }
+
+  const rawPins = params.get('pins');
+  if (typeof rawPins === 'string' && rawPins.length > 0) {
+    const pins = rawPins.split(';').slice(0, MAX_SHARED_PINS).map(parsePin).filter(Boolean);
+    if (pins.length > 0) result.pins = pins;
   }
 
   return result;

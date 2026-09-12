@@ -143,6 +143,7 @@ export default function StreetsGlView({
   onAddPin,
   onUndoPin,
   onClearPins,
+  onShareScenario,
   stores = [],
   placedStores = [],
   onPlaceStore,
@@ -669,6 +670,19 @@ export default function StreetsGlView({
             style={{ border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)' }}
           >
             Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => onShareScenario?.()}
+            title="Copy a link that replays this location and placed stores"
+            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            style={{
+              background: 'rgba(52,211,153,0.15)',
+              border: '1px solid rgba(52,211,153,0.4)',
+              color: 'var(--neon)',
+            }}
+          >
+            Share
           </button>
           <button
             type="button"
