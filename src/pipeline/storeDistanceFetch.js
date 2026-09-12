@@ -17,10 +17,10 @@ const OVERPASS_ENDPOINTS = [
 const SEARCH_RADIUS_MILES = 50;
 const SEARCH_RADIUS_METERS = Math.round(SEARCH_RADIUS_MILES * 1609.34);
 // Measured 2026-09: the 50-mile metro query takes 10-25s per mirror
-// (915 elements / ~520KB around San Jose). An 8s timeout aborted every
+// (915 elements / ~520KB around San Jose). Short timeouts aborted every
 // endpoint and forced Unknown designations — keep this above the slowest
 // mirror with headroom. First success is cached for 15 minutes.
-const REQUEST_TIMEOUT_MS = 30000;
+const REQUEST_TIMEOUT_MS = 60000;
 const CACHE_TTL_MS = 1000 * 60 * 15;
 const COMMUNITY_SAMPLE_OFFSETS_MILES = [
   [0, 0],

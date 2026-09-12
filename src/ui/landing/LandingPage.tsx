@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { BarChart3, FileText, Heart, Layers, LayoutGrid, ListOrdered, Satellite, Workflow } from "lucide-react";
+import { BarChart3, FileText, Heart, Layers, LayoutGrid, ListOrdered, Newspaper, Satellite, Workflow } from "lucide-react";
 import { HorizontalMenuBar } from "@/components/ui/horizontal-menu-bar";
 import { RadialOrbitalTimeline, type TimelineItem } from "@/components/ui/radial-orbital-timeline";
 import { Globe } from "@/components/ui/globe";
@@ -191,6 +191,64 @@ const NUTRITION_TABS = {
   },
 } as const;
 
+/*
+ * Crisis section data. Every figure below was read from the cited source —
+ * do not add a stat without a source URL a judge can open.
+ */
+const GUARDIAN_RI_URL =
+  "https://www.theguardian.com/environment/2026/aug/28/rhode-island-grocery-store-restrictive-covenants";
+
+const CRISIS_STATS = [
+  {
+    value: "1 : 45,000",
+    label: "One full-service supermarket serves all of Woonsocket, Rhode Island.",
+    source: "The Guardian, Aug 2026",
+    sourceUrl: GUARDIAN_RI_URL,
+  },
+  {
+    value: "37%",
+    label: "Of Woonsocket residents are food insecure — with 18% owning no vehicle.",
+    source: "The Guardian, Aug 2026",
+    sourceUrl: GUARDIAN_RI_URL,
+  },
+  {
+    value: "75 yrs",
+    label: "Longest covenant term unearthed in Rhode Island — buried in a 128-page agreement.",
+    source: "The Guardian, Aug 2026",
+    sourceUrl: GUARDIAN_RI_URL,
+  },
+  {
+    value: "20 stores",
+    label: "Opened in Washington, D.C. in the five years after its 2017 covenant ban.",
+    source: "The Guardian, Aug 2026",
+    sourceUrl: GUARDIAN_RI_URL,
+  },
+] as const;
+
+const CRISIS_READING = [
+  {
+    outlet: "The Guardian · Aug 2026",
+    title: "One supermarket for 45,000 people — and the deeds keeping it that way",
+    summary:
+      "How Stop & Shop and Walmart covenants froze Woonsocket's grocery map for decades, and why Rhode Island just banned them.",
+    url: GUARDIAN_RI_URL,
+  },
+  {
+    outlet: "USDA · Data",
+    title: "Food Access Research Atlas — the dataset behind this app",
+    summary:
+      "The federal low-access, low-income tract data our designation layer starts from. Explore any community yourself.",
+    url: "https://www.ers.usda.gov/data-products/food-access-research-atlas",
+  },
+  {
+    outlet: "U.S. Senate · May 2026",
+    title: "Four senators ask the FTC to examine grocery covenants",
+    summary:
+      "Gillibrand, Cantwell, Wyden, and Booker seek a federal assessment — the congressional angle on this crisis.",
+    url: "https://www.gillibrand.senate.gov/wp-content/uploads/2026/05/Gillibrand-Cantwell-Wyden-Booker-Letter-to-FTC-on-Anti-Competitive-Restrictive-Covenants.pdf",
+  },
+] as const;
+
 /** Nav height band (px): when #why-we-care crosses here, hero is done */
 const NAV_HIDE_TOP = 80;
 const INTRO_OVERLAY_FALLBACK_MS = 14000;
@@ -307,6 +365,11 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
                   label: "Why we care",
                   icon: <Heart className="h-4 w-4 shrink-0" aria-hidden />,
                   onSelect: () => scrollToId("why-we-care"),
+                },
+                {
+                  label: "The crisis",
+                  icon: <Newspaper className="h-4 w-4 shrink-0" aria-hidden />,
+                  onSelect: () => scrollToId("the-crisis"),
                 },
                 {
                   label: "Features",
@@ -511,10 +574,93 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
         </div>
       </section>
 
+      {/* The crisis — extent of the problem, with cited sources */}
+      <section
+        id="the-crisis"
+        className="scroll-mt-28 border-t border-neutral-900 bg-neutral-950 px-4 py-16 sm:px-8"
+        aria-labelledby="the-crisis-heading"
+      >
+        <div className="mx-auto max-w-5xl">
+          <div className="mb-10 text-center">
+            <p className="text-sm text-neutral-500">The crisis</p>
+            <h2
+              id="the-crisis-heading"
+              className="mt-2 text-balance text-2xl font-semibold tracking-tight text-white md:text-3xl"
+            >
+              Deserts aren&apos;t accidents. Policy made them — policy can unmake them.
+            </h2>
+            <p className="mx-auto mt-3 max-w-2xl text-sm text-neutral-400">
+              In Woonsocket, Rhode Island, a single supermarket serves 45,000 people — hemmed
+              in by deed restrictions that bar competitors for decades. In July 2026, Rhode
+              Island became the second state to ban them. This app exists so any community
+              can see its own numbers that clearly.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {CRISIS_STATS.map((stat) => (
+              <div
+                key={stat.value}
+                className="rounded-lg border border-neutral-800 bg-black p-5"
+              >
+                <p className="text-3xl font-semibold tracking-tight text-white">{stat.value}</p>
+                <p className="mt-2 text-sm leading-relaxed text-neutral-400">{stat.label}</p>
+                <p className="mt-3 text-[11px] text-neutral-500">
+                  Source:{" "}
+                  <a
+                    href={stat.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline decoration-neutral-700 underline-offset-2 transition hover:text-neutral-300"
+                  >
+                    {stat.source}
+                  </a>
+                </p>
+              </div>
+            ))}
+          </div>
+          <p className="mx-auto mt-4 max-w-2xl text-center text-xs text-neutral-500">
+            Researchers note the D.C. correlation is unproven — bans open the door, but
+            capital and operators still have to walk through it.
+          </p>
+
+          <div className="mt-10 grid gap-3 md:grid-cols-3">
+            {CRISIS_READING.map((item) => (
+              <a
+                key={item.url}
+                href={item.url}
+                target="_blank"
+                rel="noreferrer"
+                className="group rounded-lg border border-neutral-800 bg-black p-5 transition hover:border-neutral-600"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                  {item.outlet}
+                </p>
+                <p className="mt-2 text-sm font-medium leading-snug text-white">{item.title}</p>
+                <p className="mt-2 text-[13px] leading-relaxed text-neutral-400">{item.summary}</p>
+                <p className="mt-3 text-[13px] text-neutral-300 underline decoration-neutral-600 underline-offset-4 transition group-hover:text-white">
+                  Read the source
+                </p>
+              </a>
+            ))}
+          </div>
+
+          <div className="mt-10 text-center">
+            <button
+              type="button"
+              onClick={() => onLaunchSimulation()}
+              className="rounded-md bg-white px-6 py-2.5 text-[14px] font-medium text-neutral-950 transition hover:bg-neutral-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400"
+            >
+              Analyze a community
+            </button>
+          </div>
+        </div>
+      </section>
+
       {/* Features */}
       <section
         id="features"
-        className="scroll-mt-28 border-t border-neutral-900 bg-neutral-950 px-4 py-20 sm:px-8"
+        className="scroll-mt-28 border-t border-neutral-900 bg-black px-4 py-20 sm:px-8"
       >
         <div className="mx-auto max-w-5xl">
           <motion.div

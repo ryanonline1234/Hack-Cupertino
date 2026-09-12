@@ -174,14 +174,15 @@ export const NUTRIPLAN_PARTICLE_WORDS = [
 /** Landing hero: story beats → persistent title at top (needs ≥3 strings for title beat) */
 export const HERO_PARTICLE_WORDS = ["Million Lives.", "One Decision.", "Food Desert AI"];
 
-/** Min time first hero line stays up after layout; particles need ~0.4–0.8s to resolve before it reads clearly */
-const FIRST_PHRASE_HOLD_MS = 7800;
+/** First hero line hold: long enough to read once (~2.8s), then move on — the
+    skip control exists, but pacing shouldn't need it */
+const FIRST_PHRASE_HOLD_MS = 2800;
 
 /** Min time on “One Decision.” before drifting upward (keep brief, then rise with the line) */
-const SECOND_PHRASE_HOLD_MS = 700;
+const SECOND_PHRASE_HOLD_MS = 600;
 
 /** Drift speed (canvas px/frame) while rising; stop when glyph reaches upper band */
-const RISE_PX_PER_FRAME = 3.6;
+const RISE_PX_PER_FRAME = 4.4;
 
 /** When the top of the drifting line crosses this fraction of canvas height, snap to title */
 const TITLE_TRIGGER_TOP_FRAC = 0.2;
