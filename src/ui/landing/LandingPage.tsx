@@ -3,7 +3,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { BarChart3, FileText, Heart, Layers, LayoutGrid, ListOrdered, Satellite, Workflow } from "lucide-react";
 import { HorizontalMenuBar } from "@/components/ui/horizontal-menu-bar";
 import { RadialOrbitalTimeline, type TimelineItem } from "@/components/ui/radial-orbital-timeline";
-import { Globe } from "@/components/ui/globe";
+import UsaDotMap from "@/components/UsaDotMap";
+import SAMPLE_TRACTS from "@/data/sampleTracts";
 import { HERO_PARTICLE_WORDS, ParticleTextEffect } from "@/components/ui/particle-text-effect";
 import { RulerCarousel, type CarouselItem } from "@/components/ui/ruler-carousel";
 import { cn } from "@/lib/utils";
@@ -70,6 +71,21 @@ type LandingPageProps = {
   onLaunchSimulation: () => void;
   className?: string;
 };
+
+function analyzeHotspot(
+  lat: number,
+  lng: number,
+  onLaunchSimulation: () => void,
+) {
+  // Deep-link into the tracker: TrackerApp hydrates #lat/#lng on mount and
+  // auto-runs the pipeline, skipping the location gate.
+  try {
+    window.location.hash = `lat=${lat.toFixed(5)}&lng=${lng.toFixed(5)}`;
+  } catch {
+    // Ignore hash failures (private mode); tracker still opens.
+  }
+  onLaunchSimulation();
+}
 
 function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -347,8 +363,11 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
         />
 
         <div className="pointer-events-none absolute inset-x-0 bottom-0 top-[min(38vh,280px)] overflow-hidden lg:inset-y-0 lg:left-auto lg:right-0 lg:top-0 lg:w-[58%] xl:w-[54%]">
-          <div className="absolute inset-x-0 bottom-[-10%] top-0 lg:inset-[4%_-8%_4%_0]">
-            <Globe />
+          <div className="absolute inset-x-0 bottom-[-10%] top-0 lg:inset-[4%_-8%_4%_0]" style={{ pointerEvents: "auto" }}>
+            <UsaDotMap
+              hotspots={SAMPLE_TRACTS}
+              onSelect={(lat, lng) => analyzeHotspot(lat, lng, onLaunchSimulation)}
+            />
           </div>
           <div
             className="absolute inset-0 bg-gradient-to-l from-black/25 via-black/45 to-black lg:from-transparent lg:via-black/30 lg:to-black/90"
