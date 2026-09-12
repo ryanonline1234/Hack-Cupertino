@@ -106,3 +106,18 @@ answer. Separately, the iOS/Safari CSS globe fallback was a stretched
 ellipse (rounded-full in a wide-short hero box); it is now a centered
 square (`height: min(100%, 100vw)` + aspect-ratio), so always a circle.
 WebGL path untouched — perspective can't stretch a sphere.
+
+## 2026-09-12 — Narrative reliability batch (spec docs/03)
+Prompt echo: weak free models restate formatting instructions into the
+narrative card, so a deterministic `stripInstructionEcho` post-pass drops
+meta-instruction sentences (per-paragraph, decimals shielded) with a
+regression test built from the captured leak; prompts hardened too.
+Generate now logs request/ready/fail lines via drilled onLog. Both
+timeouts removed mailbox-style: Overpass per-mirror abort (slow mirrors
+ran to Unknowns) and the 12s iframe watchdog ("timed out" flips); real
+errors still rotate/retry. Example chips carry live-verified verdict
+pills (Greenville MS designated; San Jose + Chicago served) — reputation
+guesses were wrong for every city until headless badge reads corrected
+them; unverified cities stay untagged. Both map renderers stay mounted
+and track every query (toggle = visibility only; MapView invalidateSize
+on show); cost is one hidden GL context, stated here instead of a footer.

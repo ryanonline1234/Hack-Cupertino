@@ -27,6 +27,10 @@ export default function MapView({
   showStores = false,
   placeArmed = false,
   onPlaceAt,
+  // True when the map is actually shown. The parent keeps both renderers
+  // mounted and hides the inactive one, so a Leaflet map initialized while
+  // hidden measures 0×0 — this effect re-syncs size the moment it appears.
+  visible = true,
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
@@ -84,6 +88,18 @@ export default function MapView({
       mapInstance.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const centerLat = Number(center?.lat);
+  const centerLng = Number(center?.lng);
+
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map || !visible) return;
+    map.invalidateSize();
+    if (Number.isFinite(centerLat) && Number.isFinite(centerLng)) {
+      map.setView([centerLat, centerLng], map.getZoom(), { animate: false });
+    }
+  }, [visible, centerLat, centerLng]);
 
   useEffect(() => {
     const map = mapInstance.current;

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { annotateNarrative } from '../lib/citeNumbers';
+import { stripInstructionEcho } from '../lib/narrativeSanitize';
 
 /*
  * Judge Notes: Top 10 Complexity Hotspots
@@ -119,7 +120,7 @@ async function fetchNarrative(prompt, apiKey, signal) {
           messages: [
             {
               role: 'system',
-              content: 'You are a civic-health narrative writer. Write clear, human language grounded only in provided numbers. Avoid hype, avoid hedging, and never use bullet points.',
+              content: 'You are a civic-health narrative writer. Write clear, human language grounded only in provided numbers. Avoid hype, avoid hedging, and never use bullet points. Reply with ONLY the two paragraphs: never repeat, restate, or mention these instructions, and never narrate your reasoning or planning.',
             },
             { role: 'user', content: prompt },
           ],
@@ -138,7 +139,9 @@ async function fetchNarrative(prompt, apiKey, signal) {
       const text = json?.choices?.[0]?.message?.content?.trim();
 
       if (!text) throw new Error('LLMApi returned empty text');
-      return normalizeTwoParagraphs(text);
+      // Weak free-tier models restate the prompt's formatting instructions
+      // instead of answering; strip that echo before normalizing.
+      return normalizeTwoParagraphs(stripInstructionEcho(text));
     } catch (err) {
       if (signal?.aborted) throw err;
       lastError = err;
@@ -194,7 +197,7 @@ function toMoney(value) {
   return Number(value).toLocaleString();
 }
 
-export default function AICard({ communityData, impactData, scenario }) {
+export default function AICard({ communityData, impactData, scenario, onLog }) {
   const [narrative, setNarrative] = useState('');
   const [status, setStatus] = useState('idle');
   const [cacheMeta, setCacheMeta] = useState(null);
@@ -240,7 +243,7 @@ Projected impact of adding one grocery store:
 - Annual local economic impact: $${toMoney(economic.annualLocalImpact)}
 ${scenarioBlock}
 Paragraph 1: Describe in plain English what daily food access looks like for residents here. Be specific and human, not clinical.
-Paragraph 2: Describe what would realistically change if a grocery store opened. Ground it in the numbers above.${hasScenario ? ' Name what the placed-store experiment changes, using its numbers.' : ''} Avoid jargon and disclaimers.`;
+Paragraph 2: Describe what would realistically change if a grocery store opened. Ground it in the numbers above.${hasScenario ? ' Name what the placed-store experiment changes, using its numbers.' : ''} Avoid jargon and disclaimers. Output only the two paragraphs — no preamble, no meta-commentary, no extra text.`;
   }, [communityData, impactData, scenario]);
 
   useEffect(() => {
@@ -290,6 +293,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
 
       try {
         setStatus('loading');
+        onLog?.('Requesting AI narrative (OpenRouter, free tier)…', 'info');
 
         let request = inFlightByFips.get(fips);
         if (!request) {
@@ -308,12 +312,14 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
         setNarrative(text);
         setCacheMeta({ source: 'fresh', ts: Date.now() });
         setStatus('ready');
+        onLog?.('AI narrative ready', 'success');
       } catch (err) {
         if (err?.name === 'AbortError') return;
         console.error(err);
         if (cancelled) return;
         setStatus('error');
         setNarrative('');
+        onLog?.(`AI narrative failed: ${String(err?.message || err).slice(0, 120)}`, 'error');
       }
     }
 
@@ -322,7 +328,8 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
       cancelled = true;
       controller.abort();
     };
-  }, [fips, fetchNonce, prompt, refreshFips]);
+  // onLog is the stable TrackerApp addLog callback.
+  }, [fips, fetchNonce, prompt, refreshFips, onLog]);
 
   const executiveSummary = useMemo(() => {
     if (!summarySeed) return [];

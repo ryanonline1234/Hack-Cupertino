@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { EXAMPLE_LOCATIONS, fetchSuggestions, geocodeAddress } from '../lib/locationSearch';
+import { EXAMPLE_LOCATIONS, designationTag, fetchSuggestions, geocodeAddress } from '../lib/locationSearch';
 
 /*
  * LocationGate: the tracker opens here instead of booting the heavy Streets
@@ -184,21 +184,33 @@ export default function LocationGate({ onSelect }) {
 
         <div className="mt-6 flex gap-2 flex-wrap items-center">
           <span className="text-xs text-white/30 mr-1">Try:</span>
-          {EXAMPLE_LOCATIONS.map((loc) => (
-            <button
-              key={loc.label}
-              type="button"
-              onClick={() => onSelect(loc.lat, loc.lng)}
-              className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center rounded-full text-xs"
-              style={{
-                background: 'rgba(5,6,8,0.75)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                color: 'rgba(255,255,255,0.55)',
-              }}
-            >
-              {loc.label}
-            </button>
-          ))}
+          {EXAMPLE_LOCATIONS.map((loc) => {
+            const tag = designationTag(loc);
+            return (
+              <button
+                key={loc.label}
+                type="button"
+                onClick={() => onSelect(loc.lat, loc.lng)}
+                title={tag ? `Model verdict: ${tag.text}` : loc.label}
+                className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full text-xs"
+                style={{
+                  background: 'rgba(5,6,8,0.75)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  color: 'rgba(255,255,255,0.55)',
+                }}
+              >
+                {tag && (
+                  <span
+                    className="rounded-full px-1.5 py-px text-[9px] font-bold uppercase tracking-wider"
+                    style={{ color: tag.color, border: tag.border, background: tag.background }}
+                  >
+                    {tag.text}
+                  </span>
+                )}
+                {loc.label}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

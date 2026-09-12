@@ -6,6 +6,7 @@ import MapView from './MapView';
 import { makeTopDownProjector, pickCameraDistance } from '../lib/projection';
 import {
   EXAMPLE_LOCATIONS,
+  designationTag,
   fetchSuggestions,
   geocodeAddress,
 } from '../lib/locationSearch';
@@ -13,7 +14,7 @@ import {
 /*
  * Judge Notes: Top 10 Complexity Hotspots
  * 1) Iframe source construction packs camera pitch/yaw/distance + hash state for reproducible views.
- * 2) Load timeout + bounded retry logic protects UX when external Streets GL rendering stalls.
+ * 2) Bounded retry logic protects UX when external Streets GL rendering stalls (no load timer: slow loads just keep spinning).
  * 3) Query suggestions and geocoding use asynchronous Nominatim calls with user-input debouncing.
  * 4) Search lifecycle coordinates suggestions, selection, fallback errors, and map teleport updates.
  * 5) Parent callbacks synchronize selected coordinates with analytics and simulation state.
@@ -28,7 +29,6 @@ const STREETS_GL_BASE = 'https://streets-gl.pages.dev';
 const DEFAULT_PITCH = 50;
 const DEFAULT_YAW = 330;
 const DEFAULT_DISTANCE = 1800;
-const IFRAME_LOAD_TIMEOUT_MS = 12000;
 const IFRAME_MAX_RETRIES = 2;
 const SHOW_SIM_LAB_UI = false;
 // Bumped from 'fds:mapRendererMode' so any '2d' values cached from a previous
@@ -173,7 +173,6 @@ export default function StreetsGlView({
   const dropRef     = useRef(null);
   const lastMoveRef = useRef('');
   const iframeReadyRef = useRef(false);
-  const iframeWatchdogRef = useRef(null);
   const useFallbackMap = rendererMode === '2d';
 
   // Camera distance chosen to frame all the stores comfortably. Memoized
@@ -201,30 +200,9 @@ export default function StreetsGlView({
     return () => ro.disconnect();
   }, []);
 
-  const clearIframeWatchdog = useCallback(() => {
-    if (iframeWatchdogRef.current) {
-      clearTimeout(iframeWatchdogRef.current);
-      iframeWatchdogRef.current = null;
-    }
-  }, []);
-
-  const scheduleIframeWatchdog = useCallback((retryCount) => {
-    clearIframeWatchdog();
-    iframeReadyRef.current = false;
-
-    iframeWatchdogRef.current = setTimeout(() => {
-      if (iframeReadyRef.current) return;
-
-      if (retryCount < IFRAME_MAX_RETRIES) {
-        const nextRetry = retryCount + 1;
-        setMapError('Streets GL timed out, retrying…');
-        setIframeRetry(nextRetry);
-        setIframeSrc((prev) => withRetryParam(prev, nextRetry));
-      } else {
-        setMapError('Streets GL failed to load. Tap retry.');
-      }
-    }, IFRAME_LOAD_TIMEOUT_MS);
-  }, [clearIframeWatchdog]);
+  // No load timer: a slow Streets GL load just keeps its spinner instead of
+  // flipping to a timed-out error. Real load failures still retry via the
+  // iframe onError path below, and the user can retry or switch to 2D.
 
   function retryIframeNow() {
     const nextRetry = iframeRetry + 1;
@@ -238,7 +216,6 @@ export default function StreetsGlView({
     persistRendererMode(nextMode);
 
     if (nextMode === '2d') {
-      clearIframeWatchdog();
       iframeReadyRef.current = false;
       setMapError('2D compatibility map enabled.');
       return;
@@ -250,7 +227,8 @@ export default function StreetsGlView({
   }
 
   const teleportMap = useCallback((nextLat, nextLng) => {
-    if (useFallbackMap) return;
+    // No early return for 2D mode: both renderers stay mounted and both
+    // track every query, so the hidden one is already warm on toggle.
 
     const moveKey = `${nextLat.toFixed(5)},${nextLng.toFixed(5)}|${highlight ? 'h' : 'n'}|${lockedDistance.toFixed(0)}`;
     if (lastMoveRef.current === moveKey) return;
@@ -285,7 +263,7 @@ export default function StreetsGlView({
       setIframeRetry(0);
       setIframeSrc((prev) => (prev === nextSrc ? prev : nextSrc));
     }
-  }, [useFallbackMap, highlight, lockedDistance]);
+  }, [highlight, lockedDistance]);
 
   // Toggling highlight only flips the overlay + hash-teleports the camera
   // (oblique vs top-down). We force a re-teleport by clearing the memo key
@@ -302,16 +280,6 @@ export default function StreetsGlView({
     teleportMap(lat, lng);
   }, [lat, lng, teleportMap]);
 
-  useEffect(() => {
-    if (useFallbackMap) {
-      clearIframeWatchdog();
-      return undefined;
-    }
-
-    scheduleIframeWatchdog(iframeRetry);
-    return () => clearIframeWatchdog();
-  }, [iframeSrc, iframeRetry, scheduleIframeWatchdog, clearIframeWatchdog, useFallbackMap]);
-
   // Close dropdown when clicking outside
   useEffect(() => {
     function onDown(e) {
@@ -325,16 +293,11 @@ export default function StreetsGlView({
 
   // NOTE: a previous build of this component installed a window.onerror
   // listener that switched to 2D after a small burst of WebGL framebuffer or
-  // tile-404 errors. That was too aggressive: Streets GL emits these as
-  // routine initialization noise without any actual rendering breakage, and
-  // it forced users into 2D for no reason. The iframe load watchdog below
-  // still handles real iframe-load failure, and the user can hit "2D Map"
-  // manually if they ever want to override.
-
-  // Clean up the watchdog when the component unmounts.
-  useEffect(() => {
-    return () => clearIframeWatchdog();
-  }, [clearIframeWatchdog]);
+  // tile-404 errors, plus a 12s load watchdog that flipped slow loads into
+  // timeout errors. Both were too aggressive: Streets GL emits the former
+  // as routine initialization noise, and slow loads just need patience.
+  // Real iframe-load failures still retry via onError below, and the user
+  // can hit "2D Map" manually if they ever want to override.
 
   function handleInputChange(value) {
     setQuery(value);
@@ -433,37 +396,38 @@ export default function StreetsGlView({
 
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden map-scanlines" style={{ background: '#050608' }}>
-      {/* Streets GL 3D iframe — shifted up to clip its native toolbar (~56px) */}
-      {useFallbackMap ? (
-        <div className="absolute inset-0" style={{ zIndex: 1 }}>
-          <MapView
-            center={{ lat, lng }}
-            pinPosition={hasData ? { lat, lng } : null}
-            isLoading={isLoading}
-            onPinDrop={(nextLat, nextLng) => {
-              setSearchError('');
-              onSearch(nextLat, nextLng);
-            }}
-            showInstruction={!hasData}
-            stores={[...stores, ...placedStores]}
-            showStores={highlight || placeArmed}
-            placeArmed={placeArmed}
-            onPlaceAt={(plat, plng) => onPlaceStore?.(plat, plng)}
-          />
-        </div>
-      ) : (
+      {/* Both renderers stay mounted and track every query; the toggle only
+          flips visibility, so switching 2D ↔ 3D never reloads anything.
+          Costs one hidden GL context + one hidden Leaflet map — the price
+          of instant switching. */}
+      <div className="absolute inset-0" style={{ zIndex: 1, display: useFallbackMap ? 'block' : 'none' }}>
+        <MapView
+          center={{ lat, lng }}
+          pinPosition={hasData ? { lat, lng } : null}
+          isLoading={isLoading}
+          onPinDrop={(nextLat, nextLng) => {
+            setSearchError('');
+            onSearch(nextLat, nextLng);
+          }}
+          showInstruction={!hasData}
+          stores={[...stores, ...placedStores]}
+          showStores={highlight || placeArmed}
+          placeArmed={placeArmed}
+          onPlaceAt={(plat, plng) => onPlaceStore?.(plat, plng)}
+          visible={useFallbackMap}
+        />
+      </div>
+      {
         <iframe
           ref={iframeRef}
           key={`streets-gl-${iframeRetry}`}
           src={iframeSrc}
           onLoad={() => {
             iframeReadyRef.current = true;
-            clearIframeWatchdog();
             setMapError('');
           }}
           onError={() => {
             iframeReadyRef.current = false;
-            clearIframeWatchdog();
 
             if (iframeRetry < IFRAME_MAX_RETRIES) {
               const nextRetry = iframeRetry + 1;
@@ -497,9 +461,12 @@ export default function StreetsGlView({
             // toggle establishes; moving the camera may drift them until
             // the next teleport (search, toggle, or Recenter).
             pointerEvents: 'auto',
+            // The inactive renderer hides instead of unmounting, so the
+            // iframe never reloads when toggling 2D ↔ 3D.
+            display: useFallbackMap ? 'none' : 'block',
           }}
         />
-      )}
+      }
 
       {/* Highlight-mode marker overlay. Aligned with the top-down view the
           toggle establishes; free camera movement may drift markers until
@@ -975,21 +942,33 @@ export default function StreetsGlView({
           style={{ width: 'min(600px, calc(100% - 2rem))' }}
         >
           <span className="text-xs text-white/30 self-center mr-1">Try:</span>
-          {EXAMPLE_LOCATIONS.map((loc) => (
-            <button
-              key={loc.label}
-              onClick={() => handleExample(loc)}
-              className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center rounded-full text-xs transition-all hover:scale-105"
-              style={{
-                background: 'rgba(5,6,8,0.75)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                color: 'rgba(255,255,255,0.55)',
-                backdropFilter: 'blur(12px)',
-              }}
-            >
-              {loc.label}
-            </button>
-          ))}
+          {EXAMPLE_LOCATIONS.map((loc) => {
+            const tag = designationTag(loc);
+            return (
+              <button
+                key={loc.label}
+                onClick={() => handleExample(loc)}
+                title={tag ? `Model verdict: ${tag.text}` : loc.label}
+                className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full text-xs transition-all hover:scale-105"
+                style={{
+                  background: 'rgba(5,6,8,0.75)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  color: 'rgba(255,255,255,0.55)',
+                  backdropFilter: 'blur(12px)',
+                }}
+              >
+                {tag && (
+                  <span
+                    className="rounded-full px-1.5 py-px text-[9px] font-bold uppercase tracking-wider"
+                    style={{ color: tag.color, border: tag.border, background: tag.background }}
+                  >
+                    {tag.text}
+                  </span>
+                )}
+                {loc.label}
+              </button>
+            );
+          })}
         </div>
       )}
 

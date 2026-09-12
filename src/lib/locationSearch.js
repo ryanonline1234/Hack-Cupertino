@@ -6,12 +6,45 @@
  * Suggestion shape: { short, full, lat, lng, type, cls }
  */
 
+/*
+ * designation tags predict what the model actually verdicts for that spot —
+ * each tagged entry was confirmed by a live headless pipeline run reading
+ * the Food Desert Status badge (2026-09-12), not by reputation. Untagged
+ * entries are conveniences with no verified verdict; don't add a tag
+ * without running the pipeline first.
+ */
 export const EXAMPLE_LOCATIONS = [
-  { label: 'San Jose, CA',       lat: 37.339, lng: -121.894 },
-  { label: 'Chicago South Side', lat: 41.773, lng: -87.632  },
-  { label: 'Detroit, MI',        lat: 42.331, lng: -83.046  },
+  { label: 'San Jose, CA',       lat: 37.339, lng: -121.894, designation: 'not_designated' },
+  { label: 'Greenville, MS',     lat: 33.378, lng: -91.062,  designation: 'designated' },
+  { label: 'Chicago South Side', lat: 41.773, lng: -87.632,  designation: 'not_designated' },
+  { label: 'Detroit, MI',        lat: 42.331, lng: -83.046 },
   { label: 'Compton, CA',        lat: 33.894, lng: -118.220 },
 ];
+
+/*
+ * Verdict pill for example chips. Colors match the FoodDesertBadge (red =
+ * designated, neon = served) so the chip predicts the badge judges see.
+ * Returns null for untagged locations — no pill, no claim.
+ */
+export function designationTag(loc) {
+  if (loc?.designation === 'designated') {
+    return {
+      text: 'Food desert',
+      color: 'rgba(252,165,165,0.95)',
+      border: '1px solid rgba(239,68,68,0.45)',
+      background: 'rgba(239,68,68,0.14)',
+    };
+  }
+  if (loc?.designation === 'not_designated') {
+    return {
+      text: 'Served',
+      color: 'var(--neon)',
+      border: '1px solid rgba(0,255,153,0.35)',
+      background: 'rgba(0,255,153,0.10)',
+    };
+  }
+  return null;
+}
 
 export function shortName(displayName) {
   return (displayName || '').split(',').slice(0, 3).join(',').trim();

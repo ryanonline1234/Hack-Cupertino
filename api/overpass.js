@@ -13,23 +13,18 @@ const ENDPOINTS = [
   'https://overpass.private.coffee/api/interpreter',
 ];
 
-const REQUEST_TIMEOUT_MS = 12000;
-
+// No per-endpoint abort: slow Overpass mirrors used to get killed at 12s and
+// force Unknown designations. Each mirror now runs until it answers; real
+// errors (HTTP 5xx, connection refused) still rotate to the next mirror.
+// The only remaining bound is the platform's function execution limit.
 async function tryEndpoint(url, body) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const upstream = await fetch(url, {
-      method: 'POST',
-      body,
-      signal: controller.signal,
-      headers: { 'Content-Type': 'text/plain', 'User-Agent': 'food-desert-simulator/1.0' },
-    });
-    if (!upstream.ok) throw new Error(`Overpass ${upstream.status}`);
-    return await upstream.text();
-  } finally {
-    clearTimeout(timer);
-  }
+  const upstream = await fetch(url, {
+    method: 'POST',
+    body,
+    headers: { 'Content-Type': 'text/plain', 'User-Agent': 'food-desert-simulator/1.0' },
+  });
+  if (!upstream.ok) throw new Error(`Overpass ${upstream.status}`);
+  return await upstream.text();
 }
 
 export default async function handler(req, res) {

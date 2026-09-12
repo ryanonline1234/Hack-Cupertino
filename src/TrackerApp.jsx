@@ -86,6 +86,7 @@ function Panels({
   loading,
   dataError,
   logs,
+  onLog,
 }) {
   return (
     <>
@@ -113,7 +114,7 @@ function Panels({
             {dataError}
           </div>
         ) : (
-          <AICard communityData={communityData} impactData={impactData} scenario={scenario} />
+          <AICard communityData={communityData} impactData={impactData} scenario={scenario} onLog={onLog} />
         )}
       </div>
 
@@ -630,6 +631,7 @@ export default function TrackerApp() {
     loading,
     dataError,
     logs,
+    onLog: addLog,
   };
 
   // Phones stack the three panels vertically in a capped scroll region;

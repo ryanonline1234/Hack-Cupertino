@@ -1,10 +1,11 @@
 # State — Food Desert AI
-_Updated: 2026-09-12 (mobile info-only batch)_
+_Updated: 2026-09-12 (narrative-reliability batch)_
 
 ## Now
-Share-URL batch live in prod. Mobile info-only results page + globe-circle
-fix implemented and verified headless (lint, 39/39 tests, build, 390px
-no-map info replay, iPhone-UA circle screenshot); committing next.
+Share-URL batch live in prod. Mobile batch live in prod. Narrative-reliability batch (docs/03):
+prompt-echo sanitizer + regression test, Generate log lines, both timeouts
+removed, verified example-chip verdicts, dual renderers always mounted;
+committing next.
 
 ## Verified
 - scenarioEngine unit tests (5): null-empty, avg drop, rural flip,
