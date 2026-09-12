@@ -154,6 +154,10 @@ export default function TrackerApp() {
   const isMobile = useIsMobile();
   const [mode, setMode] = useState('atlas');
   const [simPins, setSimPins] = useState([]);
+  // Distance fetches no longer time out client-side, so rapid re-searches
+  // can resolve out of order. The nonce drops stale responses; the newest
+  // search owns the loading flag and all state updates.
+  const searchNonceRef = useRef(0);
   const [bottomPanelHeight, setBottomPanelHeight] = useState(() =>
     Number.isFinite(initialUrlState.bottomPanelHeight)
       ? initialUrlState.bottomPanelHeight
@@ -239,6 +243,8 @@ export default function TrackerApp() {
 
   async function handleLocationSearch(lat, lng, options = {}) {
     const forceRefresh = Boolean(options?.forceRefresh);
+    const mySearch = searchNonceRef.current + 1;
+    searchNonceRef.current = mySearch;
 
     setLoading(true);
     setCommunityData(null);
@@ -262,6 +268,10 @@ export default function TrackerApp() {
 
       const data = await buildCommunityData(lat, lng, { forceRefresh });
       if (!data) throw new Error('No census tract found. Try a different US location.');
+      // A newer search started while this one was in flight — its results
+      // would paint the wrong community, so drop them silently. The newer
+      // search owns the loading flag; leave it alone here.
+      if (mySearch !== searchNonceRef.current) return;
 
       const cacheStatus = data.meta?.cache?.status;
       if (cacheStatus === 'memory' || cacheStatus === 'local') {
@@ -369,10 +379,13 @@ export default function TrackerApp() {
       setImpactData(impact);
       setCommunityData(data);
     } catch (err) {
+      // Stale search: a newer one owns the UI — don't paint its error or
+      // touch its loading flag.
+      if (mySearch !== searchNonceRef.current) return;
       addLog(`Error: ${err?.message || 'Pipeline failure'}`, 'error');
       setDataError(err?.message || 'Unable to load data for this location.');
     } finally {
-      setLoading(false);
+      if (mySearch === searchNonceRef.current) setLoading(false);
     }
   }
 

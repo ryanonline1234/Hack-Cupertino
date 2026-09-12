@@ -57,8 +57,8 @@ function withRetryParam(url, retry) {
   return rawHash ? `${joined}#${rawHash}` : joined;
 }
 
-function buildHash(lat, lng) {
-  return `#${lat.toFixed(5)},${lng.toFixed(5)},${DEFAULT_PITCH.toFixed(2)},${DEFAULT_YAW.toFixed(2)},${DEFAULT_DISTANCE.toFixed(2)}`;
+function buildHash(lat, lng, pitch = DEFAULT_PITCH, yaw = DEFAULT_YAW, distance = DEFAULT_DISTANCE) {
+  return `#${lat.toFixed(5)},${lng.toFixed(5)},${pitch.toFixed(2)},${yaw.toFixed(2)},${distance.toFixed(2)}`;
 }
 
 function hasWebGL2Support() {
@@ -251,23 +251,20 @@ export default function StreetsGlView({
 
     lastMoveRef.current = moveKey;
 
-    // In highlight mode we always rebuild the URL so the camera is fully
-    // reset to top-down + chosen distance — hash-only updates would leave
-    // the user's pan/zoom intact, which would break marker alignment.
-    if (highlight) {
-      const nextSrc = buildLockedSrc(nextLat, nextLng, lockedDistance);
-      setMapError('');
-      setIframeRetry(0);
-      setIframeSrc((prev) => (prev === nextSrc ? prev : nextSrc));
-      return;
-    }
+    // Highlight is a pure overlay toggle: the camera moves hash-only to the
+    // top-down view (pitch 90, yaw 0) so overlay projection stays valid —
+    // the iframe src is never rebuilt, so there is no reload, tiles stay
+    // cached, and the user keeps control of the map.
+    const tPitch = highlight ? 90 : DEFAULT_PITCH;
+    const tYaw = highlight ? 0 : DEFAULT_YAW;
+    const tDist = highlight ? lockedDistance : DEFAULT_DISTANCE;
 
     let didHashMove = false;
     const frameWin = iframeRef.current?.contentWindow;
     if (frameWin && iframeReadyRef.current) {
       try {
         // Streets GL listens for hash updates as live camera state.
-        frameWin.location.hash = buildHash(nextLat, nextLng);
+        frameWin.location.hash = buildHash(nextLat, nextLng, tPitch, tYaw, tDist);
         didHashMove = true;
       } catch {
         didHashMove = false;
@@ -275,16 +272,18 @@ export default function StreetsGlView({
     }
 
     if (!didHashMove) {
-      const nextSrc = buildSrc(nextLat, nextLng);
+      const nextSrc = highlight
+        ? buildLockedSrc(nextLat, nextLng, lockedDistance)
+        : buildSrc(nextLat, nextLng);
       setMapError('');
       setIframeRetry(0);
       setIframeSrc((prev) => (prev === nextSrc ? prev : nextSrc));
     }
   }, [useFallbackMap, highlight, lockedDistance]);
 
-  // Toggling highlight mode rebuilds the iframe URL with the appropriate
-  // camera (oblique vs top-down). We force a re-teleport by clearing the
-  // memo key so the next teleport always fires.
+  // Toggling highlight only flips the overlay + hash-teleports the camera
+  // (oblique vs top-down). We force a re-teleport by clearing the memo key
+  // so the next teleport always fires — still no iframe reload.
   useEffect(() => {
     lastMoveRef.current = '';
     teleportMap(lat, lng);
@@ -440,6 +439,8 @@ export default function StreetsGlView({
               onSearch(nextLat, nextLng);
             }}
             showInstruction={!hasData}
+            stores={stores}
+            showStores={highlight}
           />
         </div>
       ) : (
@@ -483,16 +484,18 @@ export default function StreetsGlView({
             left: 0,
             width: '100%',
             height: 'calc(100% + 56px)',
-            // In highlight mode we lock the camera by killing the iframe's
-            // pointer events. Our HTML overlay markers stay aligned with
-            // the (known, fixed) Streets GL camera state.
-            pointerEvents: highlight ? 'none' : 'auto',
+            // Highlight no longer locks the camera: the user can pan/zoom
+            // freely. Overlay markers align with the top-down view the
+            // toggle establishes; moving the camera may drift them until
+            // the next teleport (search, toggle, or Recenter).
+            pointerEvents: 'auto',
           }}
         />
       )}
 
-      {/* Highlight-mode marker overlay. Only rendered when the camera is
-          locked top-down so projection math stays valid. */}
+      {/* Highlight-mode marker overlay. Aligned with the top-down view the
+          toggle establishes; free camera movement may drift markers until
+          the next teleport (search, toggle, or Recenter). */}
       {highlight && !useFallbackMap && projector && stores.length > 0 && (
         <div
           aria-hidden={false}
@@ -587,9 +590,24 @@ export default function StreetsGlView({
           />
           <span>
             {stores.length > 0
-              ? `${stores.length} food source${stores.length === 1 ? '' : 's'} in range · camera locked top-down`
-              : 'No supermarkets within 50 miles · camera locked top-down'}
+              ? `${stores.length} food source${stores.length === 1 ? '' : 's'} in range · move freely, Recenter re-syncs markers`
+              : 'No supermarkets within 50 miles'}
           </span>
+          <button
+            type="button"
+            onClick={() => {
+              lastMoveRef.current = '';
+              teleportMap(lat, lng);
+            }}
+            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            style={{
+              background: 'rgba(0,255,153,0.15)',
+              border: '1px solid rgba(0,255,153,0.4)',
+              color: 'var(--neon)',
+            }}
+          >
+            Recenter
+          </button>
         </div>
       )}
 
@@ -702,13 +720,13 @@ export default function StreetsGlView({
             Fresh Data
           </button>
 
-          {/* Highlight food sources toggle. Locks the 3D camera to a top-down
-              view and overlays green markers for every supermarket Overpass
-              found within the search radius. Disabled in 2D fallback because
-              MapView already shows those naturally (and we'd be duplicating). */}
+          {/* Highlight food sources toggle. 3D: hash-teleports the camera
+              top-down (no reload) and overlays green markers for every
+              supermarket Overpass found. 2D: toggles a native Leaflet
+              marker layer with the same data. */}
           <button
             type="button"
-            disabled={useFallbackMap || !hasData}
+            disabled={!hasData}
             onClick={() => setHighlight((v) => !v)}
             className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40"
             style={{
@@ -719,11 +737,9 @@ export default function StreetsGlView({
               boxShadow: highlight ? '0 0 12px rgba(0,255,153,0.25)' : 'none',
             }}
             title={
-              useFallbackMap
-                ? 'Switch to 3D to enable highlight mode'
-                : highlight
-                  ? 'Hide food source highlights'
-                  : 'Highlight nearby supermarkets in green (locks camera top-down)'
+              highlight
+                ? 'Hide food source highlights'
+                : 'Highlight nearby supermarkets in green'
             }
           >
             {highlight ? 'Hide Sources' : 'Highlight Food'}

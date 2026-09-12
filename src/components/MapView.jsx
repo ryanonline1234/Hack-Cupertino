@@ -23,10 +23,13 @@ export default function MapView({
   onPinDrop,
   isLoading,
   showInstruction = true,
+  stores = [],
+  showStores = false,
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markerRef = useRef(null);
+  const storesLayerRef = useRef(null);
   const [hasDropped, setHasDropped] = useState(false);
 
   useEffect(() => {
@@ -80,6 +83,37 @@ export default function MapView({
 
     map.setView([nextLat, nextLng], map.getZoom(), { animate: false });
   }, [center, center?.lat, center?.lng]);
+
+  // Supermarket source layer: same data as the 3D highlight overlay, drawn
+  // as native Leaflet markers so 2D highlight is a pure layer toggle.
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map) return;
+
+    if (storesLayerRef.current) {
+      storesLayerRef.current.remove();
+      storesLayerRef.current = null;
+    }
+    if (!showStores || !Array.isArray(stores) || stores.length === 0) return;
+
+    const layer = L.layerGroup(
+      stores
+        .filter((s) => Number.isFinite(s?.lat) && Number.isFinite(s?.lng))
+        .slice(0, 300)
+        .map((s) => L.circleMarker([s.lat, s.lng], {
+          radius: 6,
+          color: '#052e22',
+          fillColor: '#00ff99',
+          fillOpacity: 0.85,
+          weight: 1.5,
+        }).bindTooltip(
+          `${s.name || 'Supermarket'}${Number.isFinite(s.distanceMiles) ? ` · ${s.distanceMiles.toFixed(1)} mi` : ''}`,
+          { direction: 'top', offset: [0, -6] },
+        )),
+    );
+    layer.addTo(map);
+    storesLayerRef.current = layer;
+  }, [stores, showStores]);
 
   useEffect(() => {
     const map = mapInstance.current;

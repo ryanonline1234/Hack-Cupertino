@@ -1,0 +1,64 @@
+# Decisions — Food Desert AI
+
+Append-only. New decisions go on top with today's date; old entries are never
+edited. Each entry names the rejected alternative.
+
+## 2026-09-12 — Highlight is a hash-teleport overlay toggle, camera stays free
+Toggling food-source highlight moves the Streets GL camera hash-only to a
+top-down view instead of rebuilding the iframe URL (which reloaded the whole
+map and reset the camera). Rejected alternative: keeping the reload, which
+made exploring sources painful. Tradeoff recorded in code: overlay markers
+align with the toggle-established view and may drift if the user pans, until
+the next teleport (search, toggle, Recenter).
+
+## 2026-09-12 — No client-side Overpass abort, stale responses dropped by nonce
+The 8s (later 30s/60s) client timeout aborted every mirror for the 50-mile
+metro query (measured 10–25s) and forced Unknown designations, so the abort
+was removed entirely; bounding lives upstream (server 12s/mirror, function
+limits). Rejected alternative: ever-longer timeouts, which only moved the
+failure line. TrackerApp carries a search nonce so overlapping slow responses
+can't paint stale communities.
+
+## 2026-09-12 — 2D map gets native highlight markers from the same store data
+MapView draws a Leaflet layer from the Overpass store points the 3D overlay
+already had, so highlight works in both renderers as a pure toggle. Rejected
+alternative: keeping highlight 3D-only with a "switch to 3D" dead end.
+
+## 2026-09-11 — Free-tier OpenRouter models only, no paid flagships
+Narrative runs on `google/gemma-4-31b-it:free` (strongest instruction-follower
+in the free list, verified via the public models API) with a cross-provider
+fallback, retry on 429/5xx, and server-side error logging. Rejected
+alternative: `anthropic/claude-3-5-haiku`, which has no such OpenRouter ID and
+caused upstream 5xx, and any paid model (cost + key-exposure risk for a
+student project).
+
+## 2026-09-11 — Location gate boots before the Streets GL iframe
+The heavy 3D map stays unmounted until the visitor picks a place (deep links
+bypass the gate), instead of loading a default city nobody asked for.
+Rejected alternative: eager map + lazy data, which burned the slowest load on
+the least-informed moment.
+
+## 2026-09-11 — Server-side OpenRouter proxy, key never ships to the browser
+`api/llmapi.js` holds `OPEN_ROUTER_API_KEY`; the client sends no secret in
+production (dev-only `VITE_OPEN_ROUTER_API_KEY` for the Vite proxy).
+Rejected alternative: client-side key, which would be extractable from the
+bundle. (Related bug: a non-ASCII em dash in X-Title made every upstream call
+throw — headers must stay Latin-1.)
+
+## 2026-09-11 — Dotted-US-map hero reverted, upgraded globe restored
+A canvas dot-grid hero (real state boundaries, clickable sample hotspots) was
+built, shipped, then reverted the same day per owner preference for the
+upgraded true-color globe. Rejected alternative (for now): keeping the dot
+map — its generator and component were removed outright rather than left to
+rot, so this stays a clean re-do if preference flips back.
+
+## 2026-09-11 — Pipeline logs describe standby, never fake readiness
+Boot logs claimed every connector "ready/online" before any fetch ran; they
+now describe standby state. Rejected alternative: impressive-sounding boot
+lines no judge could distinguish from real health checks.
+
+## 2026-09-10 — Keyed CARTO voyager tiles for the US map mode
+CARTO basemaps need an API key; the atlas uses the keyed rastertiles endpoint
+(VITE_CARTO_KEY override, built-in public key). The marker scale switched
+green/red → sequential orange for red-green colorblind readers. Rejected
+alternative: unkeyed tiles (rate-limited/blocked) and the diverging scale.

@@ -17,10 +17,12 @@ const OVERPASS_ENDPOINTS = [
 const SEARCH_RADIUS_MILES = 50;
 const SEARCH_RADIUS_METERS = Math.round(SEARCH_RADIUS_MILES * 1609.34);
 // Measured 2026-09: the 50-mile metro query takes 10-25s per mirror
-// (915 elements / ~520KB around San Jose). Short timeouts aborted every
-// endpoint and forced Unknown designations — keep this above the slowest
-// mirror with headroom. First success is cached for 15 minutes.
-const REQUEST_TIMEOUT_MS = 60000;
+// (915 elements / ~520KB around San Jose). Client-side timeouts used to
+// abort every endpoint and force Unknown designations, so there is NO
+// client abort here: requests run until the server answers. Bounding still
+// exists upstream (server 12s per mirror, Vercel function limits), and
+// TrackerApp drops stale responses when a newer search starts.
+// First success is cached for 15 minutes.
 const CACHE_TTL_MS = 1000 * 60 * 15;
 const COMMUNITY_SAMPLE_OFFSETS_MILES = [
   [0, 0],
@@ -157,11 +159,10 @@ function makeResult(metrics, source, stores = []) {
   };
 }
 
-async function fetchFromEndpoint(endpoint, query, signal) {
+async function fetchFromEndpoint(endpoint, query) {
   const res = await fetch(endpoint, {
     method: 'POST',
     body: query,
-    signal,
     headers: { 'Content-Type': 'text/plain' },
   });
 
@@ -181,11 +182,8 @@ export async function getNearestSupermarketDistance(lat, lng) {
   const query = buildQuery(lat, lng);
 
   for (const endpoint of OVERPASS_ENDPOINTS) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
     try {
-      const json = await fetchFromEndpoint(endpoint, query, controller.signal);
+      const json = await fetchFromEndpoint(endpoint, query);
       const metrics = computeCommunityDistanceMetrics(json?.elements, lat, lng);
       const stores = extractStorePoints(json?.elements, lat, lng);
       const result = makeResult(metrics, `osm_overpass:${endpoint}`, stores);
@@ -193,8 +191,6 @@ export async function getNearestSupermarketDistance(lat, lng) {
       return result;
     } catch {
       // Try next endpoint.
-    } finally {
-      clearTimeout(timeoutId);
     }
   }
 
