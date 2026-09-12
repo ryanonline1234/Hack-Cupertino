@@ -121,3 +121,14 @@ guesses were wrong for every city until headless badge reads corrected
 them; unverified cities stay untagged. Both map renderers stay mounted
 and track every query (toggle = visibility only; MapView invalidateSize
 on show); cost is one hidden GL context, stated here instead of a footer.
+
+## 2026-09-12 — 3D parked behind ENABLE_STREETS_GL; deep links; result card (spec docs/04)
+Streets GL is out of the experience per owner call but fully intact behind
+a single `ENABLE_STREETS_GL = false` flag in StreetsGlView (iframe
+unmounted, toggles hidden, teleport parked); flipping it restores 3D with
+no other edits, and parking removes the hidden-GL-context cost. Share
+links now boot straight into the tracker (App skips landing+intro on
+lat/lng hash) with sources highlighted (hl=1 forced on scenario shares,
+consumed once at mount). New ScenarioResultCard shows the AFTER verdict
+big, engine impact numbers, an explicit Recompute step, and a setup
+breakdown gated by real tract values with a no-invented-capex footer.

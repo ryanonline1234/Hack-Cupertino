@@ -3,6 +3,7 @@ import FeatureNav from './components/FeatureNav';
 import StreetsGlView from './components/StreetsGlView';
 import LocationGate from './components/LocationGate';
 import MobileResultsView from './components/MobileResultsView';
+import ScenarioResultCard from './components/ScenarioResultCard';
 import DesignationAtlasView from './components/DesignationAtlasView';
 import CommunityStatsPanel from './components/CommunityStatsPanel';
 import AICard from './components/AICard';
@@ -235,7 +236,7 @@ export default function TrackerApp() {
   // Debounced to avoid churn during splitter drags. Extracted so the Share
   // button can force a synchronous write before copying the link.
   // (Plain function, not useCallback: callers below always want fresh state.)
-  function writeHashNow() {
+  function writeHashNow(extra = {}) {
     writeAppStateToHash({
       lat: communityData ? mapCenter.lat : null,
       lng: communityData ? mapCenter.lng : null,
@@ -245,6 +246,7 @@ export default function TrackerApp() {
       // Only grocery-sourced pins feed the scenario; encode bare coords —
       // grocery is the only pin type producible in the current UI.
       pins: communityData ? simPins : [],
+      ...extra,
     });
   }
   useEffect(() => {
@@ -500,6 +502,20 @@ export default function TrackerApp() {
     addLog('Scenario snapshot cleared', 'info');
   }
 
+  // Idempotent re-run of the numbers from the current pins (pure + local).
+  // Gives the place-mode workflow an explicit recompute step with a log
+  // trail, instead of only silent live updates.
+  function recomputeScenario() {
+    if (!communityData) return;
+    const impact = buildImpact(communityData, simPins, mapCenter);
+    setImpactData(impact);
+    const fmt = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} mi` : 'n/a');
+    addLog(
+      `Scenario recomputed (${simPins.length} placed): avg ${fmt(scenarioResult.beforeAvg)} → ${fmt(scenarioResult.afterAvg)}, ${scenarioResult.beforeLabel} → ${scenarioResult.afterLabel}`,
+      scenarioResult.flipped ? 'success' : 'info',
+    );
+  }
+
   // Batch-restore shared-link pins as grocery pins. One update (not a loop
   // over addSimulationPin — each call would close over the same stale
   // simPins and only the last pin would survive).
@@ -539,7 +555,9 @@ export default function TrackerApp() {
   // debounced mirror.
   async function handleShareScenario() {
     if (!communityData) return;
-    writeHashNow();
+    // Scenario links open with sources highlighted (hl=1): the map boots
+    // with the highlight layer on so the shared stores are visible.
+    writeHashNow(simPins.length > 0 ? { highlight: true } : {});
     const url = window.location.href;
     const confirm = () => addLog('Scenario link copied — opening it replays this location and placed stores', 'success');
     try {
@@ -660,6 +678,18 @@ export default function TrackerApp() {
     </div>
   );
 
+  // Experiment result card: null when no pins placed, so it is safe to
+  // mount unconditionally (map overlay on desktop, stacked on mobile —
+  // including pins replayed from a shared link).
+  const scenarioCard = (
+    <ScenarioResultCard
+      scenario={scenarioResult}
+      impactData={impactData}
+      communityData={communityData}
+      onRecompute={recomputeScenario}
+    />
+  );
+
   // Phones skip the map shell entirely: no Streets GL iframe, no 2D canvas.
   // A designated-area lookup on mobile is an info-only page (designation,
   // stats, narrative, impact) with search + share. Desktop JSX below is
@@ -679,6 +709,7 @@ export default function TrackerApp() {
             onGateSelect={handleGateSelect}
             onShareScenario={handleShareScenario}
             panels={<Panels {...panelProps} />}
+            scenario={scenarioCard}
           />
         </div>
       </div>
@@ -717,6 +748,7 @@ export default function TrackerApp() {
                   onUndoPin={undoSimulationPin}
                   onClearPins={clearSimulationPins}
                   onShareScenario={handleShareScenario}
+                  scenarioCard={scenarioCard}
                   placedStores={placedStores}
                   onPlaceStore={(plat, plng) => addSimulationPin('grocery', plat, plng)}
                   stores={communityData?.foodAccess?.stores || []}
@@ -752,6 +784,7 @@ export default function TrackerApp() {
                   onUndoPin={undoSimulationPin}
                   onClearPins={clearSimulationPins}
                   onShareScenario={handleShareScenario}
+                  scenarioCard={scenarioCard}
                   placedStores={placedStores}
                   onPlaceStore={(plat, plng) => addSimulationPin('grocery', plat, plng)}
                   stores={communityData?.foodAccess?.stores || []}

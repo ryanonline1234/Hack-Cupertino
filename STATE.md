@@ -1,11 +1,13 @@
 # State — Food Desert AI
-_Updated: 2026-09-12 (narrative-reliability batch)_
+_Updated: 2026-09-12 (deeplink + scenario-card batch)_
 
 ## Now
 Share-URL batch live in prod. Mobile batch live in prod. Narrative-reliability batch (docs/03):
 prompt-echo sanitizer + regression test, Generate log lines, both timeouts
 removed, verified example-chip verdicts, dual renderers always mounted;
-live in prod, all headless gates passed.
+live in prod, all headless gates passed. Then: 3D parked behind flag
+(2D-only, verified 0 iframes), share links deep-link to highlighted map,
+ScenarioResultCard with Recompute + setup breakdown (docs/04); committing.
 
 ## Verified
 - scenarioEngine unit tests (5): null-empty, avg drop, rural flip,

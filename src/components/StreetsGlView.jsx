@@ -10,6 +10,7 @@ import {
   fetchSuggestions,
   geocodeAddress,
 } from '../lib/locationSearch';
+import { decodeAppState } from '../lib/urlState';
 
 /*
  * Judge Notes: Top 10 Complexity Hotspots
@@ -24,6 +25,15 @@ import {
  * 9) Mobile-friendly interaction constraints keep controls usable over a continuously animated canvas.
  * 10) The component blends external rendering reliability with local React state orchestration.
  */
+
+/*
+ * 3D PARKED (2026-09-12, owner call): Streets GL is out of the experience
+ * for now — 2D is the only mounted renderer. Everything iframe-related
+ * below stays intact behind ENABLE_STREETS_GL; flip it to true to restore
+ * 3D + the 2D↔3D toggle with no other changes. While parked, the hidden-GL
+ * context cost from the dual-renderer era is gone too.
+ */
+const ENABLE_STREETS_GL = false;
 
 const STREETS_GL_BASE = 'https://streets-gl.pages.dev';
 const DEFAULT_PITCH = 50;
@@ -144,6 +154,7 @@ export default function StreetsGlView({
   onUndoPin,
   onClearPins,
   onShareScenario,
+  scenarioCard,
   stores = [],
   placedStores = [],
   onPlaceStore,
@@ -160,7 +171,14 @@ export default function StreetsGlView({
   const [rendererMode, setRendererMode] = useState(() => getInitialRendererMode());
   // Highlight mode: locks the iframe camera to top-down + paints our own
   // green grocery-store markers on top using Mercator projection.
-  const [highlight, setHighlight]       = useState(false);
+  // Shared scenario links carry hl=1 so sources highlight on arrival.
+  const [highlight, setHighlight]       = useState(() => {
+    try {
+      return decodeAppState(window.location.hash).highlight === true;
+    } catch {
+      return false;
+    }
+  });
   // Place-store arming: while armed, 2D clicks drop a hypothetical grocery
   // store (3D drops at the analysis center — iframe clicks are unreadable).
   const [placeArmed, setPlaceArmed]       = useState(false);
@@ -173,7 +191,8 @@ export default function StreetsGlView({
   const dropRef     = useRef(null);
   const lastMoveRef = useRef('');
   const iframeReadyRef = useRef(false);
-  const useFallbackMap = rendererMode === '2d';
+  // While 3D is parked, 2D is the renderer regardless of stored preference.
+  const useFallbackMap = !ENABLE_STREETS_GL || rendererMode === '2d';
 
   // Camera distance chosen to frame all the stores comfortably. Memoized
   // so the iframe URL doesn't churn on every render.
@@ -227,6 +246,8 @@ export default function StreetsGlView({
   }
 
   const teleportMap = useCallback((nextLat, nextLng) => {
+    // Parked 3D: no iframe mounted, nothing to teleport.
+    if (!ENABLE_STREETS_GL) return;
     // No early return for 2D mode: both renderers stay mounted and both
     // track every query, so the hidden one is already warm on toggle.
 
@@ -417,7 +438,9 @@ export default function StreetsGlView({
           visible={useFallbackMap}
         />
       </div>
-      {
+      {/* Parked: the iframe doesn't mount at all — no GL context, no load.
+          Flip ENABLE_STREETS_GL to bring it back. */}
+      {ENABLE_STREETS_GL && (
         <iframe
           ref={iframeRef}
           key={`streets-gl-${iframeRetry}`}
@@ -466,7 +489,7 @@ export default function StreetsGlView({
             display: useFallbackMap ? 'none' : 'block',
           }}
         />
-      }
+      )}
 
       {/* Highlight-mode marker overlay. Aligned with the top-down view the
           toggle establishes; free camera movement may drift markers until
@@ -820,20 +843,22 @@ export default function StreetsGlView({
             {placeArmed ? 'Placing…' : 'Place store'}
           </button>
 
-          <button
-            type="button"
-            onClick={() => updateRendererMode(useFallbackMap ? 'webgl' : '2d')}
-            className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all"
-            style={{
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.16)',
-              color: 'rgba(255,255,255,0.78)',
-              backdropFilter: 'blur(20px)',
-            }}
-            title={useFallbackMap ? 'Switch back to 3D Streets GL' : 'Switch to 2D compatibility map'}
-          >
-            {useFallbackMap ? 'Try 3D' : '2D Map'}
-          </button>
+          {ENABLE_STREETS_GL && (
+            <button
+              type="button"
+              onClick={() => updateRendererMode(useFallbackMap ? 'webgl' : '2d')}
+              className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.16)',
+                color: 'rgba(255,255,255,0.78)',
+                backdropFilter: 'blur(20px)',
+              }}
+              title={useFallbackMap ? 'Switch back to 3D Streets GL' : 'Switch to 2D compatibility map'}
+            >
+              {useFallbackMap ? 'Try 3D' : '2D Map'}
+            </button>
+          )}
         </form>
 
         {/* Suggestions dropdown */}
@@ -918,22 +943,34 @@ export default function StreetsGlView({
                   Retry
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => updateRendererMode(useFallbackMap ? 'webgl' : '2d')}
-                className="px-2 py-1 rounded text-[11px] font-semibold"
-                style={{
-                  border: '1px solid rgba(186,230,253,0.45)',
-                  background: 'rgba(186,230,253,0.1)',
-                  color: 'rgba(224,242,254,0.95)',
-                }}
-              >
-                {useFallbackMap ? 'Try 3D' : 'Use 2D'}
-              </button>
+              {ENABLE_STREETS_GL && (
+                <button
+                  type="button"
+                  onClick={() => updateRendererMode(useFallbackMap ? 'webgl' : '2d')}
+                  className="px-2 py-1 rounded text-[11px] font-semibold"
+                  style={{
+                    border: '1px solid rgba(186,230,253,0.45)',
+                    background: 'rgba(186,230,253,0.1)',
+                    color: 'rgba(224,242,254,0.95)',
+                  }}
+                >
+                  {useFallbackMap ? 'Try 3D' : 'Use 2D'}
+                </button>
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Experiment result card: verdict + recompute + setup breakdown,
+          visible whenever pins are placed (including shared-link replays). */}
+      {scenarioCard && (
+        <div
+          className="absolute left-4 top-24 z-20 w-[320px] max-w-[calc(100%-2rem)] max-h-[55%] overflow-y-auto animate-fade-slide-up"
+        >
+          {scenarioCard}
+        </div>
+      )}
 
       {/* Example pills */}
       {!hasData && !busy && (

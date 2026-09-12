@@ -25,6 +25,7 @@ export default function MobileResultsView({
   onGateSelect,
   onShareScenario,
   panels,
+  scenario,
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const showGate = searchOpen || (!locationPicked && !communityData && !loading);
@@ -118,6 +119,7 @@ export default function MobileResultsView({
                 {dataError}
               </div>
             )}
+            {scenario}
             {panels}
             {communityData && (
               <p className="text-center text-[11px] leading-relaxed px-6 text-white/40">

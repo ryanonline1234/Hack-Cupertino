@@ -1,9 +1,25 @@
 import { lazy, Suspense, useState } from 'react';
+import { decodeAppState } from './lib/urlState';
 
 const LandingPage = lazy(() =>
   import('./ui/landing/LandingPage').then((module) => ({ default: module.LandingPage })),
 );
 const TrackerApp = lazy(() => import('./TrackerApp'));
+
+/*
+ * Shared scenario links (#lat=…&lng=…[&pins=…]) boot straight into the
+ * tracker — no landing page, no intro overlay. The hydrate effect in
+ * TrackerApp auto-runs the pipeline and replays the pins from the hash.
+ */
+function hasDeepLink() {
+  if (typeof window === 'undefined') return false;
+  try {
+    const state = decodeAppState(window.location.hash);
+    return Number.isFinite(state.lat) && Number.isFinite(state.lng);
+  } catch {
+    return false;
+  }
+}
 
 function LoadingView() {
   return (
@@ -17,7 +33,7 @@ function LoadingView() {
 }
 
 export default function App() {
-  const [phase, setPhase] = useState('landing');
+  const [phase, setPhase] = useState(() => (hasDeepLink() ? 'tracker' : 'landing'));
 
   return (
     <Suspense fallback={<LoadingView />}>
