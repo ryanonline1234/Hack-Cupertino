@@ -231,6 +231,11 @@ body {
 .animate-fade-slide-up {
   animation: fade-slide-up 220ms ease-out;
 }
+/* Fade + slide-left entrance for pipeline log entries (AgentStatusFeed
+ * renders entries at opacity 0 and depends on this to fade them in). */
+.animate-fade-slide-left {
+  animation: fade-slide-left 220ms ease-out;
+}
 @keyframes fade-slide-up {
   0% {
     opacity: 0;
@@ -239,6 +244,16 @@ body {
   100% {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+@keyframes fade-slide-left {
+  0% {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 

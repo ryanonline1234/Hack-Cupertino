@@ -1,8 +1,14 @@
 import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Canvas, useFrame, useLoader } from "@react-three/fiber";
-import { Sphere } from "@react-three/drei";
+import { Sphere, Stars } from "@react-three/drei";
 import * as THREE from "three";
 import { cn } from "@/lib/utils";
+
+/* Motion access: still air for users who asked the OS to reduce motion. */
+const REDUCE_MOTION =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Earth texture (three.js examples mirror, CORS-friendly). */
 const EARTH_MAP =
@@ -18,28 +24,28 @@ function TexturedEarth() {
   }, [colorMap]);
 
   useFrame((_, delta) => {
-    if (group.current) {
-      group.current.rotation.y += delta * 0.08;
+    if (group.current && !REDUCE_MOTION) {
+      group.current.rotation.y += delta * 0.06;
     }
   });
 
   return (
-    <group ref={group} rotation={[0.12, 0, 0]}>
+    <group ref={group} rotation={[0.18, 0, -0.06]}>
       <Sphere args={[1, 96, 96]}>
+        {/* No color tint: the blue wash was hiding the actual Earth texture.
+            Rough planet, no metal — cities aren't chrome. */}
         <meshStandardMaterial
           map={colorMap}
-          color="#9fc5ff"
-          roughness={0.28}
-          metalness={0.28}
-          emissive="#4f9dff"
-          emissiveIntensity={0.1}
+          roughness={0.95}
+          metalness={0}
         />
       </Sphere>
-      <Sphere args={[1.04, 48, 48]}>
+      {/* Thin atmosphere shell, kept subtle so it rims instead of fogs. */}
+      <Sphere args={[1.025, 64, 64]}>
         <meshBasicMaterial
-          color="#89b7ff"
+          color="#6cb2ff"
           transparent
-          opacity={0.18}
+          opacity={0.1}
           side={THREE.BackSide}
         />
       </Sphere>
@@ -50,16 +56,16 @@ function TexturedEarth() {
 function EarthFallback() {
   const ref = useRef<THREE.Mesh>(null);
   useFrame((_, delta) => {
-    if (ref.current) ref.current.rotation.y += delta * 0.1;
+    if (ref.current && !REDUCE_MOTION) ref.current.rotation.y += delta * 0.1;
   });
   return (
     <Sphere ref={ref} args={[1, 48, 48]}>
       <meshStandardMaterial
-        color="#7aaeff"
-        roughness={0.3}
-        metalness={0.4}
-        emissive="#3b82f6"
-        emissiveIntensity={0.28}
+        color="#16324f"
+        roughness={0.9}
+        metalness={0}
+        emissive="#0e2237"
+        emissiveIntensity={0.4}
       />
     </Sphere>
   );
@@ -119,16 +125,16 @@ export function Globe({ className }: GlobeProps) {
           toneMapping: THREE.ACESFilmicToneMapping,
         }}
         onCreated={({ gl }) => {
-          gl.toneMappingExposure = 1.42;
+          gl.toneMappingExposure = 1.15;
         }}
         dpr={[1, 1.5]}
       >
-        <color attach="background" args={["transparent"]} />
-        <hemisphereLight args={["#dbeafe", "#1e293b", 0.72]} />
-        <ambientLight intensity={0.56} color="#bfdbfe" />
-        <directionalLight position={[5, 3, 5]} intensity={2.2} color="#e0f2fe" />
-        <directionalLight position={[-4, -1, -2]} intensity={0.74} color="#93c5fd" />
-        <pointLight position={[0, 0, 3]} intensity={0.64} color="#dbeafe" />
+        {/* Sun key + cool space fill + faint rim: day/night terminator
+            instead of flat studio lighting. */}
+        <hemisphereLight args={["#cdd8e6", "#0b1020", 0.45]} />
+        <directionalLight position={[5, 2.5, 4]} intensity={2.6} color="#fff2df" />
+        <directionalLight position={[-5, -1, -3]} intensity={0.5} color="#7aaeff" />
+        <Stars radius={70} depth={30} count={2200} factor={3} saturation={0} fade speed={REDUCE_MOTION ? 0 : 0.5} />
         <Suspense fallback={<EarthFallback />}>
           <TexturedEarth />
         </Suspense>
