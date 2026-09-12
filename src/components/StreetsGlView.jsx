@@ -602,7 +602,7 @@ export default function StreetsGlView({
               lastMoveRef.current = '';
               teleportMap(lat, lng);
             }}
-            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors btn-press"
             style={{
               background: 'rgba(0,255,153,0.15)',
               border: '1px solid rgba(0,255,153,0.4)',
@@ -636,7 +636,7 @@ export default function StreetsGlView({
           <button
             type="button"
             onClick={() => onPlaceStore?.(lat, lng)}
-            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors btn-press"
             style={{
               background: 'rgba(34,211,238,0.15)',
               border: '1px solid rgba(34,211,238,0.4)',
@@ -648,7 +648,7 @@ export default function StreetsGlView({
           <button
             type="button"
             onClick={() => onUndoPin?.()}
-            className="rounded-full px-2 py-0.5 text-[11px] transition-colors"
+            className="rounded-full px-2 py-0.5 text-[11px] transition-colors btn-press"
             style={{ border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)' }}
           >
             Undo
@@ -656,7 +656,7 @@ export default function StreetsGlView({
           <button
             type="button"
             onClick={() => onClearPins?.()}
-            className="rounded-full px-2 py-0.5 text-[11px] transition-colors"
+            className="rounded-full px-2 py-0.5 text-[11px] transition-colors btn-press"
             style={{ border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)' }}
           >
             Clear
@@ -665,7 +665,7 @@ export default function StreetsGlView({
             type="button"
             onClick={() => onShareScenario?.()}
             title="Copy a link that replays this location and placed stores"
-            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors btn-press"
             style={{
               background: 'rgba(52,211,153,0.15)',
               border: '1px solid rgba(52,211,153,0.4)',
@@ -677,7 +677,7 @@ export default function StreetsGlView({
           <button
             type="button"
             onClick={() => setPlaceArmed(false)}
-            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors btn-press"
             style={{
               background: 'rgba(255,255,255,0.08)',
               border: '1px solid rgba(255,255,255,0.2)',
@@ -787,7 +787,7 @@ export default function StreetsGlView({
             type="button"
             disabled={busy || !hasData}
             onClick={handleForceRefresh}
-            className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40"
+            className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40 btn-press"
             style={{
               background: 'rgba(34,211,238,0.08)',
               border: '1px solid rgba(34,211,238,0.24)',
@@ -807,7 +807,7 @@ export default function StreetsGlView({
             type="button"
             disabled={!hasData}
             onClick={() => setHighlight((v) => !v)}
-            className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40"
+            className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40 btn-press"
             style={{
               background: highlight ? 'rgba(0,255,153,0.18)' : 'rgba(0,255,153,0.06)',
               border: `1px solid ${highlight ? 'rgba(0,255,153,0.55)' : 'rgba(0,255,153,0.22)'}`,
@@ -830,7 +830,7 @@ export default function StreetsGlView({
             type="button"
             disabled={!hasData}
             onClick={() => setPlaceArmed((v) => !v)}
-            className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40"
+            className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40 btn-press"
             style={{
               background: placeArmed ? 'rgba(34,211,238,0.18)' : 'rgba(34,211,238,0.06)',
               border: `1px solid ${placeArmed ? 'rgba(34,211,238,0.55)' : 'rgba(34,211,238,0.22)'}`,
@@ -986,7 +986,7 @@ export default function StreetsGlView({
                 key={loc.label}
                 onClick={() => handleExample(loc)}
                 title={tag ? `Model verdict: ${tag.text}` : loc.label}
-                className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full text-xs transition-all hover:scale-105"
+                className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full text-xs transition-[border-color,color,background-color,transform] duration-150 hover:border-white/25 hover:text-white/85 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
                 style={{
                   background: 'rgba(5,6,8,0.75)',
                   border: '1px solid rgba(255,255,255,0.12)',

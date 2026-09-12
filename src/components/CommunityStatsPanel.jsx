@@ -1,8 +1,11 @@
 import { useState } from 'react';
+import { MapPin } from 'lucide-react';
 import { fmtPct, fmtIncome } from '../utils/formatters';
+import PanelHeader from './bits/PanelHeader';
 import ImpactReceipt from './ImpactReceipt';
 import SimilarTractsPanel from './SimilarTractsPanel';
 import { evaluateFoodDesertDesignation } from '../engine/foodDesertEvaluation';
+import CountUp from './bits/CountUp';
 
 /*
  * Judge Notes: Top 10 Complexity Hotspots
@@ -27,7 +30,11 @@ function SkeletonRow() {
   );
 }
 
-function StatRow({ label, value, accent, highlight }) {
+function StatRow({ label, value, accent, highlight, countTo, prefix = '', suffix = '', separator = '', decimals = null }) {
+  // Numeric rows tween in with a React-Bits-style spring count-up (remount
+  // per value so each new analysis re-animates); anything non-numeric
+  // renders as a plain string.
+  const countable = Number.isFinite(Number(countTo));
   return (
     <div
       className="flex justify-between items-baseline py-1.5 border-b"
@@ -41,7 +48,19 @@ function StatRow({ label, value, accent, highlight }) {
           textShadow: highlight ? '0 0 10px rgba(249,115,22,0.4)' : accent === 'neon' ? '0 0 10px rgba(0,255,153,0.3)' : 'none',
         }}
       >
-        {value}
+        {countable ? (
+          <CountUp
+            key={`${label}:${countTo}`}
+            to={Number(countTo)}
+            prefix={prefix}
+            suffix={suffix}
+            separator={separator}
+            decimals={decimals}
+            duration={1}
+          />
+        ) : (
+          value
+        )}
       </span>
     </div>
   );
@@ -679,15 +698,7 @@ export default function CommunityStatsPanel({
   return (
     <div className="flex flex-col h-full animate-fade-slide-up">
       {/* Header */}
-      <div className="flex items-center gap-2 mb-2 shrink-0">
-        <span
-          className="inline-block w-1.5 h-1.5 rounded-full"
-          style={{ background: 'var(--cyan)', boxShadow: '0 0 6px var(--cyan)' }}
-        />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">
-          Community Profile
-        </span>
-      </div>
+      <PanelHeader icon={MapPin}>Community Profile</PanelHeader>
 
       <div className="flex-1 overflow-y-auto min-h-0">
           <FoodDesertBadge foodAccess={foodAccess} />
@@ -700,11 +711,17 @@ export default function CommunityStatsPanel({
           <StatRow
             label="Community avg supermarket distance (est.)"
             value={fmtMilesLabel(foodAccess)}
+            countTo={foodAccess?.isTwentyFivePlusMiles === true ? null : Number(foodAccess?.communityAverageSupermarketMiles ?? foodAccess?.nearestSupermarketMiles)}
+            suffix=" mi"
+            decimals={1}
             highlight={foodAccess?.isTwentyFivePlusMiles === true}
           />
           <StatRow
             label="Center-point nearest (reference)"
             value={fmtCenterMilesLabel(foodAccess)}
+            countTo={Number(foodAccess?.centerNearestSupermarketMiles)}
+            suffix=" mi"
+            decimals={1}
           />
           <StatRow
             label="USDA low-access test"
@@ -724,30 +741,49 @@ export default function CommunityStatsPanel({
           <StatRow
             label={lowAccessRuleLabel}
             value={fmtPct(lowAccessRulePct)}
+            countTo={Number(lowAccessRulePct)}
+            suffix="%"
+            decimals={1}
             highlight={lowAccessRulePct > 30}
             accent={lowAccessRulePct > 30 ? null : 'neon'}
           />
           <StatRow
             label="No vehicle · low access"
             value={fmtPct(foodAccess.pctNoVehicleLowAccess)}
+            countTo={Number(foodAccess?.pctNoVehicleLowAccess)}
+            suffix="%"
+            decimals={1}
           />
           <StatRow
             label="Diabetes prevalence"
             value={fmtPct(health.diabetes)}
+            countTo={Number(health?.diabetes)}
+            suffix="%"
+            decimals={1}
             highlight={health.diabetes > 12}
           />
           <StatRow
             label="Obesity prevalence"
             value={fmtPct(health.obesity)}
+            countTo={Number(health?.obesity)}
+            suffix="%"
+            decimals={1}
           />
           <StatRow
             label="Poverty rate"
             value={fmtPct(demographics.pctPoverty)}
+            countTo={Number(demographics?.pctPoverty)}
+            suffix="%"
+            decimals={1}
             highlight={demographics.pctPoverty > 20}
           />
           <StatRow
             label="Median household income"
             value={fmtIncome(demographics.medianIncome)}
+            countTo={Number(demographics?.medianIncome) > 0 ? Number(demographics.medianIncome) : null}
+            prefix="$"
+            separator=","
+            decimals={0}
             accent="cyan"
           />
         </div>

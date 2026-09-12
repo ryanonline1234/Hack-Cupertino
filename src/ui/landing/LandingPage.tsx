@@ -1,5 +1,54 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { gsap } from "gsap";
+import { SplitText } from "gsap/SplitText";
+
+gsap.registerPlugin(SplitText);
+
+const REDUCE_MOTION =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/*
+ * HeroHeadline: GSAP SplitText word-stagger reveal, played once the intro
+ * overlay lifts. This is the one motion job framer-motion can't do well
+ * (per-character/word splitting) — everything else on this page stays on
+ * the existing motion setup. transform/opacity only; 0.7s entrance,
+ * power3-out; reduced-motion renders the final state with no animation.
+ */
+function HeroHeadline({ play }: { play: boolean }) {
+  const ref = useRef<HTMLHeadingElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !play) return;
+    if (REDUCE_MOTION) {
+      el.style.opacity = "1";
+      return;
+    }
+    const ctx = gsap.context(() => {
+      const split = new SplitText(el, { type: "words", mask: "words" });
+      gsap.fromTo(
+        split.words,
+        { yPercent: 110, opacity: 0 },
+        { yPercent: 0, opacity: 1, duration: 0.7, ease: "power3.out", stagger: 0.035 },
+      );
+    }, el);
+    return () => ctx.revert();
+  }, [play]);
+
+  return (
+    <h1
+      ref={ref}
+      id="landing-hero-heading"
+      className="mt-3 text-balance text-3xl font-semibold leading-[1.15] tracking-tight text-white sm:text-4xl md:text-[2.35rem] lg:text-[2.5rem]"
+      style={{ opacity: play ? undefined : 0 }}
+    >
+      Million lives deserve more than a guess—model food access where it matters.
+    </h1>
+  );
+}
 import { BarChart3, FileText, Heart, Layers, LayoutGrid, ListOrdered, Newspaper, Satellite, Workflow } from "lucide-react";
 import { HorizontalMenuBar } from "@/components/ui/horizontal-menu-bar";
 import { RadialOrbitalTimeline, type TimelineItem } from "@/components/ui/radial-orbital-timeline";
@@ -470,15 +519,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
             >
               Food access simulation
             </motion.p>
-            <motion.h1
-              id="landing-hero-heading"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.08 }}
-              className="mt-3 text-balance text-3xl font-semibold leading-[1.15] tracking-tight text-white sm:text-4xl md:text-[2.35rem] lg:text-[2.5rem]"
-            >
-              Million lives deserve more than a guess—model food access where it matters.
-            </motion.h1>
+            <HeroHeadline play={!showIntroOverlay} />
             <motion.p
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}

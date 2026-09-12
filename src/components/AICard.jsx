@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Sparkles } from 'lucide-react';
 import { annotateNarrative } from '../lib/citeNumbers';
 import { stripInstructionEcho } from '../lib/narrativeSanitize';
+import PanelHeader from './bits/PanelHeader';
 
 /*
  * Judge Notes: Top 10 Complexity Hotspots
@@ -383,23 +385,24 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
-      <div className="flex items-center gap-2 mb-2 shrink-0">
-        <span
-          className="inline-block w-1.5 h-1.5 rounded-full"
-          style={{ background: 'var(--neon)', boxShadow: '0 0 6px var(--neon)', animation: 'pulseNeon 2.5s ease-in-out infinite' }}
-        />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">
-          Community Narrative
-        </span>
-        {cacheLabel && status !== 'loading' && (
-          <span className="ml-auto text-[10px] text-white/35">{cacheLabel}</span>
+      <PanelHeader
+        icon={Sparkles}
+        tint={{ background: 'rgba(0,255,153,0.10)', border: '1px solid rgba(0,255,153,0.28)', color: 'var(--neon)' }}
+        right={(
+          <>
+            {cacheLabel && status !== 'loading' && (
+              <span className="ml-auto text-[10px] text-white/35">{cacheLabel}</span>
+            )}
+            {status === 'loading' && (
+              <span className="ml-auto text-[10px] font-medium" style={{ color: 'var(--cyan)' }}>
+                Generating…
+              </span>
+            )}
+          </>
         )}
-        {status === 'loading' && (
-          <span className="ml-auto text-[10px] font-medium" style={{ color: 'var(--cyan)' }}>
-            Generating…
-          </span>
-        )}
-      </div>
+      >
+        Community Narrative
+      </PanelHeader>
 
       <div className="mb-2 shrink-0">
         <button
@@ -410,7 +413,7 @@ Paragraph 2: Describe what would realistically change if a grocery store opened.
             setRefreshFips(fips);
             setFetchNonce((n) => n + 1);
           }}
-          className="w-full py-2.5 md:py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
+          className="w-full py-2.5 md:py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40 btn-press"
           style={{
             background: 'rgba(34,211,238,0.08)',
             border: '1px solid rgba(34,211,238,0.24)',

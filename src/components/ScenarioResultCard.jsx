@@ -14,6 +14,7 @@
  *
  * Props: scenario, impactData, communityData, onRecompute.
  */
+import CountUp from './bits/CountUp';
 
 function fmtMoney(value) {
   const n = Number(value);
@@ -101,7 +102,7 @@ export default function ScenarioResultCard({ scenario, impactData, communityData
           type="button"
           onClick={() => onRecompute?.()}
           title="Re-run the numbers from the current pins"
-          className="rounded-full px-3 text-[11px] font-semibold"
+          className="rounded-full px-3 text-[11px] font-semibold btn-press"
           style={{
             minHeight: '44px',
             border: '1px solid rgba(34,211,238,0.4)',
@@ -124,10 +125,10 @@ export default function ScenarioResultCard({ scenario, impactData, communityData
       </p>
 
       <div className="flex flex-col gap-1 mb-2 text-[11px]">
-        <div className="flex justify-between"><span className="text-white/45">Residents gaining access</span><span className="font-semibold" style={{ color: 'var(--neon)' }}>+{fmtInt(impactFood.residentsGainingAccess)}</span></div>
+        <div className="flex justify-between"><span className="text-white/45">Residents gaining access</span><span className="font-semibold" style={{ color: 'var(--neon)' }}>{Number.isFinite(Number(impactFood.residentsGainingAccess)) ? <CountUp key={`res:${impactFood.residentsGainingAccess}`} to={Number(impactFood.residentsGainingAccess)} prefix="+" decimals={0} duration={1} /> : `+${fmtInt(impactFood.residentsGainingAccess)}`}</span></div>
         <div className="flex justify-between"><span className="text-white/45">Jobs</span><span className="font-semibold text-white/85">{fmtInt(economic.jobsMin)}–{fmtInt(economic.jobsMax)}</span></div>
         <div className="flex justify-between"><span className="text-white/45">Local spend recaptured</span><span className="font-semibold" style={{ color: 'var(--cyan)' }}>{fmtMoney(economic.annualLocalImpact)}/yr</span></div>
-        <div className="flex justify-between"><span className="text-white/45">Diabetes rate change</span><span className="font-semibold text-white/85">−{Number(impactHealth.diabetesReductionPct || 0).toFixed(1)} pts</span></div>
+        <div className="flex justify-between"><span className="text-white/45">Diabetes rate change</span><span className="font-semibold text-white/85">{Number.isFinite(Number(impactHealth.diabetesReductionPct)) ? <CountUp key={`dia:${impactHealth.diabetesReductionPct}`} to={Number(impactHealth.diabetesReductionPct)} prefix="−" suffix=" pts" decimals={1} duration={1} /> : `−${Number(impactHealth.diabetesReductionPct || 0).toFixed(1)} pts`}</span></div>
       </div>
 
       <p className="text-[10px] uppercase tracking-wider text-white/45 mb-1">What it would take</p>

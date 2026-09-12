@@ -257,6 +257,23 @@ body {
   }
 }
 
+/* Press feedback for pill/button actions: transform-only scale, 150ms
+ * ease-out (micro-interaction token). Opt-in via class so each surface
+ * keeps its own color transitions. */
+.btn-press {
+  /* Superset of the color transitions these buttons already use, plus the
+   * press transform — one rule so color fades keep working. */
+  transition: transform 150ms cubic-bezier(0, 0, 0.2, 1), border-color 150ms, color 150ms, background-color 150ms;
+}
+.btn-press:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-press:active {
+    transform: none;
+  }
+}
+
 /* Pulsing neon dot used on the loading indicator + active status pings. */
 @keyframes pulseNeon {
   0%,

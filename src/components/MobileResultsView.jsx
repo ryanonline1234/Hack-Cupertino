@@ -55,7 +55,7 @@ export default function MobileResultsView({
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className="rounded-full px-4 text-xs font-semibold"
+            className="rounded-full px-4 text-xs font-semibold btn-press"
             style={{
               minHeight: '44px',
               border: '1px solid rgba(255,255,255,0.2)',
@@ -70,7 +70,7 @@ export default function MobileResultsView({
             type="button"
             onClick={() => onShareScenario?.()}
             title="Copy a link that replays this location"
-            className="rounded-full px-4 text-xs font-semibold"
+            className="rounded-full px-4 text-xs font-semibold btn-press"
             style={{
               minHeight: '44px',
               background: 'rgba(52,211,153,0.15)',

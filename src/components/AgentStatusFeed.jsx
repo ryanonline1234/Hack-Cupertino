@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { Activity } from 'lucide-react';
+import PanelHeader from './bits/PanelHeader';
 
 const TYPE_COLORS = {
   system:  { color: 'rgba(255,255,255,0.5)',  prefix: 'SYS' },
@@ -18,25 +20,17 @@ export default function AgentStatusFeed({ logs, loading }) {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
-      <div className="flex items-center gap-2 mb-2 shrink-0">
-        <div
-          className="w-1.5 h-1.5 rounded-full"
-          style={{
-            background: loading ? 'var(--cyan)' : 'var(--neon)',
-            boxShadow: loading ? '0 0 6px var(--cyan)' : '0 0 6px var(--neon)',
-            animation: 'pulseNeon 2s ease-in-out infinite',
-          }}
-        />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">
-          Pipeline Log
-        </span>
-        {loading && (
+      <PanelHeader
+        icon={Activity}
+        right={loading && (
           <svg className="w-3 h-3 ml-auto animate-spin" style={{ color: 'var(--cyan)' }} fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
         )}
-      </div>
+      >
+        Pipeline Log
+      </PanelHeader>
 
       {/* Log entries */}
       <div className="flex-1 overflow-y-auto min-h-0 space-y-0.5 font-mono">

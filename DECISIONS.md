@@ -132,3 +132,13 @@ lat/lng hash) with sources highlighted (hl=1 forced on scenario shares,
 consumed once at mount). New ScenarioResultCard shows the AFTER verdict
 big, engine impact numbers, an explicit Recompute step, and a setup
 breakdown gated by real tract values with a no-invented-capex footer.
+
+## 2026-09-12 — Friend-suggested UI polish (spec docs/05)
+GSAP, React Bits, Kokonut UI — each used where it earns its place, cut
+where it doesn't. CountUp vendored (MIT) with reduced-motion + decimals
+fixes; GSAP only for the SplitText hero reveal (landing scroll reveals
+already existed — ScrollTrigger would duplicate them); Kokonut registry
+skipped (Tailwind v4 requirement vs our v3.4, plus taste conflicts) in
+favor of hand-adapted treatments: shared icon-tile PanelHeader, press
+feedback, exact-property hovers, focus rings. "Rest bit"/"S" skipped as
+message fragments. Dead StatCard/StatsPanel left untouched.

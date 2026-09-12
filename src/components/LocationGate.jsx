@@ -192,7 +192,7 @@ export default function LocationGate({ onSelect }) {
                 type="button"
                 onClick={() => onSelect(loc.lat, loc.lng)}
                 title={tag ? `Model verdict: ${tag.text}` : loc.label}
-                className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full text-xs"
+                className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full text-xs transition-[border-color,color,background-color,transform] duration-150 hover:border-white/25 hover:text-white/85 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
                 style={{
                   background: 'rgba(5,6,8,0.75)',
                   border: '1px solid rgba(255,255,255,0.12)',
