@@ -748,7 +748,7 @@ export default function StreetsGlView({
               placeholder="Search any US city, address, or ZIP…"
               disabled={busy}
               autoComplete="off"
-              className="flex-1 bg-transparent text-sm text-white/90 placeholder-white/25 outline-none disabled:opacity-60"
+              className="flex-1 bg-transparent text-base text-white/90 placeholder-white/25 outline-none disabled:opacity-60"
             />
             {geocoding && (
               <svg className="w-4 h-4 shrink-0 animate-spin" style={{ color: 'var(--cyan)' }} fill="none" viewBox="0 0 24 24">

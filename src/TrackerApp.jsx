@@ -126,7 +126,7 @@ function Panels({
   );
 }
 
-export default function TrackerApp() {
+export default function TrackerApp({ onHome }) {
   // URL hash hydration: if the page was loaded with #lat=…&lng=…&layout=…
   // we restore that state and auto-trigger the analysis pipeline once
   // mounted. Done synchronously here so initial render uses the right
@@ -627,6 +627,7 @@ export default function TrackerApp() {
           mode={mode}
           onModeChange={setMode}
           onToggleLayout={() => setLayout((value) => (value === 'bottom' ? 'split' : 'bottom'))}
+          onHome={onHome}
         />
         <div className="flex-1 min-h-0 relative">
           <DesignationAtlasView />
@@ -710,6 +711,7 @@ export default function TrackerApp() {
             onShareScenario={handleShareScenario}
             panels={<Panels {...panelProps} />}
             scenario={scenarioCard}
+            onHome={onHome}
           />
         </div>
       </div>
@@ -728,6 +730,7 @@ export default function TrackerApp() {
         mode={mode}
         onModeChange={setMode}
         onToggleLayout={() => setLayout((value) => (value === 'bottom' ? 'split' : 'bottom'))}
+        onHome={onHome}
       />
 
       <div className="flex-1 overflow-hidden min-h-0">

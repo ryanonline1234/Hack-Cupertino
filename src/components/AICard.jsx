@@ -117,7 +117,7 @@ async function fetchNarrative(prompt, apiKey, signal) {
         headers,
         body: JSON.stringify({
           model: 'google/gemma-4-31b-it:free',
-          max_tokens: 600,
+          max_tokens: 1000,
           temperature: 0.45,
           messages: [
             {
@@ -245,7 +245,7 @@ Projected impact of adding one grocery store:
 - Annual local economic impact: $${toMoney(economic.annualLocalImpact)}
 ${scenarioBlock}
 Paragraph 1: Describe in plain English what daily food access looks like for residents here. Be specific and human, not clinical.
-Paragraph 2: Describe what would realistically change if a grocery store opened. Ground it in the numbers above.${hasScenario ? ' Name what the placed-store experiment changes, using its numbers.' : ''} Avoid jargon and disclaimers. Output only the two paragraphs — no preamble, no meta-commentary, no extra text.`;
+Paragraph 2: Describe what would realistically change if a grocery store opened. Ground it in the numbers above.${hasScenario ? ' Name what the placed-store experiment changes, using its numbers.' : ''} Avoid jargon and disclaimers. Output only the two paragraphs — no preamble, no meta-commentary, no extra text. Budget ~120-180 words total: finish both paragraphs completely and end on a full sentence — shorten if needed, never trail off mid-sentence.`;
   }, [communityData, impactData, scenario]);
 
   useEffect(() => {

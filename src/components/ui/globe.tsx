@@ -91,16 +91,18 @@ function GlobeCompatibilityFallback({ className }: GlobeProps) {
   // The hero mounts this in a wide-short box on phones; a plain
   // h-full/w-full + rounded-full stretches into an ellipse there (every
   // iOS browser and installed PWA lands on this path via the Safari UA
-  // check). Constrain to a centered square so the globe is always a
-  // circle: height binds (boxes are wider than tall), 100vw caps the
-  // rare taller-than-wide case.
+  // check). Constrain to a square so the globe is always a circle — and
+  // on phones pin it to the TOP of its region at 72vw, so the full disc
+  // reads as a globe instead of a blue mound cropped by the viewport.
+  // Desktop keeps the old centered full-height behavior.
   return (
-    <div className={cn("flex h-full w-full min-h-[320px] items-center justify-center", className)}>
+    <div className={cn("flex h-full w-full min-h-[320px] items-start justify-center pt-[104px] lg:items-center lg:pt-0", className)}>
       <div
-        className="relative overflow-hidden rounded-full"
-        style={{ height: "min(100%, 100vw)", aspectRatio: "1 / 1" }}
+        className="relative aspect-square h-[min(72vw,300px)] overflow-hidden rounded-full lg:h-[min(100%,100vw)]"
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_32%_28%,#dbeafe_0%,#7aaeff_38%,#1d4ed8_72%,#0b1020_100%)]" />
+        {/* Night-side shading for depth: the flat disc read as clip-art. */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_78%,rgba(2,6,16,0.55)_0%,transparent_58%)]" />
         <div className="absolute inset-[6%] rounded-full border border-white/20" />
         <div className="absolute inset-[12%] rounded-full border border-cyan-200/20" />
       </div>

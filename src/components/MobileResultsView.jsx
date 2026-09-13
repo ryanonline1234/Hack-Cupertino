@@ -26,6 +26,7 @@ export default function MobileResultsView({
   onShareScenario,
   panels,
   scenario,
+  onHome,
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const showGate = searchOpen || (!locationPicked && !communityData && !loading);
@@ -46,10 +47,16 @@ export default function MobileResultsView({
           borderBottom: '1px solid rgba(34,211,238,0.18)',
         }}
       >
-        <span className="text-sm font-bold tracking-wide whitespace-nowrap">
+        <button
+          type="button"
+          onClick={() => onHome?.()}
+          title="Back to home"
+          aria-label="Back to home"
+          className="text-sm font-bold tracking-wide whitespace-nowrap btn-press rounded-lg"
+        >
           <span style={{ color: 'var(--cyan)' }}>FOOD DESERT</span>
           <span className="text-white/85"> AI</span>
-        </span>
+        </button>
         <span className="flex-1" />
         {!showGate && (
           <button

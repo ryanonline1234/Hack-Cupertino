@@ -40,7 +40,7 @@ export default function App() {
       {phase === 'landing' ? (
         <LandingPage onLaunchSimulation={() => setPhase('tracker')} />
       ) : (
-        <TrackerApp />
+        <TrackerApp onHome={() => setPhase('landing')} />
       )}
     </Suspense>
   );

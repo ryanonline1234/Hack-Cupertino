@@ -127,7 +127,7 @@ export default function LocationGate({ onSelect }) {
               onFocus={() => setShowDrop(suggestions.length > 0)}
               placeholder="City, address, or ZIP code…"
               aria-label="Location search"
-              className="flex-1 min-w-0 px-4 py-3 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none"
+              className="flex-1 min-w-0 px-4 py-3 rounded-xl text-base text-white placeholder-white/30 focus:outline-none"
               style={{
                 background: 'rgba(255,255,255,0.06)',
                 border: '1px solid rgba(255,255,255,0.12)',

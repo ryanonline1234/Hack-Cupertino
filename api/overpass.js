@@ -13,18 +13,20 @@ const ENDPOINTS = [
   'https://overpass.private.coffee/api/interpreter',
 ];
 
-// No per-endpoint abort: slow Overpass mirrors used to get killed at 12s and
-// force Unknown designations. Each mirror now runs until it answers; real
-// errors (HTTP 5xx, connection refused) still rotate to the next mirror.
-// The only remaining bound is the platform's function execution limit.
+// No timeouts anywhere in this path (owner call): no per-endpoint abort,
+// no watchdog. Instead ALL mirrors are queried in parallel and the first
+// success wins (Promise.any) — a hung mirror like kumi.systems can never
+// wedge the pipeline, and fast failures (HTTP 504 etc.) just lose the
+// race. Costs 3× upstream load per query; the traffic here is tiny.
+// Response shape: { status, text, winner } so logs show which mirror won.
 async function tryEndpoint(url, body) {
   const upstream = await fetch(url, {
     method: 'POST',
     body,
     headers: { 'Content-Type': 'text/plain', 'User-Agent': 'food-desert-simulator/1.0' },
   });
-  if (!upstream.ok) throw new Error(`Overpass ${upstream.status}`);
-  return await upstream.text();
+  if (!upstream.ok) throw new Error(`Overpass ${upstream.status} from ${url}`);
+  return { status: upstream.status, text: await upstream.text(), winner: url };
 }
 
 export default async function handler(req, res) {
@@ -40,19 +42,17 @@ export default async function handler(req, res) {
       ? req.body.toString('utf8')
       : (req.body && JSON.stringify(req.body)) || '';
 
-  let lastError = null;
-  for (const endpoint of ENDPOINTS) {
-    try {
-      const text = await tryEndpoint(endpoint, body);
-      res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=3600');
-      res.status(200).send(text);
-      return;
-    } catch (err) {
-      lastError = err;
-    }
+  try {
+    const result = await Promise.any(ENDPOINTS.map((endpoint) => tryEndpoint(endpoint, body)));
+    console.log(`[overpass] won by ${result.winner} (${result.status})`);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=3600');
+    res.status(200).send(result.text);
+    return;
+  } catch (err) {
+    const detail = err?.errors?.map((e) => String(e?.message || e)).join(' | ') || String(err?.message || err);
+    console.error(`[overpass] all mirrors failed: ${detail.slice(0, 300)}`);
+    res.status(502).json({ error: 'All Overpass endpoints failed', detail });
   }
-
-  res.status(502).json({ error: 'All Overpass endpoints failed', detail: String(lastError?.message || lastError) });
 }

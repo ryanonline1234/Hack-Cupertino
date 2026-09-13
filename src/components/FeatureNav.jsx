@@ -94,7 +94,7 @@ function ModeToggle({ mode, onModeChange }) {
   );
 }
 
-export default function FeatureNav({ communityData, loading, layout, onToggleLayout, mode, onModeChange }) {
+export default function FeatureNav({ communityData, loading, layout, onToggleLayout, mode, onModeChange, onHome }) {
   const locationLabel = communityData
     ? `${communityData.meta.stateAbbr} · Tract ${communityData.meta.fips?.slice(-6)}`
     : null;
@@ -110,8 +110,14 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
         WebkitBackdropFilter: 'blur(20px)',
       }}
     >
-      {/* Left: logo + title */}
-      <div className="flex items-center gap-3">
+      {/* Left: logo + title. Brand homes to the landing page. */}
+      <button
+        type="button"
+        onClick={() => onHome?.()}
+        title="Back to home"
+        aria-label="Back to home"
+        className="flex items-center gap-3 rounded-lg btn-press"
+      >
         <div
           className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
           style={{ background: 'linear-gradient(135deg, var(--neon), var(--cyan))' }}
@@ -126,7 +132,7 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
             IMPACT SIMULATOR
           </span>
         </div>
-      </div>
+      </button>
 
       {/* Center: status + layout toggle */}
       <div className="flex items-center gap-2.5">

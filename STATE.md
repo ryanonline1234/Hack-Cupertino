@@ -1,5 +1,5 @@
 # State — Food Desert AI
-_Updated: 2026-09-12 (UI polish batch)_
+_Updated: 2026-09-12 (globe/home/zoom/narrative batch)_
 
 ## Now
 Share-URL batch live in prod. Mobile batch live in prod. Narrative-reliability batch (docs/03):
@@ -9,7 +9,9 @@ live in prod, all headless gates passed. Then: 3D parked behind flag
 (2D-only, verified 0 iframes), share links deep-link to highlighted map,
 ScenarioResultCard with Recompute + setup breakdown (docs/04) live in
 prod. UI polish batch (docs/05): GSAP hero reveal, CountUp figures,
-press/chip/focus micro-polish; committing.
+press/chip/focus micro-polish live in prod. Batch docs/06 (globe
+composition, brand home, 16px inputs, narrative 1000 tokens, Overpass
+mirror race fixing a real infinite stall); committing.
 
 ## Verified
 - scenarioEngine unit tests (5): null-empty, avg drop, rural flip,

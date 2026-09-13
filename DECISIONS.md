@@ -142,3 +142,13 @@ skipped (Tailwind v4 requirement vs our v3.4, plus taste conflicts) in
 favor of hand-adapted treatments: shared icon-tile PanelHeader, press
 feedback, exact-property hovers, focus rings. "Rest bit"/"S" skipped as
 message fragments. Dead StatCard/StatsPanel left untouched.
+
+## 2026-09-12 — Globe composition, brand home, no-zoom, narrative budget, mirror race (spec docs/06)
+PWA globe: geometry was already circular — the complaint was composition
+(mound, then blob behind headline). Disc now smaller, pinned clear of the
+headline, night-side shading. Brand buttons home to landing. Search inputs
+16px so iOS stops auto-zooming. Narrative max_tokens 1000 + finish-both-
+paragraphs prompt line. Critical find: removing the Overpass abort let a
+hanging mirror (kumi.systems, verified hanging) wedge the pipeline
+forever — api/overpass.js now races all mirrors, first success wins, zero
+timeouts kept. 3× upstream load accepted at this traffic.
