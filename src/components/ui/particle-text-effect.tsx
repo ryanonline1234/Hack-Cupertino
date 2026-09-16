@@ -162,11 +162,11 @@ export interface ParticleTextEffectProps {
 }
 
 /** Legacy default phrases (optional) */
-export const NUTRIPLAN_PARTICLE_WORDS = [
-  "NUTRIPLAN",
+export const LEGACY_PARTICLE_WORDS = [
+  "FOOD",
+  "DESERT",
   ".AI",
   "URBAN",
-  "FOOD",
   "ACCESS",
   "SIMULATE",
 ];
