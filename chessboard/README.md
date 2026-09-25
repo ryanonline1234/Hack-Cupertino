@@ -1,29 +1,30 @@
-# Robotic chessboard: arrangement planner
+# Chessboard Arranger
 
-The software brain for a self-moving chessboard, built before any hardware
-exists. Tell it where every piece is now and where the pieces should end up,
-and it returns the exact list of drags for the magnet under the board: which
-piece, from where, to where, along which route, and why.
+The planning brain for a self-moving magnet chessboard. Tell it where every
+piece is now and where the pieces should end up, and it returns the exact list
+of drags for the magnet under the board: which piece, from where, to where,
+along which route, and why.
 
 It handles every job a robotic board needs: resetting after a game (captured
 pieces come back from storage), setting up a position, playing a move, or
 tidying a board where pieces were dropped anywhere. Every plan is replayed by
-an independent checker that confirms no piece ever touches another and the
-board ends up exactly right.
+an independent checker that confirms no piece ever touches another and that
+the board ends up exactly right.
 
-This folder is self-contained (plain JavaScript, no dependencies, Node 20+)
-and does not touch the Food Desert AI app in the rest of the repo.
+Plain JavaScript, no dependencies, Node 20 or newer.
+
+**Building the physical board?** [ROADMAP.md](ROADMAP.md) walks through it
+step by step, from a $30 magnet test to playing online.
 
 ## Try it
 
 ```bash
-cd chessboard
 node demo.js                 # list the sample jobs
 node demo.js reset           # put everything back after a game
 node demo.js nf3 --big       # full-size pieces: watch it move a blocker and put it back
 node demo.js scramble --seed 7
 node demo.js swap --gcode plan.gcode   # also write G-code for the gantry
-npm test                     # unit tests, random boards, all Chess960 setups
+npm test                     # unit tests, random boards, Chess960 setups
 ```
 
 To watch it animated, serve this folder and open the simulator:
@@ -31,8 +32,6 @@ To watch it animated, serve this folder and open the simulator:
 ```bash
 npm run sim                  # then open http://localhost:8000/simulator.html
 ```
-
-(From the repo root, `npm run dev` also serves it at `/chessboard/simulator.html`.)
 
 ## How it thinks
 
@@ -77,7 +76,7 @@ blockers:
 | Chess960 setup, average of all 960 | 15.6 (3.6 temporary) | 38.3 (17.1 temporary) |
 
 **Hardware tip:** choose pieces whose base is at most half a square wide (for
-example 25 mm bases on 50 mm squares). The robot gets faster and simpler.
+example 24 mm bases on 50 mm squares). The robot gets faster and simpler.
 
 ## The board model
 
@@ -131,15 +130,8 @@ under a piece, then feed moves with it on. The magnet defaults to `M8`/`M9`
 | `demo.js` | Command-line demo |
 | `simulator.html` | Animated top-down simulator |
 | `tests/` | `node --test` suites |
+| `ROADMAP.md` | Step-by-step plan for the physical board |
 
-## What's next
+## License
 
-- **Sensing:** the planner needs to know the current arrangement. Hall-effect
-  sensors or reed switches under each square tell you which squares are
-  occupied; the last known position plus chess rules tells you which piece.
-- **Playing games:** after each engine or online move, call the planner with
-  the new FEN as the target. Captures go to storage automatically.
-- **Hardware:** an XY gantry (CoreXY or two-axis) running GRBL, with an
-  electromagnet on the carriage, can run the G-code output directly.
-- **Smarter full-size planning:** a look-ahead search could cut the temporary
-  moves for crowded rearrangements like Chess960 setups.
+MIT, see [LICENSE](LICENSE).
