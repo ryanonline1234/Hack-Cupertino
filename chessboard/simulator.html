@@ -1,0 +1,967 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chessboard Arranger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #edf0f4;
+    --surface: #ffffff;
+    --surface-2: #f4f6f9;
+    --ink: #18202d;
+    --muted: #5a6475;
+    --line: #d6dce5;
+    --accent: #2b59f5;
+    --accent-ink: #ffffff;
+    --accent-soft: rgba(43, 89, 245, 0.14);
+    --temp: #a86b12;
+    --temp-soft: rgba(196, 132, 30, 0.16);
+    --place: #2c7a4b;
+    --place-soft: rgba(44, 122, 75, 0.12);
+    --bad: #b3261e;
+    --bad-soft: rgba(179, 38, 30, 0.1);
+    --sq-light: #eadfc9;
+    --sq-dark: #b38c65;
+    --tray: #dde2ea;
+    --tray-slot: #cad1db;
+    --piece-light: #fbf8f1;
+    --piece-light-ink: #1d1a16;
+    --piece-dark: #2a2521;
+    --piece-dark-ink: #f4eee3;
+    --piece-edge: rgba(30, 22, 14, 0.45);
+    --piece-dark-edge: rgba(0, 0, 0, 0.55);
+    --gantry: rgba(43, 89, 245, 0.3);
+    --shadow: 0 1px 2px rgba(20, 30, 50, 0.06), 0 10px 28px rgba(20, 30, 50, 0.07);
+    --font-display: 'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', sans-serif;
+    --font-body: 'Barlow', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0f131a;
+      --surface: #161b24;
+      --surface-2: #1c2230;
+      --ink: #e5e9f0;
+      --muted: #98a2b3;
+      --line: #2a3242;
+      --accent: #7a95ff;
+      --accent-ink: #0b1020;
+      --accent-soft: rgba(122, 149, 255, 0.2);
+      --temp: #e3a94a;
+      --temp-soft: rgba(227, 169, 74, 0.16);
+      --place: #62c08a;
+      --place-soft: rgba(98, 192, 138, 0.14);
+      --bad: #ff8a80;
+      --bad-soft: rgba(255, 138, 128, 0.12);
+      --sq-light: #cfc0a0;
+      --sq-dark: #8d6c4b;
+      --tray: #1f2633;
+      --tray-slot: #2b3444;
+      --piece-light: #f4efe4;
+      --piece-light-ink: #1d1a16;
+      --piece-dark: #1b1815;
+      --piece-dark-ink: #efe7d8;
+      --piece-edge: rgba(0, 0, 0, 0.5);
+      --piece-dark-edge: rgba(255, 255, 255, 0.38);
+      --gantry: rgba(122, 149, 255, 0.34);
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f131a;
+    --surface: #161b24;
+    --surface-2: #1c2230;
+    --ink: #e5e9f0;
+    --muted: #98a2b3;
+    --line: #2a3242;
+    --accent: #7a95ff;
+    --accent-ink: #0b1020;
+    --accent-soft: rgba(122, 149, 255, 0.2);
+    --temp: #e3a94a;
+    --temp-soft: rgba(227, 169, 74, 0.16);
+    --place: #62c08a;
+    --place-soft: rgba(98, 192, 138, 0.14);
+    --bad: #ff8a80;
+    --bad-soft: rgba(255, 138, 128, 0.12);
+    --sq-light: #cfc0a0;
+    --sq-dark: #8d6c4b;
+    --tray: #1f2633;
+    --tray-slot: #2b3444;
+    --piece-light: #f4efe4;
+    --piece-light-ink: #1d1a16;
+    --piece-dark: #1b1815;
+    --piece-dark-ink: #efe7d8;
+    --piece-edge: rgba(0, 0, 0, 0.5);
+    --piece-dark-edge: rgba(255, 255, 255, 0.38);
+    --gantry: rgba(122, 149, 255, 0.34);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 400 15px/1.55 var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+  button, select, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .shell {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 28px 56px;
+    display: grid;
+    gap: 22px;
+  }
+  .top { display: grid; gap: 8px; }
+  .eyebrow {
+    margin: 0;
+    font: 500 12px/1.2 var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    margin: 0;
+    font: 600 clamp(32px, 4.4vw, 46px)/1 var(--font-display);
+    letter-spacing: 0.005em;
+    text-wrap: balance;
+  }
+  .lede { margin: 0; max-width: 64ch; color: var(--muted); font-size: 16px; }
+
+  .stage { display: grid; gap: 20px; align-items: start; }
+  @media (min-width: 940px) {
+    .stage { grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); }
+    .board-card { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); }
+  }
+
+  .board-card, .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+  .board-card { padding: 14px; display: grid; gap: 12px; }
+  canvas {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 12 / 8.5;
+    border-radius: 8px;
+    touch-action: manipulation;
+  }
+
+  .transport { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 38px;
+    min-width: 38px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--surface);
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn.icon { padding: 0; width: 38px; }
+  .btn svg { width: 18px; height: 18px; fill: currentColor; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); padding: 0 16px; }
+  .btn.primary:hover { filter: brightness(1.06); background: var(--accent); }
+  .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+  .progress { flex: 1 1 160px; display: grid; gap: 6px; min-width: 0; }
+  .counter { font: 500 12px/1 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar { height: 6px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+  .bar span { display: block; height: 100%; width: 0; background: var(--accent); }
+  .speed { height: 38px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); padding: 0 8px; }
+
+  .now { margin: 0; min-height: 3.1em; display: grid; gap: 2px; }
+  .now strong { font-weight: 600; }
+  .now .sub { color: var(--muted); font-size: 14px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
+  .legend li { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 18px; height: 0; border-top: 3px solid var(--accent); border-radius: 2px; }
+  .swatch.off { border-top-style: dashed; border-top-width: 2px; }
+  .swatch.temp { border-top-color: var(--temp); }
+
+  .panel { padding: 18px; display: grid; gap: 18px; }
+  .group { display: grid; gap: 10px; }
+  .label {
+    margin: 0;
+    font: 600 13px/1.2 var(--font-display);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    height: 34px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .chip:hover { background: var(--surface-2); }
+  .chip[aria-checked="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+  .note { margin: 0; color: var(--muted); font-size: 14px; max-width: 60ch; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .size-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  output { font: 500 13px/1 var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin: 0; }
+  .stats div { display: grid; gap: 2px; align-content: start; }
+  .stats dt { font-size: 13px; color: var(--muted); }
+  .stats dd { margin: 0; font: 500 20px/1.2 var(--font-mono); font-variant-numeric: tabular-nums; }
+  .stats dd small { display: block; font: 400 12px/1.3 var(--font-body); color: var(--muted); }
+
+  .verdict {
+    margin: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--place-soft);
+    color: var(--place);
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .verdict svg { flex: none; width: 18px; height: 18px; fill: currentColor; margin-top: 1px; }
+  .verdict.bad { background: var(--bad-soft); color: var(--bad); }
+
+  .moves { position: relative; max-height: 420px; overflow-y: auto; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: 10px; }
+  .moves li + li { border-top: 1px solid var(--line); }
+  .move {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 2.2em 26px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 10px;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+  .move:hover { background: var(--surface-2); }
+  .move.done { color: var(--muted); }
+  .move.current { background: var(--accent-soft); color: var(--ink); }
+  .move .num { font: 400 12px/1 var(--font-mono); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .disc {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font: 17px/1 'DejaVu Sans', 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', sans-serif;
+    border: 1px solid var(--piece-edge);
+  }
+  .disc.white { background: var(--piece-light); color: var(--piece-light-ink); }
+  .disc.black { background: var(--piece-dark); color: var(--piece-dark-ink); border-color: var(--piece-dark-edge); }
+  .what { display: grid; min-width: 0; }
+  .what .line { font-size: 14px; font-weight: 500; }
+  .what .sq { font: 500 13px/1.4 var(--font-mono); }
+  .what .why { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  .kind { font: 600 11px/1 var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; padding: 5px 7px; border-radius: 6px; white-space: nowrap; }
+  .kind.place { background: var(--place-soft); color: var(--place); }
+  .kind.store { background: var(--surface-2); color: var(--muted); }
+  .kind.aside, .kind.buffer { background: var(--temp-soft); color: var(--temp); }
+
+  details.gcode { border: 1px solid var(--line); border-radius: 10px; }
+  details.gcode summary { cursor: pointer; padding: 10px 12px; font-weight: 500; }
+  .gcode-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px 10px; font-size: 13px; color: var(--muted); }
+  .gcode pre {
+    margin: 0;
+    max-height: 260px;
+    overflow: auto;
+    padding: 10px 12px;
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+    font: 400 12px/1.5 var(--font-mono);
+    border-radius: 0 0 10px 10px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { scroll-behavior: auto !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="top">
+    <p class="eyebrow">Robotic chessboard · planning brain</p>
+    <h1>Chessboard Arranger</h1>
+    <p class="lede">A magnet under the board drags one piece at a time. Pick a job and the planner decides which piece goes to which square, in what order, and the route each one takes so it never bumps another piece.</p>
+  </header>
+
+  <section class="stage">
+    <div class="board-card">
+      <canvas id="board" role="img" aria-label="Chessboard with storage trays on both sides"></canvas>
+      <div class="transport">
+        <button class="btn icon" id="restart" type="button" aria-label="Back to the start">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V1.5L6.5 6 12 10.5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
+        </button>
+        <button class="btn icon" id="back" type="button" aria-label="Previous move">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14L9 12zM6 5h2v14H6z"/></svg>
+        </button>
+        <button class="btn primary" id="play" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path id="play-icon" d="M8 5v14l11-7z"/></svg>
+          <span id="play-label">Play</span>
+        </button>
+        <button class="btn icon" id="forward" type="button" aria-label="Next move">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14l9-7zM16 5h2v14h-2z"/></svg>
+        </button>
+        <div class="progress">
+          <span class="counter" id="counter">Move 0 of 0</span>
+          <div class="bar"><span id="bar"></span></div>
+        </div>
+        <select class="speed" id="speed" aria-label="Playback speed">
+          <option value="1">1×</option>
+          <option value="2" selected>2×</option>
+          <option value="4">4×</option>
+          <option value="8">8×</option>
+        </select>
+      </div>
+      <p class="now" id="now"><strong>Planning…</strong></p>
+      <ul class="legend">
+        <li><span class="swatch"></span>Magnet on, dragging</li>
+        <li><span class="swatch off"></span>Magnet off, travelling</li>
+        <li><span class="swatch temp"></span>Temporary move</li>
+      </ul>
+    </div>
+
+    <aside class="panel">
+      <div class="group">
+        <h2 class="label" id="job-label">Job</h2>
+        <div class="chips" id="jobs" role="radiogroup" aria-labelledby="job-label"></div>
+        <p class="note" id="job-note"></p>
+        <div class="row" id="shuffle-row" hidden>
+          <button class="btn" id="shuffle" type="button">Scramble again</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2 class="label"><label for="size">Piece width</label></h2>
+        <div class="size-row">
+          <input type="range" id="size" min="0.3" max="0.95" step="0.05" value="0.45">
+          <output id="size-out" for="size">0.45 sq</output>
+        </div>
+        <div class="row">
+          <button class="btn" type="button" data-size="0.45" aria-pressed="true">Slim</button>
+          <button class="btn" type="button" data-size="0.8" aria-pressed="false">Full-size</button>
+        </div>
+        <p class="note" id="size-note"></p>
+      </div>
+
+      <dl class="stats">
+        <div><dt>Moves</dt><dd id="stat-moves">0</dd></div>
+        <div><dt>Dragging</dt><dd id="stat-drag">0</dd></div>
+        <div><dt>Magnet travel</dt><dd id="stat-travel">0</dd></div>
+        <div><dt>Planning time</dt><dd id="stat-ms">0</dd></div>
+      </dl>
+      <p class="verdict" id="verdict"></p>
+
+      <div class="group">
+        <h2 class="label">Plan</h2>
+        <ol class="moves" id="moves"></ol>
+      </div>
+
+      <details class="gcode">
+        <summary>G-code for the gantry</summary>
+        <div class="gcode-bar">
+          <span>GRBL · 50 mm squares · magnet on M8, off M9</span>
+          <button class="btn" id="copy" type="button">Copy</button>
+        </div>
+        <pre id="gcode"></pre>
+      </details>
+    </aside>
+  </section>
+</main>
+
+<script type="module">
+import { cellAt, cellX, cellY, createBoard, isPlayCell, isWhite, parseCell, pieceName } from './src/board.js';
+import { toGcode } from './src/gcode.js';
+import { planArrangement } from './src/planner.js';
+import { SCENARIOS, scenario } from './src/scenarios.js';
+import { checkPlan } from './src/verify.js';
+
+const board = createBoard();
+const HOME = { x: 0, y: 0 };
+const TOP = 0.5; // label strip above the board, in squares
+const TRAVEL_SPEED = 9; // squares per second with the magnet off
+const DRAG_SPEED = 3; // squares per second while dragging
+const GRAB = 0.16; // seconds to switch the magnet on or off
+const SQUARE_M = 0.05; // metres per square, for the stats
+const GLYPHS = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+const KINDS = { place: 'Placed', store: 'Stored', aside: 'Aside', buffer: 'Spare spot' };
+const TEMPORARY = new Set(['aside', 'buffer']);
+const GLYPH_FONT = "'DejaVu Sans', 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', sans-serif";
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('board');
+const ctx = canvas.getContext('2d');
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const glyph = (piece) => `${GLYPHS[piece.toLowerCase()]}︎`;
+const capitalise = (text) => text[0].toUpperCase() + text.slice(1);
+const escape = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+const state = {
+  job: 'reset',
+  seed: 1,
+  size: 0.45,
+  speed: 2,
+  plan: null,
+  check: null,
+  target: null,
+  snapshots: [],
+  timings: [],
+  index: 0, // moves already finished
+  t: 0, // seconds into the current move
+  playing: false,
+};
+let palette = {};
+let rows = [];
+
+function readPalette() {
+  const css = getComputedStyle(document.documentElement);
+  const names = ['surface', 'tray', 'tray-slot', 'sq-light', 'sq-dark', 'line', 'ink', 'muted', 'accent',
+    'accent-soft', 'temp', 'piece-light', 'piece-light-ink', 'piece-dark', 'piece-dark-ink', 'piece-edge',
+    'piece-dark-edge', 'gantry'];
+  palette = Object.fromEntries(names.map((name) => [name, css.getPropertyValue(`--${name}`).trim()]));
+}
+
+// ---- planning -------------------------------------------------------------
+
+function replan() {
+  const { from, to } = scenario(board, state.job, state.seed);
+  const plan = planArrangement(board, from, to, { pieceDiameter: state.size });
+  state.plan = plan;
+  state.target = to;
+  state.check = plan.ok ? checkPlan(board, from, to, plan.moves, { pieceDiameter: state.size }) : null;
+  state.snapshots = [new Map(from)];
+  for (const move of plan.moves) {
+    const next = new Map(state.snapshots.at(-1));
+    next.delete(parseCell(board, move.from));
+    next.set(parseCell(board, move.to), move.piece);
+    state.snapshots.push(next);
+  }
+  let magnet = HOME;
+  state.timings = plan.moves.map((move) => {
+    const start = move.path[0];
+    const travel = Math.max(0.05, Math.hypot(start.x - magnet.x, start.y - magnet.y) / TRAVEL_SPEED);
+    const drag = Math.max(0.1, move.drag / DRAG_SPEED);
+    const timing = { from: magnet, travel, drag, total: travel + GRAB + drag + GRAB };
+    magnet = move.path.at(-1);
+    return timing;
+  });
+  state.index = 0;
+  state.t = 0;
+  renderPanel();
+  syncProgress();
+  draw();
+}
+
+// ---- panel ----------------------------------------------------------------
+
+function renderPanel() {
+  const job = SCENARIOS.find((s) => s.id === state.job);
+  for (const chip of $('jobs').children) chip.setAttribute('aria-checked', String(chip.dataset.job === state.job));
+  $('job-note').textContent = job.description;
+  $('shuffle-row').hidden = state.job !== 'scramble';
+
+  $('size').value = String(state.size);
+  $('size-out').textContent = `${state.size.toFixed(2)} sq`;
+  for (const button of document.querySelectorAll('[data-size]')) {
+    button.setAttribute('aria-pressed', String(Number(button.dataset.size) === state.size));
+  }
+  $('size-note').textContent = state.size <= 0.5
+    ? 'Pieces up to half a square wide slide between the others along the lines, so each piece moves once.'
+    : 'Wider pieces get boxed in. The planner moves whatever is in the way aside and puts it back afterwards.';
+
+  const { plan, check } = state;
+  const s = plan.stats;
+  $('stat-moves').innerHTML = `${s.moves}<small>${s.temporary ? `${s.temporary} temporary` : 'none temporary'}</small>`;
+  $('stat-drag').innerHTML = `${s.drag.toFixed(1)} sq<small>${(s.drag * SQUARE_M).toFixed(1)} m on 5 cm squares</small>`;
+  $('stat-travel').innerHTML = `${s.travel.toFixed(1)} sq<small>magnet off, between pieces</small>`;
+  $('stat-ms').innerHTML = `${s.ms < 1 ? '&lt;1' : Math.round(s.ms)} ms<small>in this browser</small>`;
+
+  const ok = plan.ok && check?.ok;
+  const verdict = $('verdict');
+  verdict.classList.toggle('bad', !ok);
+  verdict.innerHTML = ok
+    ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6 11-11-1.4-1.4z"/></svg>' +
+      '<span>Checked move by move: no piece touches another, and the board ends up exactly like the target.</span>'
+    : `<span>${escape(plan.error ?? check?.error ?? 'No plan')}</span>`;
+
+  const list = $('moves');
+  list.innerHTML = plan.moves.map((move, i) => `
+    <li><button class="move" type="button" data-index="${i}">
+      <span class="num">${i + 1}</span>
+      <span class="disc ${isWhite(move.piece) ? 'white' : 'black'}" aria-hidden="true">${glyph(move.piece)}</span>
+      <span class="what">
+        <span class="line">${escape(capitalise(pieceName(move.piece)))} <span class="sq">${move.from} → ${move.to}</span></span>
+        <span class="why">${escape(move.why)}</span>
+      </span>
+      <span class="kind ${move.kind}">${KINDS[move.kind]}</span>
+    </button></li>`).join('');
+  rows = [...list.querySelectorAll('.move')];
+  list.scrollTop = 0;
+  $('gcode').textContent = toGcode(plan.moves);
+}
+
+function syncProgress() {
+  const total = state.plan.moves.length;
+  const i = state.index;
+  const active = state.playing || state.t > 0 ? i : i - 1;
+  $('counter').textContent = `Move ${Math.min(total, active + 1)} of ${total}`;
+  $('bar').style.width = total ? `${(100 * i) / total}%` : '0%';
+  rows.forEach((row, k) => {
+    row.classList.toggle('done', k < i && k !== active);
+    row.classList.toggle('current', k === active);
+  });
+  const current = rows[active];
+  const list = $('moves');
+  if (current) {
+    const top = current.parentElement.offsetTop;
+    const bottom = top + current.parentElement.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top - 4;
+    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight + 4;
+  }
+
+  const move = state.plan.moves[active];
+  const now = $('now');
+  if (!state.plan.ok) {
+    now.innerHTML = `<strong>No plan</strong><span class="sub">${escape(state.plan.error)}</span>`;
+  } else if (!total) {
+    now.innerHTML = '<strong>Nothing to do</strong><span class="sub">The board already matches the target.</span>';
+  } else if (!move) {
+    now.innerHTML = `<strong>${total} moves planned</strong><span class="sub">Press play to watch the magnet work through them.</span>`;
+  } else {
+    const done = i === total && !state.playing ? ' · done' : '';
+    now.innerHTML = `<strong>${active + 1}. ${escape(capitalise(pieceName(move.piece)))} ${move.from} → ${move.to}${done}</strong>` +
+      `<span class="sub">${escape(capitalise(move.why))}</span>`;
+  }
+  canvas.setAttribute('aria-label', move
+    ? `Board, move ${active + 1} of ${total}: ${pieceName(move.piece)} from ${move.from} to ${move.to}`
+    : 'Board with storage trays on both sides, before the first move');
+}
+
+// ---- playback -------------------------------------------------------------
+
+let lastTick = 0;
+let dwell = 0;
+
+function setPlaying(on) {
+  const moves = state.plan.moves;
+  if (on && state.index >= moves.length) {
+    state.index = 0;
+    state.t = 0;
+  }
+  state.playing = on && moves.length > 0 && state.index < moves.length;
+  $('play-label').textContent = state.playing ? 'Pause' : 'Play';
+  $('play-icon').setAttribute('d', state.playing ? 'M7 5h4v14H7zM13 5h4v14h-4z' : 'M8 5v14l11-7z');
+  if (state.playing) {
+    lastTick = performance.now();
+    dwell = 0;
+    requestAnimationFrame(tick);
+  }
+  syncProgress();
+  draw();
+}
+
+function tick(now) {
+  if (!state.playing) return;
+  const dt = Math.min(0.1, (now - lastTick) / 1000) * state.speed;
+  lastTick = now;
+  const moves = state.plan.moves;
+  const before = state.index;
+  if (reduceMotion.matches) {
+    // No tweening: jump one move at a time.
+    dwell += dt;
+    if (dwell >= 1) {
+      dwell = 0;
+      state.index += 1;
+    }
+  } else {
+    state.t += dt;
+    while (state.index < moves.length && state.t >= state.timings[state.index].total) {
+      state.t -= state.timings[state.index].total;
+      state.index += 1;
+    }
+  }
+  if (state.index >= moves.length) {
+    state.index = moves.length;
+    state.t = 0;
+    setPlaying(false);
+    return;
+  }
+  if (state.index !== before) syncProgress();
+  draw();
+  requestAnimationFrame(tick);
+}
+
+function jump(index) {
+  state.index = Math.max(0, Math.min(state.plan.moves.length, index));
+  state.t = 0;
+  syncProgress();
+  draw();
+}
+
+// ---- drawing --------------------------------------------------------------
+
+const ease = (f) => (f < 0.5 ? 2 * f * f : 1 - (-2 * f + 2) ** 2 / 2);
+
+function pointAlong(points, distance) {
+  let left = distance;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (left <= length) {
+      const f = length ? left / length : 0;
+      return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+    }
+    left -= length;
+  }
+  return points.at(-1);
+}
+
+// What the board looks like right now: pieces at rest, the piece in the air,
+// the magnet and the route being driven.
+function scene() {
+  const moves = state.plan.moves;
+  const i = state.index;
+  const still = state.snapshots[i];
+  const animating = (state.playing || state.t > 0) && i < moves.length && !reduceMotion.matches;
+  if (!animating) {
+    const last = moves[i - 1];
+    return {
+      pieces: still,
+      lifted: null,
+      magnet: { ...(last ? last.path.at(-1) : HOME), on: false },
+      route: last ? { move: last, travelled: last.drag, faded: true } : null,
+    };
+  }
+  const move = moves[i];
+  const timing = state.timings[i];
+  const start = move.path[0];
+  const without = new Map(still);
+  without.delete(parseCell(board, move.from));
+  let t = state.t;
+  if (t < timing.travel) {
+    const f = ease(t / timing.travel);
+    const x = timing.from.x + (start.x - timing.from.x) * f;
+    const y = timing.from.y + (start.y - timing.from.y) * f;
+    return { pieces: still, lifted: null, magnet: { x, y, on: false }, route: { move, travelled: 0 } };
+  }
+  t -= timing.travel;
+  if (t < GRAB) {
+    return { pieces: without, lifted: { piece: move.piece, ...start }, magnet: { ...start, on: true }, route: { move, travelled: 0 } };
+  }
+  t -= GRAB;
+  if (t < timing.drag) {
+    const travelled = ease(t / timing.drag) * move.drag;
+    const at = pointAlong(move.path, travelled);
+    return { pieces: without, lifted: { piece: move.piece, ...at }, magnet: { ...at, on: true }, route: { move, travelled } };
+  }
+  return { pieces: state.snapshots[i + 1], lifted: null, magnet: { ...move.path.at(-1), on: true }, route: { move, travelled: move.drag } };
+}
+
+function resize() {
+  const width = canvas.clientWidth;
+  const height = width * (8 + TOP) / 12;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  ctx.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0);
+  draw();
+}
+
+function draw() {
+  if (!state.plan) return;
+  const width = canvas.clientWidth;
+  if (!width) return;
+  const sq = width / 12;
+  const px = (x) => (x + 0.5) * sq;
+  const py = (y) => (TOP + 7.5 - y) * sq;
+  const s = board.storageColumns;
+  const p = palette;
+  const view = scene();
+
+  ctx.clearRect(0, 0, width, (8 + TOP) * sq);
+
+  // Storage trays and their slots.
+  for (const x0 of [0, s + 8]) {
+    ctx.fillStyle = p.tray;
+    roundRect(x0 * sq, TOP * sq, s * sq, 8 * sq, sq * 0.12);
+    ctx.fill();
+    for (let x = x0; x < x0 + s; x++) {
+      for (let y = 0; y < 8; y++) {
+        ctx.beginPath();
+        ctx.arc(px(x), py(y), sq * 0.36, 0, Math.PI * 2);
+        ctx.fillStyle = p['tray-slot'];
+        ctx.fill();
+      }
+    }
+  }
+
+  // Squares, coordinates and the board edge.
+  ctx.textBaseline = 'alphabetic';
+  for (let file = 0; file < 8; file++) {
+    for (let rank = 0; rank < 8; rank++) {
+      const dark = (file + rank) % 2 === 0;
+      ctx.fillStyle = dark ? p['sq-dark'] : p['sq-light'];
+      ctx.fillRect((s + file) * sq, py(rank) - sq / 2, sq, sq);
+      ctx.fillStyle = dark ? p['sq-light'] : p['sq-dark'];
+      ctx.font = `600 ${Math.max(9, sq * 0.2)}px 'Barlow', sans-serif`;
+      if (file === 0) {
+        ctx.textAlign = 'left';
+        ctx.fillText(String(rank + 1), (s + file) * sq + sq * 0.07, py(rank) - sq / 2 + sq * 0.24);
+      }
+      if (rank === 0) {
+        ctx.textAlign = 'right';
+        ctx.fillText('abcdefgh'[file], (s + file + 1) * sq - sq * 0.07, py(rank) + sq / 2 - sq * 0.07);
+      }
+    }
+  }
+  ctx.strokeStyle = p.line;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(s * sq + 0.5, TOP * sq + 0.5, 8 * sq - 1, 8 * sq - 1);
+
+  // Tray labels in the strip above the board.
+  ctx.fillStyle = p.muted;
+  ctx.textAlign = 'center';
+  ctx.font = `500 ${Math.max(9, sq * 0.19)}px 'JetBrains Mono', monospace`;
+  for (let column = 1; column <= s; column++) {
+    ctx.fillText(`L${column}`, px(s - column), TOP * sq * 0.72);
+    ctx.fillText(`R${column}`, px(s + 7 + column), TOP * sq * 0.72);
+  }
+
+  // Where pieces still have to go: faded pieces on their target squares.
+  const radius = (state.size / 2) * sq;
+  for (const [cell, piece] of state.target) {
+    if (view.pieces.get(cell) !== piece) drawPiece(piece, px(cellX(board, cell)), py(cellY(board, cell)), radius, 'ghost');
+  }
+
+  // Gantry beams through the magnet head.
+  const mx = px(view.magnet.x);
+  const my = py(view.magnet.y);
+  ctx.strokeStyle = p.gantry;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(mx, TOP * sq);
+  ctx.lineTo(mx, (TOP + 8) * sq);
+  ctx.moveTo(0, my);
+  ctx.lineTo(12 * sq, my);
+  ctx.stroke();
+
+  // The route of the current (or last) drag.
+  if (view.route) {
+    const { move, travelled, faded } = view.route;
+    const colour = TEMPORARY.has(move.kind) ? p.temp : p.accent;
+    ctx.save();
+    ctx.globalAlpha = faded ? 0.35 : 1;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = colour;
+    ctx.setLineDash([sq * 0.08, sq * 0.1]);
+    ctx.lineWidth = Math.max(1.5, sq * 0.035);
+    polyline(move.path.map((pt) => ({ x: px(pt.x), y: py(pt.y) })));
+    ctx.setLineDash([]);
+    ctx.lineWidth = Math.max(2, sq * 0.07);
+    const done = [move.path[0]];
+    let left = travelled;
+    for (let k = 1; k < move.path.length && left > 0; k++) {
+      const a = move.path[k - 1];
+      const b = move.path[k];
+      const length = Math.hypot(b.x - a.x, b.y - a.y);
+      done.push(left >= length ? b : pointAlong([a, b], left));
+      left -= length;
+    }
+    polyline(done.map((pt) => ({ x: px(pt.x), y: py(pt.y) })));
+    ctx.restore();
+  }
+
+  // Magnet head, under the pieces.
+  const ring = Math.max(sq * 0.3, radius + sq * 0.09);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(mx, my, ring, 0, Math.PI * 2);
+  if (view.magnet.on) {
+    ctx.fillStyle = p['accent-soft'];
+    ctx.shadowColor = p.accent;
+    ctx.shadowBlur = sq * 0.35;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = p.accent;
+    ctx.lineWidth = Math.max(1.5, sq * 0.045);
+    ctx.stroke();
+  } else {
+    ctx.setLineDash([sq * 0.07, sq * 0.07]);
+    ctx.strokeStyle = p.accent;
+    ctx.lineWidth = Math.max(1.2, sq * 0.03);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  for (const [cell, piece] of view.pieces) drawPiece(piece, px(cellX(board, cell)), py(cellY(board, cell)), radius, 'rest');
+  if (view.lifted) drawPiece(view.lifted.piece, px(view.lifted.x), py(view.lifted.y), radius, 'lifted');
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function polyline(points) {
+    ctx.beginPath();
+    points.forEach((pt, k) => (k ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)));
+    ctx.stroke();
+  }
+
+  // A piece seen from above: a disc with its symbol. 'ghost' marks a target.
+  function drawPiece(piece, x, y, r, mode) {
+    const white = isWhite(piece);
+    ctx.save();
+    if (mode === 'ghost') ctx.globalAlpha = 0.3;
+    if (mode === 'lifted') {
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+      ctx.shadowBlur = sq * 0.18;
+      ctx.shadowOffsetY = sq * 0.04;
+    }
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = white ? p['piece-light'] : p['piece-dark'];
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    if (mode === 'ghost') ctx.setLineDash([sq * 0.05, sq * 0.05]);
+    ctx.strokeStyle = white ? p['piece-edge'] : p['piece-dark-edge'];
+    ctx.lineWidth = Math.max(1, sq * 0.022);
+    ctx.stroke();
+    ctx.fillStyle = white ? p['piece-light-ink'] : p['piece-dark-ink'];
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const size = Math.max(8, r * 1.55);
+    ctx.font = `${size}px ${GLYPH_FONT}`;
+    ctx.fillText(glyph(piece), x, y + size * 0.04);
+    ctx.restore();
+  }
+}
+
+// ---- wiring ---------------------------------------------------------------
+
+$('jobs').innerHTML = SCENARIOS.map((s) =>
+  `<button class="chip" type="button" role="radio" data-job="${s.id}" aria-checked="false">${escape(s.title)}</button>`).join('');
+$('jobs').addEventListener('click', (event) => {
+  const chip = event.target.closest('[data-job]');
+  if (!chip || chip.dataset.job === state.job) return;
+  state.job = chip.dataset.job;
+  restartWith();
+});
+$('shuffle').addEventListener('click', () => {
+  state.seed += 1;
+  restartWith();
+});
+
+let sizeTimer = 0;
+$('size').addEventListener('input', (event) => {
+  state.size = Number(event.target.value);
+  $('size-out').textContent = `${state.size.toFixed(2)} sq`;
+  clearTimeout(sizeTimer);
+  sizeTimer = setTimeout(restartWith, 90);
+});
+for (const button of document.querySelectorAll('[data-size]')) {
+  button.addEventListener('click', () => {
+    state.size = Number(button.dataset.size);
+    restartWith();
+  });
+}
+
+function restartWith() {
+  const wasPlaying = state.playing;
+  state.playing = false;
+  replan();
+  setPlaying(wasPlaying);
+}
+
+$('play').addEventListener('click', () => setPlaying(!state.playing));
+$('restart').addEventListener('click', () => {
+  jump(0);
+});
+$('back').addEventListener('click', () => {
+  const partway = state.t > 0;
+  setPlaying(false);
+  jump(partway ? state.index : state.index - 1);
+});
+$('forward').addEventListener('click', () => {
+  setPlaying(false);
+  jump(state.index + 1);
+});
+$('speed').addEventListener('change', (event) => {
+  state.speed = Number(event.target.value);
+});
+$('moves').addEventListener('click', (event) => {
+  const row = event.target.closest('[data-index]');
+  if (!row) return;
+  jump(Number(row.dataset.index));
+  setPlaying(true);
+});
+
+$('copy').addEventListener('click', () => {
+  const button = $('copy');
+  const selectIt = () => {
+    const range = document.createRange();
+    range.selectNodeContents($('gcode'));
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    button.textContent = 'Selected, press Ctrl+C';
+  };
+  try {
+    navigator.clipboard.writeText($('gcode').textContent).then(() => {
+      button.textContent = 'Copied';
+      setTimeout(() => (button.textContent = 'Copy'), 1600);
+    }, selectIt);
+  } catch {
+    selectIt();
+  }
+});
+
+const retheme = () => {
+  readPalette();
+  draw();
+};
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
+new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+new ResizeObserver(resize).observe(canvas);
+document.fonts?.ready.then(draw);
+
+readPalette();
+replan();
+resize();
+if (!reduceMotion.matches) setTimeout(() => setPlaying(true), 700);
+</script>
+</body>
+</html>
