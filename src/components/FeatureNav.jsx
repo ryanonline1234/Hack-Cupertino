@@ -102,13 +102,7 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
 
   return (
     <nav
-      className="h-14 shrink-0 flex items-center justify-between gap-2 px-3 sm:px-5 border-b z-50"
-      style={{
-        background: 'rgba(5, 6, 8, 0.92)',
-        borderColor: 'rgba(255,255,255,0.07)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-      }}
+      className="material-nav h-14 shrink-0 flex items-center justify-between gap-2 px-3 sm:px-5 border-b z-50"
     >
       {/* Left: logo + title. Brand homes to the landing page. */}
       <button
@@ -125,10 +119,10 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
           <span style={{ color: '#050608' }}>FD</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold tracking-wide text-white/90 hidden sm:inline">
+          <span className="text-sm font-semibold tracking-tight text-white/92 hidden sm:inline">
             FOOD DESERT
           </span>
-          <span className="text-sm font-light tracking-widest hidden min-[430px]:inline" style={{ color: 'var(--cyan)' }}>
+          <span className="text-sm font-medium tracking-tight hidden min-[430px]:inline" style={{ color: 'var(--neon)' }}>
             IMPACT SIMULATOR
           </span>
         </div>

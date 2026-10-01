@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { gsap } from 'gsap';
 import { EXAMPLE_LOCATIONS, designationTag, fetchSuggestions, geocodeAddress } from '../lib/locationSearch';
 
 /*
@@ -22,6 +23,30 @@ export default function LocationGate({ onSelect }) {
   const debounceRef = useRef(null);
   const dropRef = useRef(null);
   const requestRef = useRef(0);
+  const rootRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
+    const mm = gsap.matchMedia();
+    mm.add('(prefers-reduced-motion: no-preference)', () => {
+      gsap.from('.gate-card', {
+        y: 18,
+        autoAlpha: 0,
+        duration: 0.55,
+        ease: 'power3.out',
+      });
+      gsap.from('.gate-chip', {
+        y: 10,
+        autoAlpha: 0,
+        duration: 0.4,
+        ease: 'power2.out',
+        stagger: 0.045,
+        delay: 0.12,
+      });
+    }, root);
+    return () => mm.revert();
+  }, []);
 
   useEffect(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -103,11 +128,12 @@ export default function LocationGate({ onSelect }) {
   }
 
   return (
-    <div className="relative w-full h-full overflow-hidden flex items-center justify-center px-4"
-      style={{ background: '#050608' }}
+    <div
+      ref={rootRef}
+      className="gate-stage relative w-full h-full overflow-hidden flex items-center justify-center px-4"
     >
-      <div className="w-full animate-fade-slide-up" style={{ maxWidth: '560px' }}>
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-white/40 mb-2">
+      <div className="gate-card w-full" style={{ maxWidth: '560px' }}>
+        <p className="kicker mb-3">
           Food access explorer
         </p>
         <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">
@@ -127,22 +153,13 @@ export default function LocationGate({ onSelect }) {
               onFocus={() => setShowDrop(suggestions.length > 0)}
               placeholder="City, address, or ZIP code…"
               aria-label="Location search"
-              className="flex-1 min-w-0 px-4 py-3 rounded-xl text-base text-white placeholder-white/30 focus:outline-none"
-              style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.12)',
-              }}
+              className="gate-input flex-1 min-w-0 px-4 py-3 rounded-full text-base text-white placeholder-white/30 focus:outline-none"
             />
             <button
               type="button"
               onClick={submitExact}
               disabled={searching || query.trim().length === 0}
-              className="px-5 py-3 rounded-xl text-sm font-semibold transition-opacity disabled:opacity-40"
-              style={{
-                background: 'rgba(34,211,238,0.12)',
-                border: '1px solid rgba(34,211,238,0.30)',
-                color: 'var(--cyan)',
-              }}
+              className="cta-produce btn-press px-5 py-3 text-sm font-semibold disabled:opacity-40"
             >
               {searching ? '…' : 'Analyze'}
             </button>
@@ -192,7 +209,7 @@ export default function LocationGate({ onSelect }) {
                 type="button"
                 onClick={() => onSelect(loc.lat, loc.lng)}
                 title={tag ? `Model verdict: ${tag.text}` : loc.label}
-                className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full text-xs transition-[border-color,color,background-color,transform] duration-150 hover:border-white/25 hover:text-white/85 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+                className="gate-chip btn-press px-3 py-2 min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full text-xs transition-[border-color,color,background-color] duration-150 hover:border-[#5ef2a0]/40 hover:text-white/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ef2a0]"
                 style={{
                   background: 'rgba(5,6,8,0.75)',
                   border: '1px solid rgba(255,255,255,0.12)',

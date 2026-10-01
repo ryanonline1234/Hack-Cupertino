@@ -617,8 +617,8 @@ export default function TrackerApp({ onHome }) {
   if (mode === 'designation' && !isMobile) {
     return (
       <div
-        className="flex flex-col h-screen overflow-hidden"
-        style={{ background: 'var(--void)', fontFamily: "'Inter', sans-serif", height: '100dvh' }}
+        className="app-canvas flex flex-col h-screen overflow-hidden"
+        style={{ height: '100dvh' }}
       >
         <FeatureNav
           communityData={communityData}
@@ -660,7 +660,7 @@ export default function TrackerApp({ onHome }) {
       className="shrink-0 flex flex-col md:flex-row gap-3 p-3 overflow-y-auto md:overflow-visible"
       style={{
         height: isMobile ? 'min(52dvh, 460px)' : `${bottomPanelHeight}px`,
-        background: 'rgba(5,6,8,0.6)',
+        background: 'rgba(12, 22, 18, 0.55)',
       }}
     >
       <Panels {...panelProps} />
@@ -672,7 +672,7 @@ export default function TrackerApp({ onHome }) {
       className="flex flex-col gap-3 p-3 overflow-y-auto"
       style={{
         width: `${splitPanelWidth}px`,
-        background: 'rgba(5,6,8,0.6)',
+        background: 'rgba(12, 22, 18, 0.55)',
       }}
     >
       <Panels {...panelProps} />
@@ -698,8 +698,8 @@ export default function TrackerApp({ onHome }) {
   if (isMobile) {
     return (
       <div
-        className="flex flex-col h-screen overflow-hidden"
-        style={{ background: 'var(--void)', fontFamily: "'Inter', sans-serif", height: '100dvh' }}
+        className="app-canvas flex flex-col h-screen overflow-hidden"
+        style={{ height: '100dvh' }}
       >
         <div className="flex-1 min-h-0">
           <MobileResultsView
@@ -720,8 +720,8 @@ export default function TrackerApp({ onHome }) {
 
   return (
     <div
-      className="flex flex-col h-screen overflow-hidden"
-      style={{ background: 'var(--void)', fontFamily: "'Inter', sans-serif", height: '100dvh' }}
+      className="app-canvas flex flex-col h-screen overflow-hidden"
+      style={{ height: '100dvh' }}
     >
       <FeatureNav
         communityData={communityData}

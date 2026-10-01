@@ -1,119 +1,73 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useLayoutEffect, useRef, useState } from "react";
 import { gsap } from "gsap";
-import { SplitText } from "gsap/SplitText";
-
-gsap.registerPlugin(SplitText);
-
-const REDUCE_MOTION =
-  typeof window !== "undefined" &&
-  typeof window.matchMedia === "function" &&
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-/*
- * HeroHeadline: GSAP SplitText word-stagger reveal, played once the intro
- * overlay lifts. This is the one motion job framer-motion can't do well
- * (per-character/word splitting) — everything else on this page stays on
- * the existing motion setup. transform/opacity only; 0.7s entrance,
- * power3-out; reduced-motion renders the final state with no animation.
- */
-function HeroHeadline({ play }: { play: boolean }) {
-  const ref = useRef<HTMLHeadingElement>(null);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el || !play) return;
-    if (REDUCE_MOTION) {
-      el.style.opacity = "1";
-      return;
-    }
-    const ctx = gsap.context(() => {
-      const split = new SplitText(el, { type: "words", mask: "words" });
-      gsap.fromTo(
-        split.words,
-        { yPercent: 110, opacity: 0 },
-        { yPercent: 0, opacity: 1, duration: 0.7, ease: "power3.out", stagger: 0.035 },
-      );
-    }, el);
-    return () => ctx.revert();
-  }, [play]);
-
-  return (
-    <h1
-      ref={ref}
-      id="landing-hero-heading"
-      className="mt-3 text-balance text-3xl font-semibold leading-[1.15] tracking-tight text-white sm:text-4xl md:text-[2.35rem] lg:text-[2.5rem]"
-      style={{ opacity: play ? undefined : 0 }}
-    >
-      Million lives deserve more than a guess—model food access where it matters.
-    </h1>
-  );
-}
-import { BarChart3, FileText, Heart, Layers, LayoutGrid, ListOrdered, Newspaper, Satellite, Workflow } from "lucide-react";
-import { HorizontalMenuBar } from "@/components/ui/horizontal-menu-bar";
-import { RadialOrbitalTimeline, type TimelineItem } from "@/components/ui/radial-orbital-timeline";
-import { Globe } from "@/components/ui/globe";
-import { HERO_PARTICLE_WORDS, ParticleTextEffect } from "@/components/ui/particle-text-effect";
-import { RulerCarousel, type CarouselItem } from "@/components/ui/ruler-carousel";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { cn } from "@/lib/utils";
+import "./landing.css";
 
-/*
- * Judge Notes: Top 10 Complexity Hotspots
- * 1) The landing intro uses a timed particle overlay with title-phase callback handoff.
- * 2) Navbar visibility is coupled to both scroll sentinel logic and intro-overlay completion.
- * 3) `scheduleNav` + requestAnimationFrame prevents scroll-driven layout thrash during hero transitions.
- * 4) Cross-device listeners (window/document/visualViewport) keep nav behavior stable on mobile browsers.
- * 5) Hero layering blends gradient masks, globe, and overlays to preserve text readability.
- * 6) Intro overlay is fixed/z-layered to guarantee no nav overlap during animation playback.
- * 7) Primary CTA and section jump actions share one smooth-scroll utility for deterministic navigation.
- * 8) Feature/How-it-works/Nutrition sections use motion-triggered reveal timing for narrative pacing.
- * 9) Nutrition tabs intentionally keep content in one section to avoid route-level state complexity.
- * 10) The component balances cinematic first impression with immediate switch into simulation flow.
- */
+gsap.registerPlugin(ScrollTrigger);
 
-const WHY_WE_CARE_ITEMS: CarouselItem[] = [
+const ADDRESS = "Greenville, MS";
+
+const GUARDIAN_RI_URL =
+  "https://www.theguardian.com/environment/2026/aug/28/rhode-island-grocery-store-restrictive-covenants";
+const USDA_URL = "https://www.ers.usda.gov/data-products/food-access-research-atlas";
+const SENATE_URL =
+  "https://www.gillibrand.senate.gov/wp-content/uploads/2026/05/Gillibrand-Cantwell-Wyden-Booker-Letter-to-FTC-on-Anti-Competitive-Restrictive-Covenants.pdf";
+
+const TREE = [
+  { code: "TRACT-44007", title: "Woonsocket, Rhode Island", depth: 0, mark: "epic" },
+  { code: "RATIO-1:45k", title: "One supermarket for about 45,000 people", depth: 1, mark: "bars" },
+  { code: "RISK-18", title: "18% of households have no vehicle", depth: 1, mark: "risk" },
+  { code: "NOTE-37", title: "37% of residents are food insecure", depth: 1, mark: "dash" },
+  { code: "DEED-75", title: "A 75-year covenant in a 128-page deed", depth: 1, mark: "risk" },
+  { code: "EPIC-02", title: "What one new grocery changes", depth: 0, mark: "epic" },
+  { code: "CHG-10", title: "About 10% lower local obesity in three years", depth: 1, mark: "bars" },
+  { code: "US-03", title: "Read the designation and the reason beside it", depth: 1, mark: "dash" },
+  { code: "SRC-USDA", title: "Tracts come from the Food Access Atlas", depth: 1, mark: "bars" },
+] as const;
+
+const PLACES = [
+  { name: "Greenville, MS", meta: "Designated", tone: "desert" },
+  { name: "Woonsocket, RI", meta: "Cited case", tone: "deed" },
+  { name: "San Jose, CA", meta: "Served", tone: "served" },
+  { name: "Detroit, MI", meta: "Example", tone: "tract" },
+  { name: "Compton, CA", meta: "Example", tone: "tract" },
+  { name: "Chicago", meta: "South Side", tone: "served" },
+] as const;
+
+const STATEMENT = [
+  "For decades, whether a neighborhood could buy food lived in a closed store, a deed, or a number nobody put on the same page. Every plan started from scratch. Every team rebuilt the map.",
+  "That era is over.",
+  "Food access in the next decade will be won by the teams that keep every designation, every reason, and every source together, and treat each place as the start of the next one.",
+  "Food Desert AI is built to make that the record.",
+] as const;
+
+const FAQS = [
   {
-    id: 1,
-    title:
-      "Residents in food deserts are 2.5 times more likely to suffer a stroke.",
+    q: "What does Food Desert AI actually check?",
+    a: "You give it a US address. It returns a designation — food desert or not — and the reasons that decision rests on, instead of a single unlabeled score.",
   },
   {
-    id: 2,
-    title: 'Families in "dead zones" spend 40% of their income on overpriced groceries.',
+    q: "Where do the numbers come from?",
+    a: "Designations follow the USDA Food Access Research Atlas. The Woonsocket figures on this page — one supermarket for about 45,000 people, 37% food insecure, 18% with no vehicle, a 75-year covenant — are from reporting and a Senate letter, linked below.",
   },
   {
-    id: 3,
-    title: "Life expectancy drops by 15 years for those living 2 miles from a grocer.",
+    q: "What changes if a store opens?",
+    a: "The simulator asks that question on a real place. Research tied to one new grocery has found about a 10% drop in local obesity within three years. The model is there so a team can see the access change before anyone breaks ground.",
   },
   {
-    id: 4,
-    title:
-      "Over 23.5 million Americans currently live in a government-defined food desert.",
+    q: "Why does nutrition belong in an access tool?",
+    a: "Adequate nutrition supports immunity, growth, concentration, and lower long-term risk of diabetes, heart disease, and obesity. Without it, chronic disease, developmental delays, and slower recovery get more likely. Distance to a store is one reason those outcomes cluster.",
   },
   {
-    id: 5,
-    title: "Transit to a store takes 45 minutes for residents without local access.",
+    q: "What does Launch simulation do?",
+    a: "It opens the same location gate as the product: search a city, address, or ZIP, then read the designation on the map. Nothing on this page is a separate demo mode.",
   },
   {
-    id: 6,
-    title:
-      "Local corner stores offer 90% fewer fresh produce options than supermarkets.",
+    q: "Does this replace the USDA atlas?",
+    a: "No. It is a way to read a tract, keep the source next to the answer, and test an intervention. The atlas stays the record.",
   },
-  {
-    id: 7,
-    title:
-      'Food-insecure children are 90% more likely to be in "poor health" by age three.',
-  },
-  {
-    id: 8,
-    title:
-      "Small urban retailers mark up staple prices by 37% over national averages.",
-  },
-  {
-    id: 9,
-    title: "One new grocery store can reduce local obesity rates by 10% in three years.",
-  },
-];
+] as const;
 
 type LandingPageProps = {
   onLaunchSimulation: () => void;
@@ -121,757 +75,489 @@ type LandingPageProps = {
 };
 
 function scrollToId(id: string) {
-  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.getElementById(id)?.scrollIntoView({
+    behavior: reduce ? "auto" : "smooth",
+    block: "start",
+  });
 }
 
-/** Orbital “Features” explorer — ids & relatedIds power node links */
-const FEATURES_ORBIT_DATA: TimelineItem[] = [
-  {
-    id: 1,
-    title: "Fused city intelligence",
-    date: "Foundation",
-    content:
-      "Census, mobility, and food-environment signals in one model—so equity isn’t a spreadsheet footnote.",
-    category: "Data",
-    icon: Satellite,
-    relatedIds: [2, 5],
-    status: "completed",
-    energy: 95,
-  },
-  {
-    id: 2,
-    title: "Scenario simulation",
-    date: "Live model",
-    content:
-      "Place groceries, gardens, and mobile markets on the map and see travel-time and access shift in real time.",
-    category: "Simulation",
-    icon: LayoutGrid,
-    relatedIds: [1, 3],
-    status: "in-progress",
-    energy: 88,
-  },
-  {
-    id: 3,
-    title: "Equity & impact metrics",
-    date: "Analytics",
-    content:
-      "Population reached, travel-time deltas, and equity scores side by side—before you commit capital.",
-    category: "Metrics",
-    icon: BarChart3,
-    relatedIds: [2, 4],
-    status: "in-progress",
-    energy: 78,
-  },
-  {
-    id: 4,
-    title: "Policy-ready outputs",
-    date: "Delivery",
-    content:
-      "Impact metrics and narrative briefs your team can take into council packets and grant applications.",
-    category: "Reporting",
-    icon: FileText,
-    relatedIds: [3, 5],
-    status: "pending",
-    energy: 72,
-  },
-  {
-    id: 5,
-    title: "Multi-agent AI pipeline",
-    date: "Orchestration",
-    content:
-      "Data, health, and policy agents coordinated into simulation-ready scenarios and talking points.",
-    category: "Agents",
-    icon: Workflow,
-    relatedIds: [1, 4],
-    status: "pending",
-    energy: 64,
-  },
-];
-
-const STEPS = [
-  {
-    step: "01",
-    title: "Define the city",
-    body: "Load the urban context and baseline food-access metrics for your study area.",
-  },
-  {
-    step: "02",
-    title: "Design interventions",
-    body: "Model stores, gardens, and mobile programs where communities need them most.",
-  },
-  {
-    step: "03",
-    title: "Compare outcomes",
-    body: "Read travel-time, population reached, and equity signals side by side before you commit.",
-  },
-  {
-    step: "04",
-    title: "Share the story",
-    body: "Export summaries and visuals aligned with public-sector decision timelines.",
-  },
-] as const;
-
-const HERO_POINTS = [
-  "Census, mobility, and food environment in one model.",
-  "Interventions on the map with before/after access outcomes.",
-  "Outputs you can reference in budgets, grants, and briefings.",
-] as const;
-
-const NUTRITION_TABS = {
-  benefits: {
-    label: "Benefits of proper nutrition",
-    title: "What adequate nutrition enables",
-    points: [
-      "Stronger immunity, healthier growth, and better resistance to illness.",
-      "Improved concentration, school performance, and work productivity.",
-      "Lower long-term risk of diabetes, cardiovascular disease, and obesity.",
-      "Better maternal and child outcomes in food-insecure communities.",
-    ],
-  },
-  malnutrition: {
-    label: "Harsh effects of malnutrition",
-    title: "What poor nutrition can cause",
-    points: [
-      "Higher chronic disease burden, hospitalization risk, and earlier mortality.",
-      "Child developmental delays and reduced educational attainment.",
-      "Weakened immune response and longer recovery from infection.",
-      "Greater medical spending pressure and deeper economic instability for families.",
-    ],
-  },
-} as const;
-
-/*
- * Crisis section data. Every figure below was read from the cited source —
- * do not add a stat without a source URL a judge can open.
- */
-const GUARDIAN_RI_URL =
-  "https://www.theguardian.com/environment/2026/aug/28/rhode-island-grocery-store-restrictive-covenants";
-
-const CRISIS_STATS = [
-  {
-    value: "1 : 45,000",
-    label: "One full-service supermarket serves all of Woonsocket, Rhode Island.",
-    source: "The Guardian, Aug 2026",
-    sourceUrl: GUARDIAN_RI_URL,
-  },
-  {
-    value: "37%",
-    label: "Of Woonsocket residents are food insecure — with 18% owning no vehicle.",
-    source: "The Guardian, Aug 2026",
-    sourceUrl: GUARDIAN_RI_URL,
-  },
-  {
-    value: "75 yrs",
-    label: "Longest covenant term unearthed in Rhode Island — buried in a 128-page agreement.",
-    source: "The Guardian, Aug 2026",
-    sourceUrl: GUARDIAN_RI_URL,
-  },
-  {
-    value: "20 stores",
-    label: "Opened in Washington, D.C. in the five years after its 2017 covenant ban.",
-    source: "The Guardian, Aug 2026",
-    sourceUrl: GUARDIAN_RI_URL,
-  },
-] as const;
-
-const CRISIS_READING = [
-  {
-    outlet: "The Guardian · Aug 2026",
-    title: "One supermarket for 45,000 people — and the deeds keeping it that way",
-    summary:
-      "How Stop & Shop and Walmart covenants froze Woonsocket's grocery map for decades, and why Rhode Island just banned them.",
-    url: GUARDIAN_RI_URL,
-  },
-  {
-    outlet: "USDA · Data",
-    title: "Food Access Research Atlas — the dataset behind this app",
-    summary:
-      "The federal low-access, low-income tract data our designation layer starts from. Explore any community yourself.",
-    url: "https://www.ers.usda.gov/data-products/food-access-research-atlas",
-  },
-  {
-    outlet: "U.S. Senate · May 2026",
-    title: "Four senators ask the FTC to examine grocery covenants",
-    summary:
-      "Gillibrand, Cantwell, Wyden, and Booker seek a federal assessment — the congressional angle on this crisis.",
-    url: "https://www.gillibrand.senate.gov/wp-content/uploads/2026/05/Gillibrand-Cantwell-Wyden-Booker-Letter-to-FTC-on-Anti-Competitive-Restrictive-Covenants.pdf",
-  },
-] as const;
-
-/** Nav height band (px): when #why-we-care crosses here, hero is done */
-const NAV_HIDE_TOP = 80;
-const INTRO_OVERLAY_FALLBACK_MS = 14000;
-const INTRO_TITLE_HOLD_MS = 1800;
+function Mark({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 22 22" aria-hidden="true">
+      <rect width="22" height="22" rx="5" fill="#C0D984" />
+      <path d="M11.2 4.6c.6 1.1-.1 2-.9 2.3" stroke="#3c4a27" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+      <circle cx="11" cy="12.4" r="4.15" fill="#3c4a27" />
+    </svg>
+  );
+}
 
 export function LandingPage({ onLaunchSimulation, className }: LandingPageProps) {
-  const [navVisible, setNavVisible] = useState(true);
-  const [nutritionTab, setNutritionTab] = useState<keyof typeof NUTRITION_TABS>("benefits");
-  // Respect reduced-motion: skip the intro overlay entirely instead of
-  // forcing users through animation they asked the OS to minimize.
-  const [showIntroOverlay, setShowIntroOverlay] = useState(
-    () =>
-      typeof window === "undefined" ||
-      !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
-  );
-  const navRaf = useRef(0);
-  const introDismissTimerRef = useRef<number | undefined>(undefined);
-
-  const dismissIntro = () => {
-    if (introDismissTimerRef.current) {
-      window.clearTimeout(introDismissTimerRef.current);
-      introDismissTimerRef.current = undefined;
-    }
-    setShowIntroOverlay(false);
-  };
-
-  const scheduleIntroDismiss = (delayMs: number) => {
-    if (introDismissTimerRef.current) {
-      window.clearTimeout(introDismissTimerRef.current);
-    }
-    introDismissTimerRef.current = window.setTimeout(() => {
-      setShowIntroOverlay(false);
-      introDismissTimerRef.current = undefined;
-    }, delayMs);
-  };
-
-  useEffect(() => {
-    if (!showIntroOverlay) return undefined;
-    scheduleIntroDismiss(INTRO_OVERLAY_FALLBACK_MS);
-    return () => {
-      if (introDismissTimerRef.current) {
-        window.clearTimeout(introDismissTimerRef.current);
-        introDismissTimerRef.current = undefined;
-      }
-    };
-  }, [showIntroOverlay]);
-
-  // Esc skips the intro for keyboard users (mirrors the Skip button).
-  useEffect(() => {
-    if (!showIntroOverlay) return undefined;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") dismissIntro();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [showIntroOverlay]);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const winRef = useRef<HTMLDivElement>(null);
+  const addrRef = useRef<HTMLSpanElement>(null);
+  const pinRef = useRef<HTMLSpanElement>(null);
+  const gapsRef = useRef<HTMLElement>(null);
+  const statementRef = useRef<HTMLElement>(null);
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   useLayoutEffect(() => {
-    const updateNav = () => {
-      const next = document.getElementById("why-we-care");
-      if (!next) return;
-      // Hero can be taller than one viewport (min-h + content). Use the next section
-      // as the sentinel: hide the bar once "Why we care" reaches the top band.
-      setNavVisible(next.getBoundingClientRect().top > NAV_HIDE_TOP);
-    };
+    const page = rootRef.current;
+    const win = winRef.current;
+    const addr = addrRef.current;
+    const pin = pinRef.current;
+    const gaps = gapsRef.current;
+    const statement = statementRef.current;
+    if (!page || !win || !addr || !pin || !gaps || !statement) return;
 
-    const scheduleNav = () => {
-      cancelAnimationFrame(navRaf.current);
-      navRaf.current = requestAnimationFrame(updateNav);
-    };
+    const scroller = document.getElementById("root");
+    const scenes = gsap.utils.toArray<HTMLElement>(".df-scene", page);
+    const mm = gsap.matchMedia();
 
-    updateNav();
+    mm.add("(prefers-reduced-motion: reduce)", () => {
+      gsap.set(win, { y: 0, scale: 1, rotationX: 0, autoAlpha: 1 });
+      gsap.set(scenes, { autoAlpha: 0, y: 0 });
+      gsap.set(scenes[1], { autoAlpha: 1 });
+      gsap.set(pin, { autoAlpha: 1, scale: 1, rotation: -45 });
+      gsap.set([".df-rows li", ".df-letter-line", ".df-badge", ".df-chip", ".df-rail-btn", ".df-shift-card"], {
+        autoAlpha: 1,
+        y: 0,
+        x: 0,
+        scale: 1,
+      });
+      addr.textContent = ADDRESS;
+      gsap.set(".df-word", { color: "#141413", filter: "none" });
+    });
 
-    const scrollOpts = { passive: true, capture: true } as const;
-    window.addEventListener("scroll", scheduleNav, scrollOpts);
-    document.addEventListener("scroll", scheduleNav, scrollOpts);
-    const scrollingEl = document.scrollingElement;
-    scrollingEl?.addEventListener("scroll", scheduleNav, scrollOpts);
-    window.addEventListener("resize", updateNav);
+    mm.add("(prefers-reduced-motion: no-preference)", () => {
+      const typer = { n: 0 };
+      const tl = gsap.timeline({ repeat: -1, repeatDelay: 0.4 });
+      const railBtns = gsap.utils.toArray<HTMLElement>(".df-rail-btn", win);
+      const rows = gsap.utils.toArray<HTMLElement>(".df-rows li", page);
+      const chip = page.querySelector(".df-chip");
+      const badge = page.querySelector(".df-badge");
+      const shifts = gsap.utils.toArray<HTMLElement>(".df-shift-card", page);
+      const lines = gsap.utils.toArray<HTMLElement>(".df-letter-line", page);
+      const glow = page.querySelector(".df-stage-glow");
 
-    const vv = window.visualViewport;
-    vv?.addEventListener("scroll", scheduleNav);
-    vv?.addEventListener("resize", updateNav);
+      const resetFilm = () => {
+        addr.textContent = "";
+        typer.n = 0;
+      };
 
-    return () => {
-      cancelAnimationFrame(navRaf.current);
-      window.removeEventListener("scroll", scheduleNav, true);
-      document.removeEventListener("scroll", scheduleNav, true);
-      scrollingEl?.removeEventListener("scroll", scheduleNav, true);
-      window.removeEventListener("resize", updateNav);
-      vv?.removeEventListener("scroll", scheduleNav);
-      vv?.removeEventListener("resize", updateNav);
-    };
+      tl.set(win, {
+        y: 170,
+        scale: 0.9,
+        rotationX: 9,
+        autoAlpha: 1,
+        transformOrigin: "50% 100%",
+        transformPerspective: 1400,
+      });
+      tl.set(scenes, { autoAlpha: 0, y: 0 });
+      tl.set(scenes[0], { autoAlpha: 1 });
+      tl.set(railBtns, { autoAlpha: 0, y: 10 });
+      tl.set(chip, { autoAlpha: 0, y: 10 });
+      tl.set(rows, { autoAlpha: 0, y: 12 });
+      tl.set(badge, { autoAlpha: 0, scale: 0.86 });
+      tl.set(pin, { autoAlpha: 0, scale: 0.5, rotation: -45 });
+      tl.set(shifts, { autoAlpha: 0 });
+      tl.set(lines, { autoAlpha: 0, y: 10 });
+      if (glow) tl.set(glow, { scale: 0.65, autoAlpha: 0.25, transformOrigin: "50% 50%" });
+      tl.call(resetFilm);
+
+      tl.to(win, { y: 0, scale: 1, rotationX: 0, duration: 1.2, ease: "power3.out" });
+      if (glow) tl.to(glow, { scale: 1, autoAlpha: 1, duration: 1.2, ease: "power3.out" }, "<");
+      tl.to(railBtns, { autoAlpha: 1, y: 0, duration: 0.4, stagger: 0.07, ease: "power2.out" }, "-=0.75");
+      tl.to(typer, {
+        n: ADDRESS.length,
+        duration: 1.35,
+        ease: "none",
+        onUpdate: () => {
+          addr.textContent = ADDRESS.slice(0, Math.round(typer.n));
+        },
+      }, "-=0.15");
+      tl.to(chip, { autoAlpha: 1, y: 0, duration: 0.45, ease: "power2.out" }, "-=0.15");
+
+      tl.to(scenes[0], { autoAlpha: 0, y: -14, duration: 0.4, ease: "power2.in" }, "+=0.4");
+      tl.fromTo(scenes[1], { autoAlpha: 0, y: 18 }, { autoAlpha: 1, y: 0, duration: 0.5, ease: "power2.out" }, "<+=0.12");
+      tl.to(badge, { autoAlpha: 1, scale: 1, duration: 0.4, ease: "back.out(1.7)" }, "<+=0.12");
+      tl.to(rows, { autoAlpha: 1, y: 0, duration: 0.4, stagger: 0.09, ease: "power2.out" }, "<+=0.08");
+      tl.to(pin, { autoAlpha: 1, scale: 1.18, rotation: -45, duration: 0.32, ease: "power2.out" }, "<+=0.15");
+      tl.to(pin, { scale: 1, duration: 0.22, ease: "power2.out" });
+
+      tl.to(scenes[1], { autoAlpha: 0, y: -14, duration: 0.38, ease: "power2.in" }, "+=1.5");
+      tl.fromTo(scenes[2], { autoAlpha: 0, y: 18 }, { autoAlpha: 1, y: 0, duration: 0.48, ease: "power2.out" }, "<+=0.1");
+      tl.fromTo(shifts[0], { autoAlpha: 0, x: -22 }, { autoAlpha: 1, x: 0, duration: 0.48, ease: "power3.out" }, "<+=0.08");
+      tl.fromTo(shifts[1], { autoAlpha: 0, x: 22 }, { autoAlpha: 1, x: 0, duration: 0.48, ease: "power3.out" }, "<");
+
+      tl.to(scenes[2], { autoAlpha: 0, y: -12, duration: 0.35, ease: "power2.in" }, "+=1.55");
+      tl.fromTo(scenes[3], { autoAlpha: 0, y: 22 }, { autoAlpha: 1, y: 0, duration: 0.5, ease: "power2.out" }, "<+=0.1");
+      tl.to(lines, { autoAlpha: 1, y: 0, duration: 0.42, stagger: 0.14, ease: "power2.out" }, "<+=0.12");
+      tl.to(win, { y: -10, scale: 1.025, duration: 0.7, ease: "power2.out" }, "<");
+      if (glow) tl.to(glow, { scale: 1.08, duration: 0.7, ease: "power2.out" }, "<");
+
+      tl.to(win, { y: 80, scale: 0.94, rotationX: 7, autoAlpha: 0, duration: 0.7, ease: "power2.in" }, "+=1.7");
+      if (glow) tl.to(glow, { scale: 0.7, autoAlpha: 0, duration: 0.7, ease: "power2.in" }, "<");
+
+      const scroll = scroller ?? undefined;
+      gsap.from(gaps.querySelectorAll(".df-panel"), {
+        y: 46,
+        scale: 0.96,
+        autoAlpha: 0,
+        duration: 0.95,
+        stagger: 0.12,
+        ease: "power3.out",
+        scrollTrigger: { trigger: gaps, scroller: scroll, start: "top 78%", once: true },
+      });
+      gsap.from(gaps.querySelectorAll(".df-doc span"), {
+        scaleX: 0,
+        duration: 0.55,
+        stagger: 0.07,
+        ease: "power2.out",
+        scrollTrigger: { trigger: gaps, scroller: scroll, start: "top 62%", once: true },
+      });
+      gsap.from(gaps.querySelectorAll(".df-place"), {
+        y: 16,
+        autoAlpha: 0,
+        duration: 0.5,
+        stagger: 0.06,
+        ease: "power2.out",
+        scrollTrigger: { trigger: gaps, scroller: scroll, start: "top 60%", once: true },
+      });
+
+      const words = gsap.utils.toArray<HTMLElement>(".df-word", statement);
+      gsap.fromTo(
+        words,
+        { color: "rgba(20, 20, 18, 0.18)", filter: "blur(5px)" },
+        {
+          color: "#141413",
+          filter: "blur(0px)",
+          ease: "none",
+          stagger: 0.03,
+          scrollTrigger: {
+            trigger: statement,
+            scroller: scroll,
+            start: "top 72%",
+            end: "bottom 48%",
+            scrub: 0.6,
+          },
+        },
+      );
+
+      gsap.from(page.querySelectorAll(".df-cards article"), {
+        y: 20,
+        autoAlpha: 0,
+        duration: 0.7,
+        stagger: 0.08,
+        ease: "power2.out",
+        scrollTrigger: {
+          trigger: page.querySelector(".df-method"),
+          scroller: scroll,
+          start: "top 78%",
+          once: true,
+        },
+      });
+
+      return () => {
+        tl.kill();
+      };
+    });
+
+    return () => mm.revert();
   }, []);
 
   return (
-    <div className={cn("relative bg-neutral-950 text-neutral-100", className)}>
-      <AnimatePresence>
-        {navVisible && !showIntroOverlay && (
-          <motion.div
-            key="landing-top-nav"
-            className="fixed left-0 right-0 top-0 z-50 pt-[max(0.65rem,env(safe-area-inset-top))]"
-            initial={false}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: "-100%", opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            style={{ pointerEvents: "auto" }}
-          >
-            <HorizontalMenuBar
-              fixed={false}
-              siteName="Food Desert AI"
-              items={[
-                {
-                  label: "Why we care",
-                  icon: <Heart className="h-4 w-4 shrink-0" aria-hidden />,
-                  onSelect: () => scrollToId("why-we-care"),
-                },
-                {
-                  label: "The crisis",
-                  icon: <Newspaper className="h-4 w-4 shrink-0" aria-hidden />,
-                  onSelect: () => scrollToId("the-crisis"),
-                },
-                {
-                  label: "Features",
-                  icon: <Layers className="h-4 w-4 shrink-0" aria-hidden />,
-                  onSelect: () => scrollToId("features"),
-                },
-                {
-                  label: "How it works",
-                  icon: <ListOrdered className="h-4 w-4 shrink-0" aria-hidden />,
-                  onSelect: () => scrollToId("how-it-works"),
-                },
-                {
-                  label: "Nutritional health",
-                  icon: <Heart className="h-4 w-4 shrink-0" aria-hidden />,
-                  onSelect: () => scrollToId("nutritional-health"),
-                },
-              ]}
-              ctaLabel="Launch simulation"
-              onCtaClick={onLaunchSimulation}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Hero — copy left, globe right.
-          Mobile top padding clears the wrapped two-row nav + CTA (~200px),
-          which the desktop 6.75rem value doesn't cover. */}
-      <section
-        className="relative flex min-h-[100dvh] flex-col justify-center overflow-hidden px-4 pb-20 pt-[13rem] sm:px-8 sm:pb-24 sm:pt-[6.75rem]"
-        aria-labelledby="landing-hero-heading"
-      >
-        <div className="pointer-events-none absolute inset-0 bg-black" aria-hidden />
-        <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_100%_90%_at_15%_45%,rgba(0,0,0,0.88)_0%,transparent_58%)]"
-          aria-hidden
-        />
-        <div
-          className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black via-black/85 to-black/25 lg:via-black/55 lg:to-transparent"
-          aria-hidden
-        />
-
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 top-[min(38vh,280px)] overflow-hidden lg:inset-y-0 lg:left-auto lg:right-0 lg:top-0 lg:w-[58%] xl:w-[54%]">
-          <div className="absolute inset-x-0 bottom-[-10%] top-0 lg:inset-[4%_-8%_4%_0]">
-            <Globe />
-          </div>
-          <div
-            className="absolute inset-0 bg-gradient-to-l from-black/25 via-black/45 to-black lg:from-transparent lg:via-black/30 lg:to-black/90"
-            aria-hidden
-          />
-          <div
-            className="absolute inset-0 bg-[radial-gradient(ellipse_75%_70%_at_72%_48%,transparent_18%,rgba(0,0,0,0.45)_100%)]"
-            aria-hidden
-          />
+    <div id="top" ref={rootRef} className={cn("df", className)}>
+      <header className="df-nav">
+        <button type="button" className="df-brand" onClick={() => scrollToId("top")}>
+          <Mark />
+          <span>Food Desert</span>
+        </button>
+        <nav className="df-links" aria-label="Main">
+          <button type="button" onClick={() => scrollToId("top")}>Home</button>
+          <button type="button" onClick={() => scrollToId("how")}>How it works</button>
+          <button type="button" onClick={() => scrollToId("sources")}>Sources</button>
+          <button type="button" onClick={() => scrollToId("method")}>Method</button>
+        </nav>
+        <div className="df-nav-end">
+          <a className="df-btn df-btn-ghost" href={USDA_URL} target="_blank" rel="noreferrer">
+            USDA atlas
+          </a>
+          <button type="button" className="df-btn df-btn-green" onClick={onLaunchSimulation}>
+            Launch simulation
+          </button>
         </div>
+      </header>
 
-        <AnimatePresence>
-          {showIntroOverlay && (
-            <motion.div
-              key="intro-particle-overlay"
-              className="fixed inset-0 z-[80] bg-black/92"
-              initial={{ opacity: 1 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <ParticleTextEffect
-                variant="background"
-                words={HERO_PARTICLE_WORDS}
-                className="opacity-95"
-                onTitlePhase={() => scheduleIntroDismiss(INTRO_TITLE_HOLD_MS)}
-              />
-              <button
-                type="button"
-                onClick={dismissIntro}
-                aria-label="Skip intro animation"
-                className="absolute bottom-6 right-6 z-10 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 backdrop-blur transition-[border-color,color] duration-150 hover:border-white/30 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-              >
-                Skip intro
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <div
-          className="relative z-30 mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-12 transition-all duration-500 lg:grid-cols-2 lg:gap-10 xl:gap-16"
-          style={{
-            opacity: showIntroOverlay ? 0.05 : 1,
-            filter: showIntroOverlay ? 'blur(2px)' : 'none',
-            pointerEvents: showIntroOverlay ? 'none' : 'auto',
-          }}
-        >
-          <div className="max-w-xl text-left">
-            <motion.p
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: 0.05 }}
-              className="text-sm text-neutral-500"
-            >
-              Food access simulation
-            </motion.p>
-            <HeroHeadline play={!showIntroOverlay} />
-            <motion.p
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: 0.14 }}
-              className="mt-5 max-w-lg text-pretty text-base leading-relaxed text-neutral-400 sm:text-[1.05rem]"
-            >
-              Food Desert AI helps cities and public-health teams turn geography into clarity: simulate
-              interventions, surface equity tradeoffs, and walk into the room with evidence—not
-              anecdotes.
-            </motion.p>
-
-            <motion.ul
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: 0.2 }}
-              className="mt-8 space-y-2.5 border-l border-neutral-800 pl-4 text-sm leading-relaxed text-neutral-500"
-              aria-label="Product summary"
-            >
-              {HERO_POINTS.map((line) => (
-                <li key={line} className="pl-1">
-                  {line}
-                </li>
-              ))}
-            </motion.ul>
-
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: 0.26 }}
-              className="mt-10 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
-            >
-              <button
-                type="button"
-                onClick={() => onLaunchSimulation()}
-                className="w-full min-w-[180px] rounded-md bg-white px-6 py-2.5 text-[14px] font-medium text-neutral-950 transition hover:bg-neutral-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 sm:w-auto"
-              >
-                Launch city simulation
-              </button>
-              <button
-                type="button"
-                onClick={() => scrollToId("nutritional-health")}
-                className="w-full rounded-md border border-neutral-600 bg-transparent px-6 py-2.5 text-[14px] font-medium text-neutral-200 transition hover:border-neutral-500 hover:bg-white/[0.04] sm:w-auto"
-              >
-                Nutritional health
-              </button>
-            </motion.div>
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.35, delay: 0.32 }}
-              className="mt-8 text-[13px] text-neutral-600"
-            >
-              Scroll to explore — or go to{" "}
-              <button
-                type="button"
-                onClick={() => scrollToId("features")}
-                className="text-neutral-300 underline decoration-neutral-600 underline-offset-[5px] transition hover:text-white hover:decoration-neutral-400"
-              >
-                Features
-              </button>
-            </motion.p>
-          </div>
-
-          {/* Reserves space on small screens so the absolute globe sits in-frame */}
-          <div
-            className="min-h-[min(44vh,300px)] max-lg:min-h-[min(48vh,340px)] lg:min-h-[min(64vh,560px)]"
-            aria-hidden
-          />
+      <section className="df-wrap df-hero">
+        <h1>The AI workspace for food access</h1>
+        <p>
+          Food Desert AI helps neighbors, planners, and services teams turn an address into a
+          designation, a reason, and a test of what one new grocery changes — so the estimate
+          can be checked, and the team stays on the same map.
+        </p>
+        <div className="df-actions">
+          <button type="button" className="df-btn df-btn-green" onClick={onLaunchSimulation}>
+            Launch simulation
+          </button>
+          <button type="button" className="df-textlink" onClick={() => scrollToId("sources")}>
+            Read the sources
+          </button>
         </div>
       </section>
 
-      {/* Why we care — ruler carousel */}
-      <section
-        id="why-we-care"
-        className="scroll-mt-28 border-t border-neutral-900 bg-black px-4 py-16 sm:px-8"
-        aria-labelledby="why-we-care-heading"
-      >
-        <div className="mx-auto max-w-5xl">
-          <div className="mb-10 text-center">
-            <p className="text-sm text-neutral-500">Why we care</p>
-            <h2
-              id="why-we-care-heading"
-              className="mt-2 text-balance text-2xl font-semibold tracking-tight text-white md:text-3xl"
-            >
-              The distance between a neighborhood and a grocery store is a public-health signal
-            </h2>
-            <p className="mx-auto mt-3 max-w-2xl text-sm text-neutral-400">
-              Drag the ruler, tap a fact, or use the controls—each figure is a reason simulations
-              belong in the room when budgets and land use get decided.
-            </p>
-          </div>
-          <div className="rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-8 md:px-6 md:py-10">
-            <RulerCarousel originalItems={WHY_WE_CARE_ITEMS} variant="section" />
-          </div>
-        </div>
-      </section>
-
-      {/* The crisis — extent of the problem, with cited sources */}
-      <section
-        id="the-crisis"
-        className="scroll-mt-28 border-t border-neutral-900 bg-neutral-950 px-4 py-16 sm:px-8"
-        aria-labelledby="the-crisis-heading"
-      >
-        <div className="mx-auto max-w-5xl">
-          <div className="mb-10 text-center">
-            <p className="text-sm text-neutral-500">The crisis</p>
-            <h2
-              id="the-crisis-heading"
-              className="mt-2 text-balance text-2xl font-semibold tracking-tight text-white md:text-3xl"
-            >
-              Deserts aren&apos;t accidents. Policy made them — policy can unmake them.
-            </h2>
-            <p className="mx-auto mt-3 max-w-2xl text-sm text-neutral-400">
-              In Woonsocket, Rhode Island, a single supermarket serves 45,000 people — hemmed
-              in by deed restrictions that bar competitors for decades. In July 2026, Rhode
-              Island became the second state to ban them. This app exists so any community
-              can see its own numbers that clearly.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {CRISIS_STATS.map((stat) => (
-              <div
-                key={stat.value}
-                className="rounded-lg border border-neutral-800 bg-black p-5"
-              >
-                <p className="text-3xl font-semibold tracking-tight text-white">{stat.value}</p>
-                <p className="mt-2 text-sm leading-relaxed text-neutral-400">{stat.label}</p>
-                <p className="mt-3 text-[11px] text-neutral-500">
-                  Source:{" "}
-                  <a
-                    href={stat.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline decoration-neutral-700 underline-offset-2 transition hover:text-neutral-300"
-                  >
-                    {stat.source}
-                  </a>
-                </p>
+      <section className="df-wrap df-stage-wrap" aria-label="Food Desert AI product demo">
+        <div className="df-stage">
+          <div className="df-stage-glow" aria-hidden="true" />
+          <div className="df-window" ref={winRef}>
+            <aside className="df-rail" aria-hidden="true">
+              <Mark size={26} />
+              <span className="df-rail-btn is-on" />
+              <span className="df-rail-btn" />
+              <span className="df-rail-btn" />
+              <span className="df-rail-btn" />
+            </aside>
+            <div className="df-screen">
+              <div className="df-scene">
+                <p className="df-kicker">Checking an address…</p>
+                <h2>What should we look up?</h2>
+                <div className="df-query">
+                  <span ref={addrRef} />
+                  <i className="df-caret" />
+                </div>
+                <p className="df-chip">USDA Food Access Atlas · example place</p>
               </div>
-            ))}
-          </div>
-          <p className="mx-auto mt-4 max-w-2xl text-center text-xs text-neutral-500">
-            Researchers note the D.C. correlation is unproven — bans open the door, but
-            capital and operators still have to walk through it.
-          </p>
 
-          <div className="mt-10 grid gap-3 md:grid-cols-3">
-            {CRISIS_READING.map((item) => (
-              <a
-                key={item.url}
-                href={item.url}
-                target="_blank"
-                rel="noreferrer"
-                className="group rounded-lg border border-neutral-800 bg-black p-5 transition hover:border-neutral-600"
-              >
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-                  {item.outlet}
-                </p>
-                <p className="mt-2 text-sm font-medium leading-snug text-white">{item.title}</p>
-                <p className="mt-2 text-[13px] leading-relaxed text-neutral-400">{item.summary}</p>
-                <p className="mt-3 text-[13px] text-neutral-300 underline decoration-neutral-600 underline-offset-4 transition group-hover:text-white">
-                  Read the source
-                </p>
-              </a>
-            ))}
-          </div>
+              <div className="df-scene">
+                <p className="df-kicker">Reading the tract…</p>
+                <div className="df-result-head">
+                  <div>
+                    <h2>Greenville, Mississippi</h2>
+                    <p>The model marks this example place as designated.</p>
+                  </div>
+                  <span className="df-badge">Food desert</span>
+                </div>
+                <div className="df-map" aria-hidden="true">
+                  <span className="df-pin" ref={pinRef} />
+                </div>
+                <ul className="df-rows">
+                  <li><span>Designation</span><b>Low income, low access</b></li>
+                  <li><span>Rule</span><b>Supermarket beyond a reasonable trip</b></li>
+                  <li><span>Next</span><b>Ask what a new store changes</b></li>
+                </ul>
+              </div>
 
-          <div className="mt-10 text-center">
-            <button
-              type="button"
-              onClick={() => onLaunchSimulation()}
-              className="rounded-md bg-white px-6 py-2.5 text-[14px] font-medium text-neutral-950 transition hover:bg-neutral-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400"
-            >
-              Analyze a community
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Features */}
-      <section
-        id="features"
-        className="scroll-mt-28 border-t border-neutral-900 bg-black px-4 py-20 sm:px-8"
-      >
-        <div className="mx-auto max-w-5xl">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.5 }}
-            className="text-center"
-          >
-            <p className="text-sm text-neutral-500">Features</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white md:text-3xl">
-              Built for public decisions at urban scale
-            </h2>
-            <p className="mx-auto mt-3 max-w-2xl text-sm text-neutral-400">
-              Everything ties back to one question: who gains access, how fast, and at what cost to
-              implement?
-            </p>
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-40px" }}
-            transition={{ duration: 0.5 }}
-            className="mt-10 overflow-hidden rounded-lg border border-neutral-800"
-          >
-            <RadialOrbitalTimeline
-              variant="section"
-              orbitRadius={155}
-              timelineData={FEATURES_ORBIT_DATA}
-            />
-          </motion.div>
-        </div>
-      </section>
-
-      {/* How it works */}
-      <section
-        id="how-it-works"
-        className="scroll-mt-28 border-t border-neutral-900 px-4 py-20 sm:px-8"
-      >
-        <div className="mx-auto max-w-3xl">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.5 }}
-            className="text-center"
-          >
-            <p className="text-sm text-neutral-500">How it works</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white md:text-3xl">
-              From baseline map to council-ready insight
-            </h2>
-          </motion.div>
-          <ol className="mt-14 grid list-none gap-5 sm:grid-cols-2">
-            {STEPS.map((s, i) => (
-              <motion.li
-                key={s.step}
-                initial={{ opacity: 0, y: 14 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-30px" }}
-                transition={{ duration: 0.45, delay: i * 0.05 }}
-                className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-5"
-              >
-                <div className="flex items-start gap-4">
-                  <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-neutral-700 bg-neutral-800 text-xs font-medium tabular-nums text-neutral-400"
-                    aria-hidden
-                  >
-                    {s.step}
-                  </span>
-                  <div className="min-w-0">
-                    <h3 className="text-base font-medium text-neutral-100">{s.title}</h3>
-                    <p className="mt-2 text-sm leading-relaxed text-neutral-400">{s.body}</p>
+              <div className="df-scene">
+                <p className="df-kicker">Testing a new store…</p>
+                <h2>Place a grocery in Greenville</h2>
+                <div className="df-shift">
+                  <div className="df-shift-card">
+                    <small>Now</small>
+                    <strong>Designated</strong>
+                  </div>
+                  <em>→</em>
+                  <div className="df-shift-card">
+                    <small>With a store</small>
+                    <strong>Access changes</strong>
                   </div>
                 </div>
-              </motion.li>
-            ))}
-          </ol>
+                <p className="df-note">
+                  One new grocery has been tied to about a 10% drop in local obesity within three years.
+                  The simulator is how a team looks at that question on a real place.
+                </p>
+              </div>
+
+              <div className="df-scene">
+                <p className="df-kicker">Drafting a brief…</p>
+                <div className="df-to">
+                  <span>To</span>
+                  <b>Planning board <i>×</i></b>
+                </div>
+                <h2>Greenville access</h2>
+                <p className="df-letter">
+                  <span className="df-letter-line">Hi — Greenville is designated a food desert in this model.</span>
+                  <span className="df-letter-line">The brief keeps that label next to the source,</span>
+                  <span className="df-letter-line">so the estimate is something the room can check.</span>
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section
-        id="nutritional-health"
-        className="scroll-mt-28 border-t border-neutral-900 bg-neutral-950 px-4 py-20 sm:px-8"
-      >
-        <div className="mx-auto max-w-4xl">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.5 }}
-            className="text-center"
-          >
-            <p className="text-sm text-neutral-500">Nutritional health</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white md:text-3xl">
-              Why nutrition quality is as critical as food proximity
-            </h2>
-            <p className="mx-auto mt-3 max-w-2xl text-sm text-neutral-400">
-              Access to food is the first step. Nutritional quality determines long-term health,
-              learning outcomes, and community resilience.
-            </p>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-30px" }}
-            transition={{ duration: 0.45 }}
-            className="mt-10 rounded-lg border border-neutral-800 bg-neutral-900/40 p-5 md:p-7"
-          >
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(NUTRITION_TABS).map(([key, tab]) => {
-                const active = nutritionTab === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setNutritionTab(key as keyof typeof NUTRITION_TABS)}
-                    className={cn(
-                      "rounded-md border px-3 py-2 text-sm font-medium transition",
-                      active
-                        ? "border-white/60 bg-white text-neutral-900"
-                        : "border-neutral-700 bg-transparent text-neutral-300 hover:border-neutral-500"
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-5 rounded-md border border-neutral-800 bg-black/35 p-4 md:p-5">
-              <h3 className="text-lg font-semibold text-white">{NUTRITION_TABS[nutritionTab].title}</h3>
-              <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-neutral-300">
-                {NUTRITION_TABS[nutritionTab].points.map((point) => (
-                  <li key={point}>{point}</li>
+      <section className="df-gaps" id="how" ref={gapsRef}>
+        <div className="df-wrap">
+          <h2>Access fails in the gaps. Food Desert AI is built to close them.</h2>
+          <div className="df-board">
+            <div className="df-panel df-panel-blue">
+              <ul className="df-tree">
+                {TREE.map((item) => (
+                  <li key={item.code} data-depth={item.depth}>
+                    <span className={cn("df-node", `is-${item.mark}`)} aria-hidden="true" />
+                    <code>{item.code}</code>
+                    <span>{item.title}</span>
+                  </li>
                 ))}
               </ul>
             </div>
-          </motion.div>
+            <div className="df-panel df-panel-green">
+              <p className="df-reviewed">
+                <i /><i /><i />
+                Reviewed 3 sources
+              </p>
+              <div className="df-doc">
+                <h3>Access brief</h3>
+                <span /><span /><span className="is-short" />
+                <span /><span className="is-mid" /><span />
+              </div>
+            </div>
+            <div className="df-panel df-panel-gold">
+              <div className="df-places">
+                {PLACES.map((place) => (
+                  <article key={place.name} className={cn("df-place", `is-${place.tone}`)}>
+                    <span className="df-place-mark" aria-hidden="true" />
+                    <strong>{place.name}</strong>
+                    <em>{place.meta}</em>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="df-captions">
+            <article>
+              <h3>Discovery that doesn’t disappear.</h3>
+              <p>
+                Every address, designation, and assumption is kept from the moment it’s looked up,
+                so the reason lives in the record, not in someone’s head.
+              </p>
+            </article>
+            <article>
+              <h3>Input to deliverable instantly.</h3>
+              <p>
+                Point Food Desert AI at an address and get back a designation, the rule, and a brief
+                that is ready to hand to the room.
+              </p>
+            </article>
+            <article>
+              <h3>Every place makes the next one clearer.</h3>
+              <p>
+                What one tract showed stays with the next address, so the team is not starting the
+                map over every time.
+              </p>
+            </article>
+          </div>
         </div>
       </section>
 
-      {/* Closing CTA */}
-      <section className="border-t border-neutral-900 px-4 py-20 sm:px-8">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.4 }}
-          className="mx-auto max-w-2xl rounded-lg border border-neutral-800 bg-neutral-900/50 px-8 py-10 text-center"
-        >
-          <h2 className="text-lg font-semibold text-white md:text-xl">Ready to run your first scenario?</h2>
-          <p className="mx-auto mt-3 max-w-md text-sm text-neutral-400">
-            Open the live simulation workspace—place interventions, watch metrics respond, and stress-test
-            before you commit real capital.
-          </p>
-          <button
-            type="button"
-            onClick={() => onLaunchSimulation()}
-            className="mt-7 rounded-md bg-white px-6 py-2.5 text-[14px] font-medium text-neutral-950 transition hover:bg-neutral-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500"
-          >
-            Launch simulation
-          </button>
-        </motion.div>
+      <section className="df-statement" ref={statementRef}>
+        <div className="df-statement-inner">
+          {STATEMENT.map((line) => (
+            <p key={line}>
+              {line.split(" ").map((word, i) => (
+                <span className="df-word" key={`${i}-${word}`}>
+                  {word}{" "}
+                </span>
+              ))}
+            </p>
+          ))}
+        </div>
       </section>
 
-      <footer className="border-t border-neutral-900 px-4 py-10 text-center text-[12px] text-neutral-600 sm:px-8">
-        <p>Food Desert AI — urban food access simulation (demo)</p>
+      <section className="df-method" id="method">
+        <div className="df-wrap">
+          <h2>Built so the answer can be checked</h2>
+          <div className="df-cards">
+            <article>
+              <p className="df-card-kicker">The designation</p>
+              <h3>A label with a rule under it</h3>
+              <p>Low income and low access, read from the tract — not a vibe and not a national average pasted onto one block.</p>
+              <ul>
+                <li>23.5 million Americans live in a government-defined food desert</li>
+                <li>2.5× higher stroke risk where fresh food is out of reach</li>
+                <li>The atlas remains the source of the designation</li>
+              </ul>
+            </article>
+            <article>
+              <p className="df-card-kicker">The case</p>
+              <h3>Woonsocket is on the record</h3>
+              <p>One supermarket for about 45,000 people. The constraint is written down, not remembered from a call.</p>
+              <ul>
+                <li>37% food insecure, 18% of households with no vehicle</li>
+                <li>A 75-year covenant in a 128-page deed</li>
+                <li>Linked below, so the sentence can be opened</li>
+              </ul>
+            </article>
+            <article>
+              <p className="df-card-kicker">The intervention</p>
+              <h3>One store, then the health line</h3>
+              <p>The simulator asks what changes if a full-service grocery opens. The health figure stays cited.</p>
+              <ul>
+                <li>About 10% lower local obesity within three years</li>
+                <li>Nutrition risk stays visible next to distance</li>
+                <li>Launch the same tool the rest of the product uses</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section className="df-faq" id="sources">
+        <div className="df-wrap df-faq-grid">
+          <h2>Questions &amp; answers</h2>
+          <div>
+            {FAQS.map((item, i) => {
+              const open = openFaq === i;
+              return (
+                <div key={item.q} className={cn("df-faq-item", open && "is-open")}>
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => setOpenFaq(open ? null : i)}
+                  >
+                    {item.q}
+                    <span aria-hidden="true">{open ? "–" : "+"}</span>
+                  </button>
+                  {open && <p>{item.a}</p>}
+                </div>
+              );
+            })}
+            <ul className="df-source-links">
+              <li><a href={USDA_URL} target="_blank" rel="noreferrer">USDA Food Access Research Atlas</a></li>
+              <li><a href={GUARDIAN_RI_URL} target="_blank" rel="noreferrer">The Guardian on Woonsocket’s covenant</a></li>
+              <li><a href={SENATE_URL} target="_blank" rel="noreferrer">Senate letter on restrictive covenants</a></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section className="df-close">
+        <h2>A clearer picture of food access.</h2>
+        <button type="button" className="df-btn df-btn-green" onClick={onLaunchSimulation}>
+          Launch simulation
+        </button>
+      </section>
+
+      <footer className="df-foot">
+        <div className="df-brand df-foot-brand">
+          <Mark />
+          <span>Food Desert</span>
+        </div>
+        <p>The workspace for reading a food desert, and for testing what a store would change.</p>
+        <div className="df-foot-cols">
+          <div>
+            <p>Navigation</p>
+            <button type="button" onClick={() => scrollToId("top")}>Overview</button>
+            <button type="button" onClick={() => scrollToId("how")}>How it works</button>
+            <button type="button" onClick={() => scrollToId("method")}>Method</button>
+          </div>
+          <div>
+            <p>Sources</p>
+            <a href={USDA_URL} target="_blank" rel="noreferrer">USDA Atlas</a>
+            <a href={GUARDIAN_RI_URL} target="_blank" rel="noreferrer">Woonsocket reporting</a>
+            <a href={SENATE_URL} target="_blank" rel="noreferrer">Senate letter</a>
+          </div>
+        </div>
+        <p className="df-copy">Food Desert AI · Impact simulator</p>
       </footer>
     </div>
   );

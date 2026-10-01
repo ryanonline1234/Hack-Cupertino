@@ -36,7 +36,7 @@ export function HorizontalMenuBar({
       role="navigation"
       aria-label="Main"
       className={cn(
-        "w-full border-b border-neutral-800/80 bg-neutral-950/90 backdrop-blur-md",
+        "material-nav w-full border-b",
         fixed &&
           "fixed left-0 right-0 top-0 z-50 pt-[max(0.65rem,env(safe-area-inset-top))]",
         className
@@ -48,8 +48,13 @@ export function HorizontalMenuBar({
             initial={{ opacity: 0, x: -16 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-            className="text-base font-semibold tracking-tight text-neutral-100 sm:text-lg"
+            className="flex items-center text-base font-semibold tracking-tight text-neutral-100 sm:text-lg"
           >
+            <span
+              className="mr-2 inline-block h-2 w-2 rounded-full"
+              style={{ background: "var(--neon)", boxShadow: "0 0 0 4px rgba(94, 242, 160, 0.16)" }}
+              aria-hidden
+            />
             {siteName}
           </motion.div>
 
@@ -61,7 +66,7 @@ export function HorizontalMenuBar({
                     {hoveredIndex === index && (
                       <motion.div
                         layoutId="horizontalMenuHoverBg"
-                        className="absolute inset-0 rounded-md bg-white/[0.06]"
+                        className="absolute inset-0 rounded-full bg-[rgba(94,242,160,0.14)]"
                         transition={{ type: "spring", stiffness: 400, damping: 32 }}
                       />
                     )}
@@ -73,7 +78,7 @@ export function HorizontalMenuBar({
                 );
 
                 const className =
-                  "relative flex items-center gap-2 rounded-md px-3 py-2 text-sm font-normal text-neutral-400 transition-colors duration-150 hover:text-neutral-100 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-600 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950";
+                  "relative flex items-center gap-2 rounded-full px-3 py-2 text-sm font-normal text-neutral-300 transition-colors duration-150 hover:text-white focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#5ef2a0] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c1411]";
 
                 if (item.onSelect) {
                   return (
@@ -113,7 +118,7 @@ export function HorizontalMenuBar({
             {onCtaClick && (
               <motion.button
                 type="button"
-                className="rounded-md bg-white px-4 py-2 text-sm font-medium text-neutral-950 transition hover:bg-neutral-200 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
+                className="cta-produce btn-press px-4 py-2 text-sm font-medium focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#b8ffd8] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c1411]"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.25, delay: 0.1 }}

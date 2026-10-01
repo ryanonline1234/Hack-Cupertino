@@ -4,10 +4,10 @@ export default {
   theme: {
     extend: {
       colors: {
-        void: "#050608",
-        slate: "#0B0F14",
-        neon: "#00FF99",
-        cyanGlow: "#22D3EE",
+        void: "#0c1411",
+        slate: "#121c18",
+        neon: "#5EF2A0",
+        cyanGlow: "#7DD3FC",
         /* shadcn-compatible tokens (used by ui components) */
         background: "#050816",
         foreground: "#e8edf4",
@@ -33,7 +33,7 @@ export default {
         sm: "calc(0.5rem - 4px)",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
       },
       boxShadow: {
         glass: "0 8px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255,255,255,0.06)",
