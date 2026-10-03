@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import Papa from 'papaparse';
+import { escapeHtml } from '../lib/storeTooltip';
 
 /*
  * Judge Notes: Top 10 Complexity Hotspots
- * 1) Large USDA CSV is parsed client-side and reduced into state-level aggregates at load time.
- * 2) Designation score synthesizes multiple signals to classify states into red/green categories.
+ * 1) The USDA ERS 2019 Food Access Research Atlas CSV (LRAM, 2010 tracts) is parsed
+ *    client-side and reduced into state-level aggregates at load time.
+ * 2) "Flagged" means LILATracts_1And10 = 1: low income & low access on the 2019
+ *    supermarket map (1 mi urban / 10 mi rural), as USDA published it.
  * 3) Map rendering must keep marker density readable at national zoom without overwhelming the user.
  * 4) Zoom and pan listeners recalculate in-view summaries to shift from broad to specific context.
  * 5) Out-of-view states are de-emphasized after threshold zoom to direct attention spatially.
@@ -78,7 +81,7 @@ function formatRate(rate) {
 }
 
 // Sequential orange scale (pale -> deep): darker means a higher share of
-// designated tracts. Single-hue reads for red-green colorblind viewers,
+// tracts flagged low income & low access on the 2019 map. Single-hue reads for red-green colorblind viewers,
 // unlike the previous green/red diverging scale.
 const RATE_STOPS = [
   [254, 232, 200],
@@ -174,7 +177,7 @@ export default function DesignationAtlasView() {
 
       try {
         const response = await fetch('/data/food_atlas.csv');
-        if (!response.ok) throw new Error('Unable to load USDA atlas dataset.');
+        if (!response.ok) throw new Error('Unable to load the USDA 2019 Food Access Research Atlas.');
 
         const text = await response.text();
         const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
@@ -186,7 +189,7 @@ export default function DesignationAtlasView() {
         }
       } catch (err) {
         if (active) {
-          setError(err?.message || 'Unable to build US designation map.');
+          setError(err?.message || 'Unable to build the USDA 2019 low-income & low-access map.');
         }
       } finally {
         if (active) setLoading(false);
@@ -284,11 +287,11 @@ export default function DesignationAtlasView() {
 
       marker.bindPopup(
         `<div style="min-width: 220px; font-family: Inter, system-ui, sans-serif;">
-          <strong>${row.state}</strong><br/>
-          Designated: ${row.designated.toLocaleString()}<br/>
-          Not designated: ${row.notDesignated.toLocaleString()}<br/>
-          Total tracts: ${row.total.toLocaleString()}<br/>
-          Designation rate: ${formatRate(row.rate)}
+          <strong>${escapeHtml(row.state)}</strong><br/>
+          Low income &amp; low access (USDA 2019 LRAM): ${row.designated.toLocaleString()}<br/>
+          Not flagged: ${row.notDesignated.toLocaleString()}<br/>
+          2010 census tracts: ${row.total.toLocaleString()}<br/>
+          Share flagged: ${formatRate(row.rate)}
         </div>`,
       );
 
@@ -315,12 +318,14 @@ export default function DesignationAtlasView() {
       >
         {mapZoom < DETAIL_ZOOM_THRESHOLD ? (
           <>
-            <div className="font-semibold text-white/90">US Designation Overview</div>
-            <div className="mt-1 text-white/70">Broad national view with all states.</div>
-            <div className="mt-2 text-white/60">
-              States: {summary.states} · Tracts: {summary.totalTracts.toLocaleString()} · Designated: {formatRate(summary.designationRate)}
+            <div className="font-semibold text-white/90">USDA 2019 low-income &amp; low-access tracts</div>
+            <div className="mt-1 text-white/70">
+              Share of each state&apos;s 2010 census tracts flagged on USDA&apos;s 2019 supermarket map (LRAM: 1 mi urban, 10 mi rural), as published.
             </div>
-            <div className="mt-2 text-white/65">Highest designation rates:</div>
+            <div className="mt-2 text-white/60">
+              States: {summary.states} · Tracts: {summary.totalTracts.toLocaleString()} · Flagged: {formatRate(summary.designationRate)}
+            </div>
+            <div className="mt-2 text-white/65">Highest shares flagged:</div>
             <div className="mt-1 space-y-0.5 text-white/55">
               {topNationalByRate.slice(0, 4).map((row) => (
                 <div key={row.state}>
@@ -331,12 +336,12 @@ export default function DesignationAtlasView() {
           </>
         ) : (
           <>
-            <div className="font-semibold text-white/90">Focused In-View Stats</div>
-            <div className="mt-1 text-white/70">Stats now reflect states in your current map window.</div>
+            <div className="font-semibold text-white/90">USDA 2019 low-income &amp; low-access tracts, in view</div>
+            <div className="mt-1 text-white/70">Shares now reflect states in your current map window.</div>
             <div className="mt-2 text-white/60">
-              In view: {focusedSummary.states} states · {focusedSummary.totalTracts.toLocaleString()} tracts · Designated: {formatRate(focusedSummary.designationRate)}
+              In view: {focusedSummary.states} states · {focusedSummary.totalTracts.toLocaleString()} tracts · Flagged: {formatRate(focusedSummary.designationRate)}
             </div>
-            <div className="mt-2 text-white/65">In-view highest rates:</div>
+            <div className="mt-2 text-white/65">In-view highest shares flagged:</div>
             <div className="mt-1 space-y-0.5 text-white/55">
               {topVisibleByRate.length > 0 ? (
                 topVisibleByRate.map((row) => (
@@ -366,18 +371,18 @@ export default function DesignationAtlasView() {
         <div className="mt-1 text-white/55">Zoom ≥ {DETAIL_ZOOM_THRESHOLD}: focus in-view stats</div>
         <div className="mt-1 flex items-center gap-2">
           <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: rateToColor(0.1) }} />
-          Lower share designated
+          Lower share flagged (2019 LRAM)
         </div>
         <div className="mt-1 flex items-center gap-2">
           <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: rateToColor(0.9) }} />
-          Higher share designated
+          Higher share flagged (2019 LRAM)
         </div>
       </div>
 
       {loading && (
         <div className="absolute inset-0 z-[1001] flex items-center justify-center bg-black/35">
           <div className="rounded-md border border-white/20 bg-black/70 px-4 py-3 text-sm text-white/85">
-            Preloading US designation data...
+            Loading the USDA 2019 Food Access Research Atlas…
           </div>
         </div>
       )}

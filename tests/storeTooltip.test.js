@@ -8,7 +8,7 @@ test('escapeHtml neutralises markup characters', () => {
   assert.equal(escapeHtml(`<a href="x" onclick='y'>&</a>`), '&lt;a href=&quot;x&quot; onclick=&#39;y&#39;&gt;&amp;&lt;/a&gt;');
 });
 
-test('an OpenStreetMap store name cannot inject HTML into the tooltip', () => {
+test('a third-party store name cannot inject HTML into the tooltip', () => {
   const label = storeTooltipLabel({ name: '<img src=x onerror="alert(1)">', distanceMiles: 1.234 });
   assert.ok(!label.includes('<'), label);
   assert.equal(label, '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; · 1.2 mi');

@@ -1,16 +1,18 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import RippleField from './RippleField';
 import ParticleDrift from './ParticleDrift';
-import SimLabControls from './SimLabControls';
 import MapView from './MapView';
 import { makeTopDownProjector, pickCameraDistance } from '../lib/projection';
 import {
   EXAMPLE_LOCATIONS,
-  designationTag,
+  verdictTag,
   fetchSuggestions,
   geocodeAddress,
 } from '../lib/locationSearch';
-import { decodeAppState } from '../lib/urlState';
+import { decodeAppState, MAX_SHARED_PINS } from '../lib/urlState';
+import { DEFAULT_STORE_FORMAT, STORE_FORMATS, placedPinLabel, storeFormatInfo } from '../lib/storeFormats';
+import { haversineMiles } from '../lib/geo';
+import { MAP_STORE_MARGIN_MI } from '../pipeline/normalizer';
 
 /*
  * Judge Notes: Top 10 Complexity Hotspots
@@ -40,7 +42,7 @@ const DEFAULT_PITCH = 50;
 const DEFAULT_YAW = 330;
 const DEFAULT_DISTANCE = 1800;
 const IFRAME_MAX_RETRIES = 2;
-const SHOW_SIM_LAB_UI = false;
+const DOCK_BESIDE_CARD_MIN_WIDTH = 760;
 // Bumped from 'fds:mapRendererMode' so any '2d' values cached from a previous
 // build (which had over-aggressive auto-fallback) don't stick after upgrade.
 // 3D Streets GL is the intended default for capable browsers.
@@ -141,24 +143,34 @@ function SuggestionIcon({ cls }) {
   );
 }
 
+/*
+ * Props:
+ *   lat, lng, isLoading, hasData
+ *   onSearch(lat, lng, options)  options = { placeKind, placeName } from the
+ *       in-map search, { forceRefresh: true } from Fresh Data, plus pins from
+ *       the example pills; map-click re-analysis passes no options
+ *   stores        counted SNAP stores (communityData.access.stores)
+ *   placedStores  the visitor's pins [{ id, lat, lng, format }] (`pins` is
+ *                 accepted as an alias)
+ *   onPlaceStore(lat, lng, format)  format is the sticky banner choice
+ *   onUndoPin, onClearPins, onShareScenario, scenarioCard (React node)
+ */
 export default function StreetsGlView({
   lat,
   lng,
   isLoading,
   hasData,
   onSearch,
-  mode,
-  pinCounts,
-  pinTotal,
-  onAddPin,
   onUndoPin,
   onClearPins,
   onShareScenario,
   scenarioCard,
   stores = [],
-  placedStores = [],
+  placedStores,
+  pins,
   onPlaceStore,
 }) {
+  const placedPins = Array.isArray(placedStores) ? placedStores : Array.isArray(pins) ? pins : [];
   const [query, setQuery]               = useState('');
   const [geocoding, setGeocoding]       = useState(false);
   const [searchError, setSearchError]   = useState('');
@@ -182,6 +194,8 @@ export default function StreetsGlView({
   // Place-store arming: while armed, 2D clicks drop a hypothetical grocery
   // store (3D drops at the analysis center — iframe clicks are unreadable).
   const [placeArmed, setPlaceArmed]       = useState(false);
+  // Sticky store format for new pins: survives disarming and re-arming.
+  const [placeFormat, setPlaceFormat]     = useState(DEFAULT_STORE_FORMAT);
   const [viewport, setViewport]         = useState({ width: 0, height: 0 });
   const [hoveredStoreId, setHoveredStoreId] = useState(null);
   const inputRef    = useRef(null);
@@ -351,7 +365,7 @@ export default function StreetsGlView({
     setActiveIdx(-1);
     setSearchError('');
     teleportMap(s.lat, s.lng);
-    onSearch(s.lat, s.lng);
+    onSearch(s.lat, s.lng, { placeKind: s.placeKind, placeName: s.placeName });
   }
 
   function handleKeyDown(e) {
@@ -386,9 +400,9 @@ export default function StreetsGlView({
     setGeocoding(true);
     setSearchError('');
     try {
-      const { lat: rlat, lng: rlng } = await geocodeAddress(q);
+      const { lat: rlat, lng: rlng, placeKind, placeName } = await geocodeAddress(q);
       teleportMap(rlat, rlng);
-      onSearch(rlat, rlng);
+      onSearch(rlat, rlng, { placeKind, placeName });
     } catch (err) {
       setSearchError(err.message);
     } finally {
@@ -402,7 +416,15 @@ export default function StreetsGlView({
     setSuggestions([]);
     setShowDrop(false);
     teleportMap(loc.lat, loc.lng);
-    onSearch(loc.lat, loc.lng);
+    const options = { placeKind: loc.placeKind ?? 'other', placeName: loc.placeName ?? loc.label };
+    if (Array.isArray(loc.pins) && loc.pins.length > 0) {
+      options.pins = loc.pins.map((p) => ({ lat: p.lat, lng: p.lng, format: p.format }));
+    }
+    onSearch(loc.lat, loc.lng, options);
+  }
+
+  function placeStore(plat, plng) {
+    onPlaceStore?.(plat, plng, placeFormat);
   }
 
   function handleForceRefresh() {
@@ -414,6 +436,12 @@ export default function StreetsGlView({
   }
 
   const busy = isLoading || geocoding;
+  const atPinLimit = placedPins.length >= MAX_SHARED_PINS;
+  const formatNote = storeFormatInfo(placeFormat).note;
+  const showStoreLayer = highlight || placeArmed;
+  // The scenario card (left-4, 320px) shows whenever pins exist; on a wide
+  // enough map the banner dock moves beside it instead of under it.
+  const dockLeft = placedPins.length > 0 && viewport.width >= DOCK_BESIDE_CARD_MIN_WIDTH ? 352 : 8;
 
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden map-scanlines" style={{ background: '#050608' }}>
@@ -431,10 +459,11 @@ export default function StreetsGlView({
             onSearch(nextLat, nextLng);
           }}
           showInstruction={!hasData}
-          stores={[...stores, ...placedStores]}
-          showStores={highlight || placeArmed}
+          stores={stores}
+          showStores={showStoreLayer}
+          placedPins={placedPins}
           placeArmed={placeArmed}
-          onPlaceAt={(plat, plng) => onPlaceStore?.(plat, plng)}
+          onPlaceAt={placeStore}
           visible={useFallbackMap}
         />
       </div>
@@ -491,64 +520,85 @@ export default function StreetsGlView({
         />
       )}
 
-      {/* Highlight-mode marker overlay. Aligned with the top-down view the
-          toggle establishes; free camera movement may drift markers until
-          the next teleport (search, toggle, or Recenter). */}
-      {highlight && !useFallbackMap && projector && stores.length > 0 && (
+      {/* Highlight-mode marker overlay (3D only). Aligned with the top-down
+          view the toggle establishes; free camera movement may drift markers
+          until the next teleport (search, toggle, or Recenter). */}
+      {highlight && !useFallbackMap && projector && (stores.length > 0 || placedPins.length > 0) && (
         <div
           aria-hidden={false}
           className="absolute inset-0 pointer-events-none animate-fade-slide-up"
           style={{ zIndex: 6 }}
         >
-          {[...stores, ...placedStores]
-            .map((store) => ({ store, pos: projector({ lat: store.lat, lng: store.lng }) }))
-            .filter(({ pos }) => pos !== null)
-            .map(({ store, pos }) => (
-              <button
-                key={store.id}
-                type="button"
-                onMouseEnter={() => setHoveredStoreId(store.id)}
-                onMouseLeave={() => setHoveredStoreId((id) => (id === store.id ? null : id))}
-                onFocus={() => setHoveredStoreId(store.id)}
-                onBlur={() => setHoveredStoreId((id) => (id === store.id ? null : id))}
-                className="absolute"
-                style={{
-                  left: `${pos.x}px`,
-                  top: `${pos.y}px`,
-                  transform: 'translate(-50%, -50%)',
-                  pointerEvents: 'auto',
-                }}
-                title={`${store.name} · ${store.distanceMiles.toFixed(1)} mi`}
-              >
-                <span
-                  className="block rounded-full"
+          {[
+            ...stores.map((s, i) => ({
+              key: `store-${i}`,
+              lat: s.lat,
+              lng: s.lng,
+              name: s.name || 'Supermarket',
+              fill: 'var(--neon)',
+              hollow: false,
+            })),
+            ...placedPins.map((p, i) => {
+              const counts = storeFormatInfo(p.format).counts;
+              return {
+                key: `pin-${p.id ?? i}`,
+                lat: p.lat,
+                lng: p.lng,
+                name: placedPinLabel(p.format),
+                fill: counts ? 'var(--cyan)' : 'transparent',
+                hollow: !counts,
+              };
+            }),
+          ]
+            .map((m) => ({ ...m, pos: projector({ lat: m.lat, lng: m.lng }) }))
+            .filter((m) => m.pos !== null)
+            .map((m) => {
+              const miles = haversineMiles(lat, lng, m.lat, m.lng);
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  onMouseEnter={() => setHoveredStoreId(m.key)}
+                  onMouseLeave={() => setHoveredStoreId((id) => (id === m.key ? null : id))}
+                  onFocus={() => setHoveredStoreId(m.key)}
+                  onBlur={() => setHoveredStoreId((id) => (id === m.key ? null : id))}
+                  className="absolute"
                   style={{
-                    width: 14,
-                    height: 14,
-                    background: store.placed ? 'var(--cyan)' : 'var(--neon)',
-                    border: '2px solid rgba(5,6,8,0.8)',
-                    boxShadow: store.placed
-                      ? '0 0 14px var(--cyan), 0 0 4px rgba(0,0,0,0.6)'
-                      : '0 0 14px var(--neon), 0 0 4px rgba(0,0,0,0.6)',
+                    left: `${m.pos.x}px`,
+                    top: `${m.pos.y}px`,
+                    transform: 'translate(-50%, -50%)',
+                    pointerEvents: 'auto',
                   }}
-                />
-                {hoveredStoreId === store.id && (
+                  title={`${m.name} · ${miles.toFixed(1)} mi`}
+                >
                   <span
-                    className="absolute left-1/2 -translate-x-1/2 mt-2 px-2 py-1 rounded text-[11px] whitespace-nowrap"
+                    className="block rounded-full"
                     style={{
-                      top: '100%',
-                      background: 'rgba(5,6,8,0.92)',
-                      border: '1px solid rgba(0,255,153,0.35)',
-                      color: 'rgba(255,255,255,0.92)',
-                      boxShadow: '0 6px 18px rgba(0,0,0,0.4)',
+                      width: 14,
+                      height: 14,
+                      background: m.fill,
+                      border: m.hollow ? '2px solid #9ca3af' : '2px solid rgba(5,6,8,0.8)',
+                      boxShadow: m.hollow ? 'none' : `0 0 14px ${m.fill}, 0 0 4px rgba(0,0,0,0.6)`,
                     }}
-                  >
-                    <span style={{ color: 'var(--neon)' }}>{store.name}</span>
-                    <span className="text-white/40 ml-2">{store.distanceMiles.toFixed(1)} mi</span>
-                  </span>
-                )}
-              </button>
-            ))}
+                  />
+                  {hoveredStoreId === m.key && (
+                    <span
+                      className="absolute left-1/2 -translate-x-1/2 mt-2 px-2 py-1 rounded text-[11px] whitespace-nowrap"
+                      style={{
+                        top: '100%',
+                        background: 'rgba(5,6,8,0.92)',
+                        border: '1px solid rgba(0,255,153,0.35)',
+                        color: 'rgba(255,255,255,0.92)',
+                        boxShadow: '0 6px 18px rgba(0,0,0,0.4)',
+                      }}
+                    >
+                      <span style={{ color: 'var(--neon)' }}>{m.name}</span>
+                      <span className="text-white/40 ml-2">{miles.toFixed(1)} mi</span>
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           {/* Center pin so the user knows where they actually are. */}
           {(() => {
             const c = projector({ lat, lng });
@@ -573,13 +623,17 @@ export default function StreetsGlView({
         </div>
       )}
 
-      {/* Bottom-center banner stack: highlight + placement status share one
-          dock so neither covers the search toolbar. */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 max-w-[calc(100%-1rem)]">
-      {/* Highlight-mode banner */}
+      {/* Bottom banner stack: highlight, legend and placement controls share
+          one dock so none covers the search toolbar. The dock spans the map
+          but only its banners take clicks. */}
+      <div
+        className="absolute bottom-4 right-2 z-20 flex flex-col items-center gap-2 pointer-events-none"
+        style={{ left: `${dockLeft}px` }}
+      >
+      {/* Highlight-mode banner (3D) */}
       {highlight && !useFallbackMap && (
         <div
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] animate-fade-slide-up whitespace-nowrap max-w-full overflow-x-auto"
+          className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] animate-fade-slide-up whitespace-nowrap max-w-full overflow-x-auto"
           style={{
             background: 'rgba(5,6,8,0.85)',
             border: '1px solid rgba(0,255,153,0.35)',
@@ -593,8 +647,8 @@ export default function StreetsGlView({
           />
           <span>
             {stores.length > 0
-              ? `${stores.length} food source${stores.length === 1 ? '' : 's'} in range · move freely, Recenter re-syncs markers`
-              : 'No supermarkets within 50 miles'}
+              ? `${stores.length} counted supermarket${stores.length === 1 ? '' : 's'} nearby · move freely, Recenter re-syncs markers`
+              : `No counted supermarkets within about ${MAP_STORE_MARGIN_MI} mi of this tract`}
           </span>
           <button
             type="button"
@@ -614,78 +668,144 @@ export default function StreetsGlView({
         </div>
       )}
 
-      {/* Place-store banner: experiment controls while armed. */}
-      {placeArmed && hasData && (
+      {/* 2D legend: what the dots mean while the store layer is on. */}
+      {useFallbackMap && hasData && showStoreLayer && (
         <div
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] animate-fade-slide-up whitespace-nowrap max-w-full overflow-x-auto"
+          className="pointer-events-auto flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-3 py-1.5 rounded-2xl text-[11px] animate-fade-slide-up max-w-full"
           style={{
             background: 'rgba(5,6,8,0.85)',
+            border: '1px solid rgba(255,255,255,0.14)',
+            color: 'rgba(255,255,255,0.75)',
+            backdropFilter: 'blur(12px)',
+          }}
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className="block w-2.5 h-2.5 rounded-full" style={{ background: 'var(--neon)' }} />
+            {stores.length > 0
+              ? `Counted supermarket (${stores.length} nearby, USDA SNAP data)`
+              : `No counted supermarkets within about ${MAP_STORE_MARGIN_MI} mi of this tract`}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className="block w-2.5 h-2.5 rounded-full" style={{ background: 'var(--cyan)' }} />
+            Your store, counts
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className="block w-2.5 h-2.5 rounded-full" style={{ border: '2px solid #9ca3af' }} />
+            Your store, doesn&apos;t count
+          </span>
+        </div>
+      )}
+
+      {/* Place-store banner: format choice (sticky) + experiment controls. */}
+      {placeArmed && hasData && (
+        <div
+          role="group"
+          aria-label="Place a store"
+          className="pointer-events-auto flex flex-col gap-2 px-3 py-2 rounded-2xl text-[11px] animate-fade-slide-up w-full max-w-[680px]"
+          style={{
+            background: 'rgba(5,6,8,0.88)',
             border: '1px solid rgba(34,211,238,0.35)',
             color: 'rgba(255,255,255,0.85)',
             backdropFilter: 'blur(12px)',
           }}
         >
-          <span className="text-white/60">
-            {useFallbackMap
-              ? 'Click the map to place a store'
-              : '3D drops at analysis center · 2D places exactly'}
-          </span>
-          <span className="font-semibold" style={{ color: 'var(--cyan)' }}>
-            {placedStores.length} placed
-          </span>
-          <button
-            type="button"
-            onClick={() => onPlaceStore?.(lat, lng)}
-            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors btn-press"
-            style={{
-              background: 'rgba(34,211,238,0.15)',
-              border: '1px solid rgba(34,211,238,0.4)',
-              color: 'var(--cyan)',
-            }}
-          >
-            Drop here
-          </button>
-          <button
-            type="button"
-            onClick={() => onUndoPin?.()}
-            className="rounded-full px-2 py-0.5 text-[11px] transition-colors btn-press"
-            style={{ border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)' }}
-          >
-            Undo
-          </button>
-          <button
-            type="button"
-            onClick={() => onClearPins?.()}
-            className="rounded-full px-2 py-0.5 text-[11px] transition-colors btn-press"
-            style={{ border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)' }}
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            onClick={() => onShareScenario?.()}
-            title="Copy a link that replays this location and placed stores"
-            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors btn-press"
-            style={{
-              background: 'rgba(52,211,153,0.15)',
-              border: '1px solid rgba(52,211,153,0.4)',
-              color: 'var(--neon)',
-            }}
-          >
-            Share
-          </button>
-          <button
-            type="button"
-            onClick={() => setPlaceArmed(false)}
-            className="rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors btn-press"
-            style={{
-              background: 'rgba(255,255,255,0.08)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: 'rgba(255,255,255,0.85)',
-            }}
-          >
-            Done
-          </button>
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Store type for new stores">
+            <span className="text-white/50 mr-0.5">Store type:</span>
+            {STORE_FORMATS.map((f) => {
+              const active = placeFormat === f.code;
+              return (
+                <button
+                  key={f.code}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setPlaceFormat(f.code)}
+                  className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press"
+                  style={{
+                    background: active ? 'color-mix(in srgb, var(--cyan) 18%, transparent)' : 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${active ? 'color-mix(in srgb, var(--cyan) 60%, transparent)' : 'rgba(255,255,255,0.16)'}`,
+                    color: active ? 'var(--cyan)' : 'rgba(255,255,255,0.7)',
+                  }}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+          {formatNote && <p className="text-white/55 leading-snug">{formatNote}</p>}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-white/60">
+              {atPinLimit
+                ? `${MAX_SHARED_PINS}-store limit reached`
+                : useFallbackMap
+                  ? 'Click the map to place a store'
+                  : '3D drops at analysis center · 2D places exactly'}
+            </span>
+            <span className="font-semibold" style={{ color: 'var(--cyan)' }}>
+              {placedPins.length} placed
+            </span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              disabled={atPinLimit}
+              onClick={() => placeStore(lat, lng)}
+              title="Place a store at the analyzed spot"
+              className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press disabled:opacity-40"
+              style={{
+                background: 'rgba(34,211,238,0.15)',
+                border: '1px solid rgba(34,211,238,0.4)',
+                color: 'var(--cyan)',
+              }}
+            >
+              Drop here
+            </button>
+            {onUndoPin && (
+              <button
+                type="button"
+                disabled={placedPins.length === 0}
+                onClick={() => onUndoPin()}
+                className="rounded-full px-2.5 min-h-[32px] text-[11px] transition-colors btn-press disabled:opacity-40"
+                style={{ border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)' }}
+              >
+                Undo
+              </button>
+            )}
+            {onClearPins && (
+              <button
+                type="button"
+                disabled={placedPins.length === 0}
+                onClick={() => onClearPins()}
+                className="rounded-full px-2.5 min-h-[32px] text-[11px] transition-colors btn-press disabled:opacity-40"
+                style={{ border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)' }}
+              >
+                Clear
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onShareScenario?.()}
+              title="Copy a link that replays this location and placed stores"
+              className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press"
+              style={{
+                background: 'color-mix(in srgb, var(--neon) 15%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--neon) 40%, transparent)',
+                color: 'var(--neon)',
+              }}
+            >
+              Share
+            </button>
+            <button
+              type="button"
+              onClick={() => setPlaceArmed(false)}
+              className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press"
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: 'rgba(255,255,255,0.85)',
+              }}
+            >
+              Done
+            </button>
+          </div>
         </div>
       )}
       </div>
@@ -693,17 +813,6 @@ export default function StreetsGlView({
       {/* Decorative overlays */}
       <ParticleDrift />
       <RippleField visible={hasData} />
-
-      {SHOW_SIM_LAB_UI && (
-        <SimLabControls
-          mode={mode}
-          pinCounts={pinCounts}
-          pinTotal={pinTotal}
-          onAddPin={onAddPin}
-          onUndoPin={onUndoPin}
-          onClearPins={onClearPins}
-        />
-      )}
 
       {/* Corner arc */}
       <svg
@@ -799,9 +908,9 @@ export default function StreetsGlView({
             Fresh Data
           </button>
 
-          {/* Highlight food sources toggle. 3D: hash-teleports the camera
-              top-down (no reload) and overlays green markers for every
-              supermarket Overpass found. 2D: toggles a native Leaflet
+          {/* Counted-store toggle. 3D: hash-teleports the camera top-down
+              (no reload) and overlays green markers for the counted SNAP
+              supermarkets near the tract. 2D: toggles a native Leaflet
               marker layer with the same data. */}
           <button
             type="button"
@@ -817,8 +926,8 @@ export default function StreetsGlView({
             }}
             title={
               highlight
-                ? 'Hide food source highlights'
-                : 'Highlight nearby supermarkets in green'
+                ? 'Hide the counted supermarkets'
+                : 'Show the supermarkets USDA counts (SNAP Supermarket and Super Store) in green'
             }
           >
             {highlight ? 'Hide Sources' : 'Highlight Food'}
@@ -838,7 +947,8 @@ export default function StreetsGlView({
               backdropFilter: 'blur(20px)',
               boxShadow: placeArmed ? '0 0 12px rgba(34,211,238,0.25)' : 'none',
             }}
-            title={placeArmed ? 'Cancel store placement' : 'Place a hypothetical grocery store and see what changes'}
+            aria-pressed={placeArmed}
+            title={placeArmed ? 'Stop placing stores' : "Place a hypothetical store and recompute this tract's test"}
           >
             {placeArmed ? 'Placing…' : 'Place store'}
           </button>
@@ -891,12 +1001,12 @@ export default function StreetsGlView({
                   <SuggestionIcon cls={s.cls} />
                 </span>
                 <span className="truncate">{s.short}</span>
-                {s.type && (
+                {(s.placeKind && s.placeKind !== 'other' ? s.placeKind : s.type) && (
                   <span
                     className="ml-auto shrink-0 text-[10px] px-1.5 py-0.5 rounded capitalize"
                     style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.3)' }}
                   >
-                    {s.type}
+                    {s.placeKind && s.placeKind !== 'other' ? s.placeKind : s.type}
                   </span>
                 )}
               </button>
@@ -980,12 +1090,17 @@ export default function StreetsGlView({
         >
           <span className="text-xs text-white/30 self-center mr-1">Try:</span>
           {EXAMPLE_LOCATIONS.map((loc) => {
-            const tag = designationTag(loc);
+            const tag = verdictTag(loc);
+            const title = [loc.label, tag && `computed for this tract: ${tag.text}`, loc.note]
+              .filter(Boolean)
+              .join(' · ');
             return (
               <button
                 key={loc.label}
+                type="button"
                 onClick={() => handleExample(loc)}
-                title={tag ? `Model verdict: ${tag.text}` : loc.label}
+                title={title}
+                aria-label={title}
                 className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full text-xs transition-[border-color,color,background-color,transform] duration-150 hover:border-white/25 hover:text-white/85 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
                 style={{
                   background: 'rgba(5,6,8,0.75)',
@@ -1003,6 +1118,7 @@ export default function StreetsGlView({
                   </span>
                 )}
                 {loc.label}
+                {loc.note && <span className="text-white/35">· {loc.note}</span>}
               </button>
             );
           })}

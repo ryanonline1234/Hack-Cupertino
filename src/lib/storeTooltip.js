@@ -5,7 +5,8 @@ export function escapeHtml(value) {
 }
 
 // Leaflet writes string tooltip content with innerHTML, and store names come
-// from OpenStreetMap, which anyone can edit. Escape before it reaches the map.
+// from the USDA SNAP retailer list (third-party text). Escape before it
+// reaches the map.
 export function storeTooltipLabel(store) {
   const name = escapeHtml(store?.name || 'Supermarket');
   const miles = Number.isFinite(store?.distanceMiles) ? ` · ${store.distanceMiles.toFixed(1)} mi` : '';

@@ -9,10 +9,11 @@ import CommunityStatsPanel from './components/CommunityStatsPanel';
 import AgentStatusFeed from './components/AgentStatusFeed';
 import ResizeHandle from './components/ResizeHandle';
 import { buildCommunityData } from './pipeline/normalizer';
-import { projectImpact } from './engine/projectionEngine';
 import { evaluatePlacedStoreScenario } from './engine/scenarioEngine';
-import { haversineMiles } from './pipeline/storeDistanceFetch';
-import { decodeAppState, writeAppStateToHash } from './lib/urlState';
+import { loadPlaceSummary } from './pipeline/placeLoader';
+import { haversineMiles } from './lib/geo';
+import { MAX_SHARED_PINS, PIN_FORMATS, decodeAppState, writeAppStateToHash } from './lib/urlState';
+import { DEFAULT_STORE_FORMAT, placedPinLabel, storeFormatInfo } from './lib/storeFormats';
 
 const PANEL_HEIGHT_KEY = 'fds:layout:bottomHeight';
 const PANEL_WIDTH_KEY = 'fds:layout:splitWidth';
@@ -20,6 +21,8 @@ const MIN_PANEL_HEIGHT = 140;
 const MIN_PANEL_WIDTH = 320;
 const DEFAULT_BOTTOM_VH = 0.30;
 const DEFAULT_SPLIT_VW = 0.50;
+// Same cap as share links, so a link can always hold every pin the UI allows.
+const MAX_PINS = MAX_SHARED_PINS;
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() =>
@@ -50,38 +53,99 @@ function readStoredSize(key, fallback) {
 }
 
 /*
- * Judge Notes: Top 10 Complexity Hotspots
- * 1) The app coordinates location search, scenario deltas, map, and charts in one flow.
- * 2) Baseline vs projected states are maintained separately to support reversible what-if analysis.
- * 3) Geocoding and demographic fetches are asynchronous and must remain race-safe across rapid searches.
- * 4) Impact updates run through normalization + projection pipeline before UI cards consume outputs.
- * 5) Projection engine outputs are reused by both map layer and stats panels for consistency.
- * 6) Mode switch (`Tracker` vs `US Map`) preserves shared shell without route-level complexity.
- * 7) Error handling prevents one failed provider from collapsing the whole dashboard experience.
- * 8) Derived KPI cards aggregate multiple fields into concise values while preserving context.
- * 9) Component-level memoization avoids expensive recomputations during slider interaction bursts.
- * 10) State orchestration is intentionally centralized so judges can trace cause/effect in one file.
+ * TrackerApp owns the search, the analysis payload (communityData, see
+ * src/pipeline/normalizer.js), the placed-store pins and the URL hash.
+ * Everything shown about a tract is derived from that payload; the scenario
+ * is a pure recompute (src/engine/scenarioEngine.js) on the same blocks with
+ * the pins added, so nothing here fetches when a pin moves.
  */
 
 // Boot lines describe standby state, not readiness: no source has been
 // contacted until the first search, so nothing here claims "ready/online".
 const INITIAL_LOGS = [
-  { id: 0, text: 'System initialized. Connectors on standby — pick a location to begin.', type: 'system' },
-  { id: 1, text: 'USDA / CDC / Census / OSM are queried per search, not preloaded.', type: 'info' },
+  { id: 0, text: 'System initialized. Nothing has been fetched yet — pick a location to begin.', type: 'system' },
+  { id: 1, text: 'Per search: Census TIGERweb (tract, blocks), the dated SNAP store list and USDA ERS 2025 files, CDC PLACES and Census ACS.', type: 'info' },
   { id: 3, text: 'Awaiting location input…', type: 'info' },
 ];
 
+const VERDICT_LABEL = { met: 'MEETS TEST', not_met: 'DOES NOT MEET', unknown: 'UNKNOWN' };
+
+const CITY_REASON_LOG = {
+  no_place: 'no Census place boundary was found',
+  place_unavailable: 'the city boundary did not load from Census TIGERweb',
+  place_incomplete: "the blocks inside the city boundary don't add up to the city's 2020 population",
+  no_residents: 'the place had no residents in the 2020 Census',
+  blocks_unavailable: 'the 2020 Census blocks for the city did not load',
+  blocks_incomplete: "one tract's blocks don't add up to its 2020 population",
+  tracts_unavailable: 'the census tract details did not load from Census TIGERweb',
+  stores_unavailable: 'part of the SNAP store list around the city did not load',
+  ers_unavailable: 'a USDA ERS county file did not load',
+  urban_unavailable: 'one tract has no urban/rural flag',
+};
+
+const QUALIFIER_LOG = {
+  li_la: 'low income and low access',
+  la_not_li: 'low access, not low income',
+  li_not_la: 'low income, not low access',
+  neither: 'neither low income nor low access',
+  not_la_income_unknown: 'not low access; income flag missing',
+  not_li_access_unknown: 'not low income; access not computed',
+  la_income_unknown: 'low access; income flag missing',
+  unknown: 'inputs missing',
+};
+
+const REASON_LOG = {
+  tract_unavailable: 'Census TIGERweb did not answer the tract lookup',
+  no_tract: 'the point is outside every US census tract',
+  no_residents: 'the tract has no residents, and USDA does not rate those',
+  blocks_unavailable: 'the 2020 Census blocks for this tract did not load',
+  blocks_incomplete: "the loaded blocks don't add up to the tract's 2020 population",
+  stores_unavailable: 'part of the SNAP store list near this tract did not load',
+  income_unavailable: 'USDA ERS has no 2025 income row for this tract',
+  urban_unavailable: 'neither ERS nor the Census blocks say whether the tract is urban or rural',
+};
+
+// Counts to about the nearest 10 (exact below 100), shares to whole percent.
+function approx(n) {
+  if (!Number.isFinite(n)) return 'n/a';
+  if (n < 100) return Math.round(n).toLocaleString('en-US');
+  return `≈${(Math.round(n / 10) * 10).toLocaleString('en-US')}`;
+}
+
+function pct(share) {
+  if (!Number.isFinite(share)) return 'n/a';
+  if (share > 0 && share < 0.005) return 'under 1%';
+  return `${Math.round(share * 100)}%`;
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+function isValidPoint(p) {
+  return p && Number.isFinite(p.lat) && Number.isFinite(p.lng) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180;
+}
+
+function normalizeFormat(format) {
+  return PIN_FORMATS.includes(format) ? format : DEFAULT_STORE_FORMAT;
+}
+
+let pinSeq = 0;
+let logSeq = 0;
+function makePinId() {
+  pinSeq += 1;
+  return `pin-${Date.now().toString(36)}-${pinSeq}`;
+}
+
 function Panels({
   communityData,
-  impactData,
-  baselineImpact,
-  savedScenario,
-  onSaveScenario,
-  onClearScenario,
-  showImpact,
-  onToggleImpact,
-  onJumpToTract,
   loading,
+  lastSearch,
+  onSummarizeCity,
+  citySummary,
+  onCitySummaryTract,
+  onCloseCitySummary,
+  onRetryCitySummary,
   dataError,
   logs,
 }) {
@@ -91,14 +155,12 @@ function Panels({
         <CommunityStatsPanel
           communityData={communityData}
           loading={loading}
-          impactData={impactData}
-          baselineImpact={baselineImpact}
-          savedScenario={savedScenario}
-          onSaveScenario={onSaveScenario}
-          onClearScenario={onClearScenario}
-          showImpact={showImpact}
-          onToggleImpact={onToggleImpact}
-          onJumpToTract={onJumpToTract}
+          lastSearch={lastSearch}
+          onSummarizeCity={onSummarizeCity}
+          citySummary={citySummary}
+          onCitySummaryTract={onCitySummaryTract}
+          onCloseCitySummary={onCloseCitySummary}
+          onRetryCitySummary={onRetryCitySummary}
         />
       </div>
 
@@ -106,7 +168,7 @@ function Panels({
         <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-[150px] md:min-h-0">
           <div
             className="h-full flex items-center justify-center text-sm text-center px-4"
-            style={{ color: 'rgba(252,165,165,0.8)' }}
+            style={{ color: 'var(--danger)' }}
           >
             {dataError}
           </div>
@@ -122,30 +184,24 @@ function Panels({
 
 export default function TrackerApp({ onHome }) {
   // URL hash hydration: if the page was loaded with #lat=…&lng=…&layout=…
-  // we restore that state and auto-trigger the analysis pipeline once
-  // mounted. Done synchronously here so initial render uses the right
-  // panel layout without a flash.
-  const initialUrlState = typeof window !== 'undefined'
-    ? decodeAppState(window.location.hash)
-    : {};
+  // we restore that state and auto-trigger the analysis once mounted.
+  // Decoded once so the initial render uses the right panel layout.
+  const [initialUrlState] = useState(() =>
+    typeof window !== 'undefined' ? decodeAppState(window.location.hash) : {},
+  );
+  const hasInitialPoint = Number.isFinite(initialUrlState.lat) && Number.isFinite(initialUrlState.lng);
 
   const [communityData, setCommunityData] = useState(null);
-  const [impactData, setImpactData] = useState(null);
-  const [baselineImpact, setBaselineImpact] = useState(null);
-  const [savedScenario, setSavedScenario] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [showImpact, setShowImpact] = useState(false);
   const [mapCenter, setMapCenter] = useState(() =>
-    Number.isFinite(initialUrlState.lat) && Number.isFinite(initialUrlState.lng)
+    hasInitialPoint
       ? { lat: initialUrlState.lat, lng: initialUrlState.lng }
       : { lat: 37.773, lng: -122.418 },
   );
   // Location-first boot: the heavy Streets GL iframe stays unmounted until
   // the visitor picks a place (or arrives via a #lat/#lng deep link), so we
   // never burn load time on a default city nobody asked for.
-  const [locationPicked, setLocationPicked] = useState(() =>
-    Number.isFinite(initialUrlState.lat) && Number.isFinite(initialUrlState.lng),
-  );
+  const [locationPicked, setLocationPicked] = useState(hasInitialPoint);
   const [logs, setLogs] = useState(INITIAL_LOGS);
   const [dataError, setDataError] = useState('');
   const [layout, setLayout] = useState(initialUrlState.layout || 'bottom');
@@ -153,41 +209,66 @@ export default function TrackerApp({ onHome }) {
   // panel arrangement since side-by-side thirds break at 360px wide.
   const isMobile = useIsMobile();
   const [mode, setMode] = useState('atlas');
-  const [simPins, setSimPins] = useState([]);
-  // Distance fetches no longer time out client-side, so rapid re-searches
-  // can resolve out of order. The nonce drops stale responses; the newest
-  // search owns the loading flag and all state updates.
+  // Placed stores: [{ id, lat, lng, format, createdAt }], format in s|g|d|f.
+  const [pins, setPins] = useState([]);
+  // What the visitor searched for ({ placeKind, placeName }) — drives the
+  // City notice. Null after a map-click re-analysis or a shared-link load.
+  const [lastSearch, setLastSearch] = useState(null);
+  // City summary (docs/07, src/pipeline/placeLoader.js): { status:
+  // 'loading'|'ok'|'unknown', place, progress, result } or null. It outlives
+  // the tract below it while the visitor opens tracts from its table; any
+  // other search closes it.
+  const [citySummary, setCitySummary] = useState(null);
+  const citySummaryNonceRef = useRef(0);
+  const citySummaryAbortRef = useRef(null);
+  // Rapid re-searches can resolve out of order. The nonce drops stale
+  // responses; the newest search owns the loading flag and all state updates.
   const searchNonceRef = useRef(0);
-  // Shared-link scenario pins (#pins=…) decoded on load. Restored as grocery
-  // pins once the hydrate search delivers communityData (addSimulationPin
-  // needs it); any user-initiated search clears them so link pins never leak
-  // into a manually picked location.
+  // Pins waiting for the analysis to load: from a shared link (#pins=…), an
+  // example chip, or a refresh of the same point. Replayed once
+  // communityData arrives; a manual search clears them so they never leak
+  // into a location the visitor picked themselves.
   const pendingPinsRef = useRef(
-    Array.isArray(initialUrlState.pins) ? initialUrlState.pins : null,
-  );
-
-  // Placed-store scenario state: grocery pins with real coordinates feed
-  // the no-network recompute below; the newest pin set always wins.
-  // (Defined up here: the scenario card below consumes scenarioResult.)
-  const placedStores = useMemo(
-    () => simPins
-      .filter((p) => p.type === 'grocery' && Number.isFinite(p?.lat) && Number.isFinite(p?.lng))
-      .map((p) => ({
-        id: `placed-${p.id}`,
-        lat: p.lat,
-        lng: p.lng,
-        name: 'Placed store',
-        distanceMiles: haversineMiles(mapCenter.lat, mapCenter.lng, p.lat, p.lng),
-        placed: true,
-      })),
-    [simPins, mapCenter.lat, mapCenter.lng],
+    Array.isArray(initialUrlState.pins) && initialUrlState.pins.length > 0
+      ? { pins: initialUrlState.pins, source: 'shared link' }
+      : null,
   );
 
   const scenarioResult = useMemo(
-    () => evaluatePlacedStoreScenario(communityData, placedStores, mapCenter),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [communityData, placedStores, mapCenter.lat, mapCenter.lng],
+    () => evaluatePlacedStoreScenario(communityData, pins),
+    [communityData, pins],
   );
+
+  // Counted SNAP stores for the map, plus the fields the map surfaces read
+  // (a stable id, a display name and the distance from the searched point).
+  const mapStores = useMemo(() => {
+    const stores = communityData?.access?.stores;
+    if (!Array.isArray(stores)) return [];
+    return stores.map((s, i) => ({
+      ...s,
+      id: `snap-${i}-${s.lat},${s.lng}`,
+      name: s.name || (s.type === 'S' ? 'Super store' : 'Supermarket'),
+      distanceMiles: haversineMiles(mapCenter.lat, mapCenter.lng, s.lat, s.lng),
+    }));
+  }, [communityData, mapCenter.lat, mapCenter.lng]);
+
+  // Placed pins in the shape the map draws, carrying their format so the map
+  // can tell counting pins (supermarkets) from non-counting ones.
+  const placedStores = useMemo(
+    () => pins.map((p) => ({
+      id: `placed-${p.id}`,
+      pinId: p.id,
+      lat: p.lat,
+      lng: p.lng,
+      format: p.format,
+      counts: storeFormatInfo(p.format).counts,
+      name: placedPinLabel(p.format),
+      distanceMiles: haversineMiles(mapCenter.lat, mapCenter.lng, p.lat, p.lng),
+      placed: true,
+    })),
+    [pins, mapCenter.lat, mapCenter.lng],
+  );
+
   const [bottomPanelHeight, setBottomPanelHeight] = useState(() =>
     Number.isFinite(initialUrlState.bottomPanelHeight)
       ? initialUrlState.bottomPanelHeight
@@ -225,11 +306,10 @@ export default function TrackerApp({ onHome }) {
   }, []);
 
   // Mirror app state into the URL hash so refreshing or sharing a link
-  // restores the same view — location plus placed-store pins, so the URL
-  // alone replays a full "place a store" scenario with no database.
-  // Debounced to avoid churn during splitter drags. Extracted so the Share
-  // button can force a synchronous write before copying the link.
-  // (Plain function, not useCallback: callers below always want fresh state.)
+  // restores the same view — location plus placed stores with their formats
+  // (pins= and pt=, see src/lib/urlState.js), so the URL alone replays the
+  // scenario with no database. Debounced to avoid churn during splitter
+  // drags. Plain function, not useCallback: callers always want fresh state.
   function writeHashNow(extra = {}) {
     writeAppStateToHash({
       lat: communityData ? mapCenter.lat : null,
@@ -237,9 +317,7 @@ export default function TrackerApp({ onHome }) {
       layout,
       bottomPanelHeight,
       splitPanelWidth,
-      // Only grocery-sourced pins feed the scenario; encode bare coords —
-      // grocery is the only pin type producible in the current UI.
-      pins: communityData ? simPins : [],
+      pins: communityData ? pins : [],
       ...extra,
     });
   }
@@ -247,7 +325,7 @@ export default function TrackerApp({ onHome }) {
     const t = setTimeout(writeHashNow, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [communityData, mapCenter.lat, mapCenter.lng, layout, bottomPanelHeight, splitPanelWidth, simPins]);
+  }, [communityData, mapCenter.lat, mapCenter.lng, layout, bottomPanelHeight, splitPanelWidth, pins]);
 
   const maxBottomHeight = typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.85) : 1200;
   const maxSplitWidth = typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.85) : 1600;
@@ -255,60 +333,142 @@ export default function TrackerApp({ onHome }) {
   const defaultSplitWidth = typeof window !== 'undefined' ? Math.round(window.innerWidth * DEFAULT_SPLIT_VW) : 480;
 
   const addLog = useCallback((text, type = 'info') => {
+    // A counter, not Date.now() + Math.random(): at today's epoch a double
+    // keeps only ~1/4096 of a millisecond, so lines logged in the same
+    // millisecond could share a React key.
+    logSeq += 1;
+    const id = `log-${logSeq}`;
     setLogs((prev) => [
       ...prev.slice(-24),
-      { id: Date.now() + Math.random(), text, type },
+      { id, text, type },
     ]);
   }, []);
 
-  // Stable reference so child memoization (via `impactData`) doesn't churn
-  // on every TrackerApp re-render.
-  const buildImpact = useCallback(
-    (data, pins, center) => projectImpact(data, { pins, center }),
-    [],
-  );
-
-  const pinCounts = useMemo(() => {
-    const counts = { grocery: 0, transit: 0, pantry: 0 };
-    for (const pin of simPins) {
-      if (counts[pin.type] != null) counts[pin.type] += 1;
-    }
-    return counts;
-  }, [simPins]);
-
-  function handleGateSelect(lat, lng) {
+  function handleGateSelect(lat, lng, options = {}) {
     setLocationPicked(true);
-    handleLocationSearch(lat, lng);
+    handleLocationSearch(lat, lng, options);
+  }
+
+  // What the pipeline did, step by step, from the payload it returned.
+  function logAnalysis(data) {
+    const { meta, access } = data;
+    const cache = meta?.cache;
+    if (cache?.status === 'memory' || cache?.status === 'local') {
+      const mins = Math.ceil(Number(cache.expiresInMs || 0) / 60000);
+      addLog(`Served from the ${cache.status} cache (refreshes in ${mins}m); no source was re-queried.`, 'info');
+    }
+
+    if (!meta?.fips) {
+      addLog(`Census tract: not found — ${REASON_LOG.tract_unavailable}.`, 'warning');
+    } else {
+      addLog(`Tract: ${meta.tractName || meta.fips} (${meta.fips}${meta.stateAbbr ? `, ${meta.stateAbbr}` : ''})`, 'success');
+      if (meta.place?.name) addLog(`Place at this point: ${meta.place.name}`, 'info');
+
+      const blocks = Array.isArray(access.blocks) ? access.blocks : [];
+      if (blocks.length > 0) {
+        const source = access.blocksSource === 'bundled' ? 'bundled county file' : access.blocksSource === 'tigerweb' ? 'TIGERweb, live' : 'source not recorded';
+        addLog(`2020 Census blocks: ${plural(blocks.length, 'populated block')}, ${approx(access.population)} residents (${source})`, 'success');
+      } else if (['no_residents', 'blocks_unavailable', 'blocks_incomplete'].includes(access.reason)) {
+        addLog(`2020 Census blocks: not used — ${REASON_LOG[access.reason]}.`, 'warning');
+      }
+
+      if (access.storesDataset) {
+        const date = String(access.storesDataset.date || '').slice(0, 10) || 'undated';
+        const n = Array.isArray(access.stores) ? access.stores.length : 0;
+        addLog(`SNAP store list of ${date}: ${plural(n, 'counted store')} within the tract and 5 mi around it`, 'success');
+      } else if (access.reason === 'stores_unavailable') {
+        addLog(`SNAP store list: not used — ${REASON_LOG.stores_unavailable}.`, 'warning');
+      }
+
+      if (typeof access.lowIncome === 'boolean') {
+        addLog(`USDA ERS 2025 low-income flag: ${access.lowIncome ? 'yes' : 'no'}`, 'info');
+      } else if (access.reason !== 'no_residents') {
+        addLog(`USDA ERS 2025 low-income flag: missing — ${REASON_LOG.income_unavailable}.`, 'warning');
+      }
+
+      if (Number.isFinite(access.threshold)) {
+        const from = access.urbanSource === 'ers_2025' ? 'ERS 2025 Urban flag' : 'majority of block residents';
+        addLog(`Distance limit: ${access.threshold} mi (${access.urban ? 'urban' : 'rural'}, from the ${from})`, 'info');
+      }
+
+      if (typeof access.lowAccess === 'boolean') {
+        addLog(
+          `Low access: ${approx(access.beyond)} of ${approx(access.population)} residents (${pct(access.share)}) live beyond ${access.threshold} mi → ${access.lowAccess ? 'yes' : 'no'} (limits: 33% or 500)`,
+          'info',
+        );
+      }
+    }
+
+    const verdict = access?.verdict;
+    if (verdict) {
+      addLog(
+        `Verdict (estimate): ${VERDICT_LABEL[verdict.status] || 'UNKNOWN'} — ${QUALIFIER_LOG[verdict.qualifier] || 'inputs missing'}`,
+        verdict.status === 'not_met' ? 'info' : 'warning',
+      );
+      const reason = verdict.status === 'unknown' ? verdict.reason || access.reason : null;
+      if (reason) addLog(`Unknown because ${REASON_LOG[reason] || 'an input was missing'}.`, 'warning');
+    }
+
+    const point = access?.point;
+    if (Number.isFinite(point?.miles)) {
+      addLog(`From the searched spot: nearest counted supermarket ${point.miles.toFixed(1)} mi (straight line)`, 'info');
+    } else if (point?.reason === 'over_30_mi') {
+      addLog('From the searched spot: no counted supermarket within 30 mi', 'info');
+    }
+
+    const health = data.health;
+    if (health && (health.diabetes > 0 || health.obesity > 0)) {
+      addLog(`CDC PLACES: diabetes ${pct(health.diabetes / 100)}, obesity ${pct(health.obesity / 100)}`, 'info');
+    } else if (meta?.fips) {
+      addLog('CDC PLACES: no figures returned for this tract', 'warning');
+    }
+    const demo = data.demographics;
+    if (!(demo && (demo.population > 0 || demo.medianIncome > 0 || demo.pctPoverty > 0)) && meta?.fips) {
+      addLog('Census ACS: no figures returned for this tract', 'warning');
+    }
+
+    addLog('Analysis complete.', 'success');
   }
 
   async function handleLocationSearch(lat, lng, options = {}) {
-    const forceRefresh = Boolean(options?.forceRefresh);
+    const opts = options || {};
+    const forceRefresh = Boolean(opts.forceRefresh);
+    const samePoint = lat === mapCenter.lat && lng === mapCenter.lng;
     const mySearch = searchNonceRef.current + 1;
     searchNonceRef.current = mySearch;
 
+    // Pins to replay once this search's analysis loads.
+    if (Array.isArray(opts.pins) && opts.pins.length > 0) {
+      pendingPinsRef.current = { pins: opts.pins, source: 'example' };
+    } else if (forceRefresh && samePoint && communityData && pins.length > 0) {
+      pendingPinsRef.current = { pins, source: 'refresh' };
+    } else if (!opts.fromSharedLink) {
+      pendingPinsRef.current = null;
+    }
+
+    // Opening a tract from the City summary table keeps the summary; any
+    // other search closes it (and stops one still loading).
+    if (!opts.keepCitySummary) closeCitySummary();
+
+    // The City notice follows what was searched. A map click (no placeKind)
+    // clears it; a refresh of the same spot keeps it.
+    if (opts.placeKind) {
+      setLastSearch({ placeKind: opts.placeKind, placeName: opts.placeName ?? null });
+    } else if (!(forceRefresh && samePoint)) {
+      setLastSearch(null);
+    }
+
     setLoading(true);
     setCommunityData(null);
-    setImpactData(null);
-    setBaselineImpact(null);
     setDataError('');
-    setShowImpact(false);
     setMapCenter({ lat, lng });
-    setSimPins([]);
-    // A manual search discards shared-link pins; the hydrate search passes
-    // fromSharedLink to keep them for the restore effect below.
-    if (!options?.fromSharedLink) pendingPinsRef.current = null;
+    setPins([]);
 
-    addLog(`Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}`, 'system');
-    if (forceRefresh) {
-      addLog('Force refresh requested: bypassing cached tract data.', 'info');
-    }
-    addLog('Querying Census TIGER geocoder…', 'info');
+    addLog(`Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}${opts.placeName ? ` (${opts.placeName})` : ''}`, 'system');
+    if (forceRefresh) addLog('Refresh requested: skipping cached results for this point.', 'info');
+    addLog('Running the access test: tract → 2020 Census blocks → SNAP store tiles → ERS 2025 flags…', 'info');
 
     try {
-      addLog('Fetching USDA Food Access Atlas CSV…', 'info');
-      addLog('Pulling CDC PLACES health metrics…', 'info');
-      addLog('Loading Census ACS 5-year estimates…', 'info');
-
       const data = await buildCommunityData(lat, lng, { forceRefresh });
       if (!data) throw new Error('No census tract found. Try a different US location.');
       // A newer search started while this one was in flight — its results
@@ -316,110 +476,7 @@ export default function TrackerApp({ onHome }) {
       // search owns the loading flag; leave it alone here.
       if (mySearch !== searchNonceRef.current) return;
 
-      const cacheStatus = data.meta?.cache?.status;
-      if (cacheStatus === 'memory' || cacheStatus === 'local') {
-        addLog(
-          `Community cache hit: ${cacheStatus} (${Math.ceil(Number(data.meta?.cache?.expiresInMs || 0) / 60000)}m until refresh)`,
-          'info',
-        );
-      } else if (cacheStatus === 'fresh') {
-        addLog('Community cache: fresh fetch', 'info');
-      }
-
-      addLog(`Census tract: ${data.meta.fips}  (${data.meta.stateAbbr})`, 'success');
-      addLog(`ZIP code: ${data.meta.zip || 'N/A'}`, 'info');
-      if (!data.foodAccess.hasUsdaMatch) {
-        addLog('USDA tract row not found, using derived food-desert fallback logic.', 'warning');
-      } else if (data.foodAccess.matchQuality === 'county_nearest') {
-        addLog('USDA exact tract unavailable; matched nearest tract within county sample.', 'warning');
-      }
-      const distanceThreshold = Number(data.foodAccess.distanceThresholdMiles || (data.foodAccess.isRural ? 5 : 1));
-      const communityAvgDistanceLabel = data.foodAccess.isTwentyFivePlusMiles === true
-        ? '25+ miles'
-        : (Number.isFinite(data.foodAccess.communityAverageSupermarketMiles)
-          ? `${Number(data.foodAccess.communityAverageSupermarketMiles).toFixed(1)} miles`
-          : 'unavailable');
-      const finalDesignationLabel = data.foodAccess.finalDesignation === 'unknown'
-        ? 'UNKNOWN ?'
-        : (data.foodAccess.isFoodDesert ? 'DESIGNATED ⚠' : 'NOT DESIGNATED ✓');
-
-      addLog(
-        `Food desert (${data.foodAccess.isRural ? 'rural' : 'urban'} ${distanceThreshold.toFixed(0)}-mile rule): ${finalDesignationLabel} (community avg: ${communityAvgDistanceLabel})`,
-        data.foodAccess.finalDesignation === 'unknown'
-          ? 'warning'
-          : (data.foodAccess.isFoodDesert ? 'warning' : 'success'),
-      );
-      if (Number.isFinite(data.foodAccess.centerNearestSupermarketMiles)) {
-        addLog(
-          `Center-point nearest supermarket (reference): ${Number(data.foodAccess.centerNearestSupermarketMiles).toFixed(1)} miles`,
-          'info',
-        );
-      }
-      addLog(`Designation method: ${data.foodAccess.designationMethod || 'n/a'}`, 'info');
-
-      if (data.foodAccess.sourceComparable) {
-        addLog(
-          `Distance vs USDA: ${data.foodAccess.sourceDisagreement ? 'DISAGREE' : 'agree'} (${data.foodAccess.distanceDesignation} vs ${data.foodAccess.usdaDesignation})`,
-          data.foodAccess.sourceDisagreement ? 'warning' : 'info',
-        );
-      }
-
-      const accessDistanceRule = data.foodAccess.accessRule === 'rural_10mi' ? 'USDA 10-mile (rural)' : 'USDA 1-mile (urban)';
-      addLog(
-        `USDA low-access test: ${data.foodAccess.isLowAccess ? 'PASS' : 'FAIL'} (${accessDistanceRule}; ${Number(data.foodAccess.qualifyingLowAccessPct || 0).toFixed(1)}% / ${Math.round(Number(data.foodAccess.lowAccessPopulationCount || 0)).toLocaleString()} residents)`,
-        data.foodAccess.isLowAccess ? 'warning' : 'info',
-      );
-
-      addLog(
-        `USDA low-income test: ${data.foodAccess.isLowIncome ? 'PASS' : 'FAIL'} (poverty >=20%: ${data.foodAccess.lowIncomeByPoverty ? 'yes' : 'no'}; income <=80% state median: ${data.foodAccess.lowIncomeByIncomeThreshold ? 'yes' : 'no'})`,
-        data.foodAccess.isLowIncome ? 'warning' : 'info',
-      );
-
-      addLog(
-        `Vehicle access indicator: ${data.foodAccess.vehicleAccessConcern ? 'FLAGGED' : 'clear'} (100+ no-vehicle households with low-access exposure)`,
-        data.foodAccess.vehicleAccessConcern ? 'warning' : 'info',
-      );
-
-      if (data.foodAccess.isTwentyFivePlusMiles === true) {
-        addLog('Community average supermarket distance (est.): 25+ miles', 'warning');
-      } else if (Number.isFinite(data.foodAccess.communityAverageSupermarketMiles)) {
-        addLog(`Community average supermarket distance (est.): ${Number(data.foodAccess.communityAverageSupermarketMiles).toFixed(1)} miles`, 'info');
-      }
-
-      const lowAccess1 = Number(data.foodAccess.pctLowAccess1mi || 0);
-      const lowAccess10 = Number(data.foodAccess.pctLowAccess10mi || 0);
-      const noVehicleLow = Number(data.foodAccess.pctNoVehicleLowAccess || 0);
-      const isRural = Boolean(data.foodAccess.isRural);
-      const accessCrisis =
-        data.foodAccess.isTwentyFivePlusMiles === true ||
-        (isRural && lowAccess1 >= 90 && noVehicleLow >= 3) ||
-        (Number(data.foodAccess.qualifyingLowAccessPct || 0) >= 66);
-      const accessElevated = !accessCrisis && Number(data.foodAccess.qualifyingLowAccessPct || 0) >= 33;
-
-      if (accessCrisis) {
-        addLog(`Access burden: CRISIS (${isRural ? `10mi=${lowAccess10.toFixed(1)}%, 1mi=${lowAccess1.toFixed(1)}%` : `1mi=${lowAccess1.toFixed(1)}%`})`, 'warning');
-      } else if (accessElevated) {
-        addLog(`Access burden: ELEVATED (${isRural ? `10mi=${lowAccess10.toFixed(1)}%` : `1mi=${lowAccess1.toFixed(1)}%`})`, 'info');
-      } else {
-        addLog(`Access burden: stable (${isRural ? `10mi=${lowAccess10.toFixed(1)}%` : `1mi=${lowAccess1.toFixed(1)}%`})`, 'info');
-      }
-
-      addLog(
-        `Low access (${isRural ? '10mi' : '1mi'}): ${Number(data.foodAccess.qualifyingLowAccessPct || 0).toFixed(1)}%`,
-        'info',
-      );
-      addLog(`Diabetes: ${Number(data.health.diabetes || 0).toFixed(1)}%  |  Obesity: ${Number(data.health.obesity || 0).toFixed(1)}%`, 'info');
-      addLog('Running projection engine…', 'info');
-
-      const impact = buildImpact(data, [], { lat, lng });
-
-      addLog(`Impact: +${Number(impact.foodAccess.residentsGainingAccess).toLocaleString()} residents gain access`, 'success');
-      addLog(`Economic: ${impact.economic.jobsMin}–${impact.economic.jobsMax} jobs · $${(impact.economic.annualLocalImpact / 1e6).toFixed(1)}M local impact`, 'success');
-      addLog(`True cost: ${impact.trueCost.totalAccessCostBefore.toFixed(2)} -> ${impact.trueCost.totalAccessCostAfter.toFixed(2)} per trip`, 'info');
-      addLog('Analysis pipeline complete ✓', 'success');
-
-      setBaselineImpact(impact);
-      setImpactData(impact);
+      logAnalysis(data);
       setCommunityData(data);
     } catch (err) {
       // Stale search: a newer one owns the UI — don't paint its error or
@@ -432,115 +489,151 @@ export default function TrackerApp({ onHome }) {
     }
   }
 
+  function closeCitySummary() {
+    citySummaryNonceRef.current += 1;
+    citySummaryAbortRef.current?.abort();
+    citySummaryAbortRef.current = null;
+    setCitySummary(null);
+  }
+
+  // place: meta.place plus the searched tract's county (for the bundled check).
+  async function runCitySummary(place) {
+    if (!place?.geoid) return;
+    const nonce = citySummaryNonceRef.current + 1;
+    citySummaryNonceRef.current = nonce;
+    citySummaryAbortRef.current?.abort();
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    citySummaryAbortRef.current = controller;
+    const current = () => nonce === citySummaryNonceRef.current;
+
+    setCitySummary({ status: 'loading', place, progress: null, result: null });
+    addLog(`City summary: ${place.name || place.geoid} — loading every 2020 Census block inside the city boundary…`, 'system');
+    try {
+      const result = await loadPlaceSummary(place, {
+        signal: controller?.signal,
+        onProgress: (progress) => {
+          if (current()) setCitySummary((s) => (s && s.status === 'loading' ? { ...s, progress } : s));
+        },
+      });
+      if (!current()) return;
+      setCitySummary({ status: result.status === 'ok' ? 'ok' : 'unknown', place, progress: null, result });
+      if (result.status === 'ok') {
+        const source = result.source === 'bundled' ? 'bundled county file' : 'TIGERweb, live';
+        addLog(
+          `City summary (estimate): ${approx(result.population)} residents in ${plural(result.tractCount, 'tract')} (${source}); ${approx(result.beyond)} (${pct(result.share)}) beyond their tract's limit; ${approx(result.meeting.residents)} (${pct(result.meeting.share)}) in ${plural(result.meeting.tracts, 'tract')} meeting the test`,
+          'success',
+        );
+      } else {
+        addLog(`City summary: unknown — ${CITY_REASON_LOG[result.reason] || 'an input did not load'}. No partial totals shown.`, 'warning');
+      }
+    } catch (err) {
+      if (!current()) return;
+      setCitySummary({ status: 'unknown', place, progress: null, result: { status: 'unknown', reason: 'failed' } });
+      addLog(`City summary: stopped — ${err?.message || 'unexpected error'}.`, 'error');
+    } finally {
+      if (current()) citySummaryAbortRef.current = null;
+    }
+  }
+
+  function handleSummarizeCity() {
+    const meta = communityData?.meta;
+    if (!meta?.place) return;
+    runCitySummary({ ...meta.place, countyFips: meta.countyFips });
+  }
+
+  function handleCitySummaryTract(row) {
+    if (!Number.isFinite(row?.intptLat) || !Number.isFinite(row?.intptLng)) return;
+    addLog(`City summary: opening census tract ${row.basename}`, 'info');
+    handleLocationSearch(row.intptLat, row.intptLng, { keepCitySummary: true });
+  }
+
+  // One log line per scenario change, from the computed result. A change
+  // that leaves the line identical (dollar store -> corner store) logs nothing.
+  const threshold = communityData?.access?.threshold;
+  const lastScenarioLogRef = useRef('');
   useEffect(() => {
-    if (!scenarioResult) return;
-    const fmt = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} mi` : 'n/a');
-    addLog(
-      `Scenario: ${scenarioResult.placedCount} placed store${scenarioResult.placedCount === 1 ? '' : 's'} — avg ${fmt(scenarioResult.beforeAvg)} → ${fmt(scenarioResult.afterAvg)}, ${scenarioResult.beforeLabel} → ${scenarioResult.afterLabel}`,
-      scenarioResult.flipped ? 'success' : 'info',
-    );
-  }, [scenarioResult, addLog]);
+    if (!scenarioResult) {
+      lastScenarioLogRef.current = '';
+      return;
+    }
+    const { counting, nonCounting, before, after, flipped } = scenarioResult;
+    const text = counting === 0
+      ? `Scenario: ${plural(nonCounting, 'placed store')}, none a supermarket — USDA's supermarket-based test is unchanged.`
+      : `Scenario (computed): ${plural(counting, 'counting store')}${nonCounting ? `, ${nonCounting} not counted` : ''} — residents beyond ${threshold} mi ${approx(before.beyond)} → ${approx(after.beyond)}; test ${VERDICT_LABEL[before.verdict.status]} → ${VERDICT_LABEL[after.verdict.status]}`;
+    if (text === lastScenarioLogRef.current) return;
+    lastScenarioLogRef.current = text;
+    addLog(text, flipped ? 'success' : 'info');
+  }, [scenarioResult, threshold, addLog]);
 
-  function addSimulationPin(type, plat, plng) {
+  function addPin(plat, plng, format = DEFAULT_STORE_FORMAT) {
     if (!communityData) {
-      addLog('Load a location before running Sim Lab.', 'warning');
+      addLog('Load a location before placing a store.', 'warning');
       return;
     }
-    if (simPins.length >= 10) {
-      addLog('Sim Lab pin limit reached (10). Clear or undo to continue.', 'warning');
-      return;
-    }
-
     const pin = {
-      id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      type,
+      id: makePinId(),
       lat: Number.isFinite(plat) ? plat : mapCenter.lat,
       lng: Number.isFinite(plng) ? plng : mapCenter.lng,
+      format: normalizeFormat(format),
       createdAt: Date.now(),
     };
-
-    const next = [...simPins, pin];
-    setSimPins(next);
-    const impact = buildImpact(communityData, next, mapCenter);
-    setImpactData(impact);
-
-    addLog(`Sim Lab: ${type} pin placed at center`, 'success');
-    addLog(`Updated impact: +${Number(impact.foodAccess.residentsGainingAccess).toLocaleString()} residents, coverage ${(impact.simulation.coverageScore * 100).toFixed(0)}%`, 'info');
+    if (!isValidPoint(pin)) return;
+    if (pins.length >= MAX_PINS) {
+      addLog(`Store limit reached (${MAX_PINS}). Remove, undo or clear to place another.`, 'warning');
+      return;
+    }
+    setPins((prev) => (prev.length >= MAX_PINS ? prev : [...prev, pin]));
+    addLog(`Placed: ${storeFormatInfo(pin.format).label} at ${pin.lat.toFixed(4)}, ${pin.lng.toFixed(4)}`, 'success');
   }
 
-  function undoSimulationPin() {
-    if (!communityData || simPins.length === 0) return;
-    const next = simPins.slice(0, -1);
-    setSimPins(next);
-    const impact = buildImpact(communityData, next, mapCenter);
-    setImpactData(impact);
-    addLog('Sim Lab: last pin removed', 'info');
+  function setPinFormat(id, format) {
+    if (!PIN_FORMATS.includes(format)) return;
+    const pin = pins.find((p) => p.id === id);
+    if (!pin || pin.format === format) return;
+    setPins((prev) => prev.map((p) => (p.id === id ? { ...p, format } : p)));
+    addLog(`Store changed to: ${storeFormatInfo(format).label}`, 'info');
   }
 
-  function clearSimulationPins() {
-    if (!communityData || simPins.length === 0) return;
-    setSimPins([]);
-    const impact = buildImpact(communityData, [], mapCenter);
-    setImpactData(impact);
-    addLog('Sim Lab: pins cleared, baseline scenario restored', 'info');
+  function removePin(id) {
+    if (!pins.some((p) => p.id === id)) return;
+    setPins((prev) => prev.filter((p) => p.id !== id));
+    addLog('Placed store removed', 'info');
   }
 
-  function saveScenarioSnapshot() {
-    if (!impactData || !baselineImpact) return;
-    setSavedScenario({ impact: impactData, savedAt: new Date().toISOString() });
-    addLog('Scenario snapshot saved for compare table', 'success');
+  function undoPin() {
+    if (pins.length === 0) return;
+    setPins((prev) => prev.slice(0, -1));
+    addLog('Last placed store removed', 'info');
   }
 
-  function clearScenarioSnapshot() {
-    setSavedScenario(null);
-    addLog('Scenario snapshot cleared', 'info');
+  function clearPins() {
+    if (pins.length === 0) return;
+    setPins([]);
+    addLog('Placed stores cleared; showing the tract as it is', 'info');
   }
 
-  // Idempotent re-run of the numbers from the current pins (pure + local).
-  // Gives the place-mode workflow an explicit recompute step with a log
-  // trail, instead of only silent live updates.
-  function recomputeScenario() {
-    if (!communityData) return;
-    const impact = buildImpact(communityData, simPins, mapCenter);
-    setImpactData(impact);
-    const fmt = (v) => (Number.isFinite(v) ? `${v.toFixed(1)} mi` : 'n/a');
-    addLog(
-      `Scenario recomputed (${simPins.length} placed): avg ${fmt(scenarioResult.beforeAvg)} → ${fmt(scenarioResult.afterAvg)}, ${scenarioResult.beforeLabel} → ${scenarioResult.afterLabel}`,
-      scenarioResult.flipped ? 'success' : 'info',
-    );
-  }
-
-  // Batch-restore shared-link pins as grocery pins. One update (not a loop
-  // over addSimulationPin — each call would close over the same stale
-  // simPins and only the last pin would survive).
-  function restoreSharedPins(coords) {
-    if (!communityData || !Array.isArray(coords) || coords.length === 0) return;
-    const room = Math.max(10 - simPins.length, 0);
-    const fresh = coords.slice(0, room).map((c, i) => ({
-      id: `shared-${Date.now()}-${i}`,
-      type: 'grocery',
-      lat: c.lat,
-      lng: c.lng,
-      createdAt: Date.now(),
-    }));
-    if (fresh.length === 0) return;
-    const next = [...simPins, ...fresh];
-    setSimPins(next);
-    setImpactData(buildImpact(communityData, next, mapCenter));
-    addLog(
-      `Shared link: restored ${fresh.length} placed store${fresh.length === 1 ? '' : 's'} — scenario replayed`,
-      'success',
-    );
-  }
-
-  // Fires once the hydrate search delivers data: shared-link pins become
-  // real scenario pins and the delta banner recomputes from them.
+  // Fires once the analysis delivers data: pending pins (shared link,
+  // example chip, refresh) become real pins with their formats, and the
+  // scenario recomputes from them.
   useEffect(() => {
     if (!communityData || !pendingPinsRef.current) return;
-    const coords = pendingPinsRef.current;
+    const { pins: pending, source } = pendingPinsRef.current;
     pendingPinsRef.current = null;
-    restoreSharedPins(coords);
-    // Runs once per hydrate; communityData arriving is the trigger.
+    const now = Date.now();
+    const fresh = pending
+      .filter(isValidPoint)
+      .slice(0, MAX_PINS)
+      .map((p, i) => ({
+        id: makePinId(),
+        lat: p.lat,
+        lng: p.lng,
+        format: normalizeFormat(p.format),
+        createdAt: now + i,
+      }));
+    if (fresh.length === 0) return;
+    setPins(fresh);
+    addLog(`Restored ${plural(fresh.length, 'placed store')} from the ${source}.`, 'success');
+    // communityData arriving is the trigger; the ref carries the pins.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communityData]);
 
@@ -551,9 +644,9 @@ export default function TrackerApp({ onHome }) {
     if (!communityData) return;
     // Scenario links open with sources highlighted (hl=1): the map boots
     // with the highlight layer on so the shared stores are visible.
-    writeHashNow(simPins.length > 0 ? { highlight: true } : {});
+    writeHashNow(pins.length > 0 ? { highlight: true } : {});
     const url = window.location.href;
-    const confirm = () => addLog('Scenario link copied — opening it replays this location and placed stores', 'success');
+    const confirm = () => addLog('Link copied — opening it replays this location and its placed stores.', 'success');
     try {
       await navigator.clipboard.writeText(url);
       confirm();
@@ -577,13 +670,12 @@ export default function TrackerApp({ onHome }) {
   }
 
   // Auto-run the pipeline once on mount when a lat/lng was supplied via the
-  // URL hash. We guard with a ref so this fires exactly once per page load,
-  // and only if no analysis is already in flight.
+  // URL hash. We guard with a ref so this fires exactly once per page load.
   const didHydrateRef = useRef(false);
   useEffect(() => {
     if (didHydrateRef.current) return;
     didHydrateRef.current = true;
-    if (Number.isFinite(initialUrlState.lat) && Number.isFinite(initialUrlState.lng)) {
+    if (hasInitialPoint) {
       addLog('Restoring location from shared link…', 'system');
       handleLocationSearch(initialUrlState.lat, initialUrlState.lng, { fromSharedLink: true });
     }
@@ -630,17 +722,19 @@ export default function TrackerApp({ onHome }) {
     );
   }
 
+  // "Summarize {City}" shows only for a city search whose point has a
+  // Census place (the panel also requires the names to match), and not
+  // while a summary is open.
+  const canSummarize = Boolean(communityData?.meta?.place) && lastSearch?.placeKind === 'city' && !citySummary;
   const panelProps = {
     communityData,
-    impactData,
-    baselineImpact,
-    savedScenario,
-    onSaveScenario: saveScenarioSnapshot,
-    onClearScenario: clearScenarioSnapshot,
-    showImpact,
-    onToggleImpact: () => setShowImpact((value) => !value),
-    onJumpToTract: (lat, lng) => handleLocationSearch(lat, lng),
     loading,
+    lastSearch,
+    onSummarizeCity: canSummarize ? handleSummarizeCity : undefined,
+    citySummary,
+    onCitySummaryTract: handleCitySummaryTract,
+    onCloseCitySummary: closeCitySummary,
+    onRetryCitySummary: citySummary?.place ? () => runCitySummary(citySummary.place) : undefined,
     dataError,
     logs,
   };
@@ -671,22 +765,24 @@ export default function TrackerApp({ onHome }) {
     </div>
   );
 
-  // Experiment result card: null when no pins placed, so it is safe to
-  // mount unconditionally (map overlay on desktop, stacked on mobile —
-  // including pins replayed from a shared link).
+  // Scenario card: renders nothing without pins, so it is safe to mount
+  // unconditionally (map overlay on desktop, stacked on mobile — including
+  // pins replayed from a shared link or an example chip). Pins are editable
+  // from the card on both.
   const scenarioCard = (
     <ScenarioResultCard
       scenario={scenarioResult}
-      impactData={impactData}
       communityData={communityData}
-      onRecompute={recomputeScenario}
+      pins={pins}
+      onSetPinFormat={setPinFormat}
+      onRemovePin={removePin}
+      onClearPins={clearPins}
     />
   );
 
   // Phones skip the map shell entirely: no Streets GL iframe, no 2D canvas.
-  // A designated-area lookup on mobile is an info-only page (designation,
-  // stats, impact) with search + share. Desktop JSX below is
-  // untouched by this branch.
+  // The lookup on mobile is an info-only page (tract test, references,
+  // profile, scenario) with search + share.
   if (isMobile) {
     return (
       <div
@@ -703,12 +799,32 @@ export default function TrackerApp({ onHome }) {
             onShareScenario={handleShareScenario}
             panels={<Panels {...panelProps} />}
             scenario={scenarioCard}
+            hasPins={pins.length > 0}
             onHome={onHome}
           />
         </div>
       </div>
     );
   }
+
+  const streetsView = (
+    <StreetsGlView
+      lat={mapCenter.lat}
+      lng={mapCenter.lng}
+      isLoading={loading}
+      hasData={!!communityData}
+      onSearch={handleLocationSearch}
+      onUndoPin={undoPin}
+      onClearPins={clearPins}
+      onShareScenario={handleShareScenario}
+      // StreetsGlView wraps a non-null card in its overlay box; the card is
+      // empty without pins, so pass null then and no box mounts.
+      scenarioCard={pins.length > 0 ? scenarioCard : null}
+      placedStores={placedStores}
+      onPlaceStore={(plat, plng, format = DEFAULT_STORE_FORMAT) => addPin(plat, plng, format)}
+      stores={mapStores}
+    />
+  );
 
   return (
     <div
@@ -726,31 +842,10 @@ export default function TrackerApp({ onHome }) {
       />
 
       <div className="flex-1 overflow-hidden min-h-0">
-        {layout === 'bottom' || isMobile ? (
+        {layout === 'bottom' ? (
           <div className="flex flex-col h-full">
             <div className="flex-1 relative min-h-0">
-              {locationPicked || communityData ? (
-                <StreetsGlView
-                  lat={mapCenter.lat}
-                  lng={mapCenter.lng}
-                  isLoading={loading}
-                  hasData={!!communityData}
-                  onSearch={handleLocationSearch}
-                  mode={mode}
-                  pinCounts={pinCounts}
-                  pinTotal={simPins.length}
-                  onAddPin={addSimulationPin}
-                  onUndoPin={undoSimulationPin}
-                  onClearPins={clearSimulationPins}
-                  onShareScenario={handleShareScenario}
-                  scenarioCard={scenarioCard}
-                  placedStores={placedStores}
-                  onPlaceStore={(plat, plng) => addSimulationPin('grocery', plat, plng)}
-                  stores={communityData?.foodAccess?.stores || []}
-                />
-              ) : (
-                <LocationGate onSelect={handleGateSelect} />
-              )}
+              {locationPicked || communityData ? streetsView : <LocationGate onSelect={handleGateSelect} />}
             </div>
             <ResizeHandle
               orientation="horizontal"
@@ -765,28 +860,7 @@ export default function TrackerApp({ onHome }) {
         ) : (
           <div className="flex h-full">
             <div className="flex-1 relative min-h-0">
-              {locationPicked || communityData ? (
-                <StreetsGlView
-                  lat={mapCenter.lat}
-                  lng={mapCenter.lng}
-                  isLoading={loading}
-                  hasData={!!communityData}
-                  onSearch={handleLocationSearch}
-                  mode={mode}
-                  pinCounts={pinCounts}
-                  pinTotal={simPins.length}
-                  onAddPin={addSimulationPin}
-                  onUndoPin={undoSimulationPin}
-                  onClearPins={clearSimulationPins}
-                  onShareScenario={handleShareScenario}
-                  scenarioCard={scenarioCard}
-                  placedStores={placedStores}
-                  onPlaceStore={(plat, plng) => addSimulationPin('grocery', plat, plng)}
-                  stores={communityData?.foodAccess?.stores || []}
-                />
-              ) : (
-                <LocationGate onSelect={handleGateSelect} />
-              )}
+              {locationPicked || communityData ? streetsView : <LocationGate onSelect={handleGateSelect} />}
             </div>
             <ResizeHandle
               orientation="vertical"

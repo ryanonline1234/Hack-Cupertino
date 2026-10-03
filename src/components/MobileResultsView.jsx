@@ -2,20 +2,21 @@ import { useState } from 'react';
 import LocationGate from './LocationGate';
 
 /*
- * MobileResultsView: the phone-sized tracker experience. A designated-area
- * lookup only needs the answer — designation, key stats, impact
- * — so phones get an info-only page with no map surface at all: no Streets
- * GL iframe, no 2D canvas, no WebGL. The heavy renderers stay desktop-only.
+ * MobileResultsView: the phone-sized tracker experience. Phones get an
+ * info-only page with no map surface at all: no Streets GL iframe, no 2D
+ * canvas, no WebGL. The heavy renderers stay desktop-only.
  *
- * Pre-search reuses LocationGate (same fuzzy search + examples). Post-search
- * stacks the existing desktop panels (CommunityStatsPanel, pipeline log)
- * in a natural page scroll. Place-a-store needs a map to point at, so
- * it stays desktop-only; Share still works — the copied link replays the
- * full simulation on a bigger screen.
+ * Pre-search reuses LocationGate (same fuzzy search + examples; an example
+ * may carry pins, passed through in options). Post-search stacks the
+ * scenario card (when stores are placed) above the same panels as desktop:
+ * the Tract view (CommunityStatsPanel) and the pipeline log. Placing a new
+ * store needs the desktop map, but stores replayed from a shared link or an
+ * example can be changed or removed here from the scenario card.
  *
  * Props:
  *   locationPicked, communityData, loading, dataError,
- *   onGateSelect(lat, lng), onShareScenario(), panels (React node)
+ *   onGateSelect(lat, lng, options), onShareScenario(),
+ *   panels (React node), scenario (React node), hasPins, onHome()
  */
 export default function MobileResultsView({
   locationPicked,
@@ -26,14 +27,15 @@ export default function MobileResultsView({
   onShareScenario,
   panels,
   scenario,
+  hasPins = false,
   onHome,
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const showGate = searchOpen || (!locationPicked && !communityData && !loading);
 
-  function handleGateSelect(lat, lng) {
+  function handleGateSelect(lat, lng, options = {}) {
     setSearchOpen(false);
-    onGateSelect(lat, lng);
+    onGateSelect(lat, lng, options);
   }
 
   return (
@@ -76,7 +78,7 @@ export default function MobileResultsView({
           <button
             type="button"
             onClick={() => onShareScenario?.()}
-            title="Copy a link that replays this location"
+            title={hasPins ? 'Copy a link that replays this location and its placed stores' : 'Copy a link that replays this location'}
             className="rounded-full px-4 text-xs font-semibold btn-press"
             style={{
               minHeight: '44px',
@@ -110,7 +112,7 @@ export default function MobileResultsView({
                   className="shrink-0 rounded-full animate-pulse"
                   style={{ width: '10px', height: '10px', background: 'var(--cyan)' }}
                 />
-                Analyzing location — census, health, and food-access sources…
+                Running the tract test — Census blocks, SNAP stores, USDA ERS…
               </div>
             )}
             {dataError && !loading && (
@@ -130,9 +132,9 @@ export default function MobileResultsView({
             {panels}
             {communityData && (
               <p className="text-center text-[11px] leading-relaxed px-6 text-white/40">
-                3D map, US atlas, and place-a-store experiments are
-                desktop-only. Use Share above to open this location as a
-                full simulation on a bigger screen.
+                The map, the USDA 2019 atlas and placing new stores are
+                desktop-only. Use Share above to open this location on a
+                bigger screen.
               </p>
             )}
           </div>

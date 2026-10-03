@@ -10,7 +10,7 @@ const srcPath = fileURLToPath(new URL('./src', import.meta.url))
 export default defineConfig({
   plugins: [
     react(),
-    // Runs api/acs.js and api/overpass.js locally (dev + preview).
+    // Runs api/acs.js locally (dev + preview).
     apiDev(),
     /*
      * Service worker via Workbox. Strategy:
@@ -32,7 +32,7 @@ export default defineConfig({
       manifest: {
         name: 'Food Desert AI — Impact Simulator',
         short_name: 'Food Desert AI',
-        description: 'Tract-centric food access analysis with USDA, CDC, Census, and OSM data.',
+        description: 'Tract-level food access: the USDA low-income & low-access rule on 2020 Census blocks and USDA\'s SNAP supermarket list.',
         id: '/',
         theme_color: '#050608',
         background_color: '#050608',
@@ -140,7 +140,7 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/cdc/, ''),
       },
-      // /api/acs and /api/overpass are not proxied: vite-plugin-api-dev.js
+      // /api/acs is not proxied: vite-plugin-api-dev.js
       // runs the real handlers from api/ so dev matches production.
     },
   },

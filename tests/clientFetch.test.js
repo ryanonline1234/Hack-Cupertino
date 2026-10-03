@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { getCensusData } from '../src/pipeline/censusFetch.js';
-import { getNearestSupermarketDistance } from '../src/pipeline/storeDistanceFetch.js';
 import { jsonResponse, stubFetch } from './helpers/mockVercelRes.js';
 
 const EMPTY_CENSUS = {
@@ -40,35 +39,6 @@ test('census fetch falls back to defaults on a bad FIPS or a failed call', async
     assert.equal(stub.calls.length, 0);
     assert.deepEqual(await getCensusData('06085504602'), EMPTY_CENSUS);
     assert.equal(stub.calls.length, 1);
-  } finally {
-    stub.restore();
-  }
-});
-
-test('store lookup posts coordinates (not query text) to /api/overpass only', async () => {
-  const stub = stubFetch(async () => jsonResponse({
-    elements: [{ type: 'node', id: 1, lat: 40.1001, lon: -75.2001, tags: { name: 'Corner Market' } }],
-  }));
-  try {
-    const result = await getNearestSupermarketDistance(40.1, -75.2);
-    assert.equal(stub.calls.length, 1);
-    assert.equal(stub.calls[0].url, '/api/overpass');
-    assert.deepEqual(JSON.parse(stub.calls[0].init.body), { lat: 40.1, lng: -75.2 });
-    assert.equal(result.source, 'osm_overpass:/api/overpass');
-    assert.equal(result.stores[0].name, 'Corner Market');
-  } finally {
-    stub.restore();
-  }
-});
-
-test('store lookup reports unavailable instead of trying third-party mirrors', async () => {
-  const stub = stubFetch(async () => new Response('bad gateway', { status: 502 }));
-  try {
-    const result = await getNearestSupermarketDistance(41.2, -76.3);
-    assert.equal(stub.calls.length, 1);
-    assert.equal(stub.calls[0].url, '/api/overpass');
-    assert.equal(result.source, 'unavailable');
-    assert.equal(result.nearestSupermarketMiles, null);
   } finally {
     stub.restore();
   }

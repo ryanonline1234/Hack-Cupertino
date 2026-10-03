@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { gsap } from 'gsap';
-import { EXAMPLE_LOCATIONS, designationTag, fetchSuggestions, geocodeAddress } from '../lib/locationSearch';
+import { EXAMPLE_LOCATIONS, verdictTag, fetchSuggestions, geocodeAddress } from '../lib/locationSearch';
 
 /*
  * LocationGate: the tracker opens here instead of booting the heavy Streets
@@ -8,8 +8,20 @@ import { EXAMPLE_LOCATIONS, designationTag, fetchSuggestions, geocodeAddress } f
  * with fuzzy suggestions, or a one-tap example), and only then does the
  * parent mount the map — already pointed at the chosen area.
  *
- * Props: onSelect(lat, lng)
+ * Props: onSelect(lat, lng, { placeKind, placeName, pins? })
+ *   placeKind/placeName come from the suggestion or geocode result (or the
+ *   example chip); pins (example chips only) are placed after the analysis
+ *   loads, exactly like share-link pins.
  */
+
+// Untagged chips without a placeKind are plain points: no city claim.
+function chipOptions(loc) {
+  const options = { placeKind: loc.placeKind ?? 'other', placeName: loc.placeName ?? loc.label };
+  if (Array.isArray(loc.pins) && loc.pins.length > 0) {
+    options.pins = loc.pins.map((p) => ({ lat: p.lat, lng: p.lng, format: p.format }));
+  }
+  return options;
+}
 
 const DEBOUNCE_MS = 300;
 
@@ -93,7 +105,7 @@ export default function LocationGate({ onSelect }) {
     setSuggestions([]);
     setShowDrop(false);
     setError('');
-    onSelect(s.lat, s.lng);
+    onSelect(s.lat, s.lng, { placeKind: s.placeKind, placeName: s.placeName });
   }
 
   async function submitExact() {
@@ -106,8 +118,8 @@ export default function LocationGate({ onSelect }) {
     setSearching(true);
     setError('');
     try {
-      const { lat, lng } = await geocodeAddress(q);
-      onSelect(lat, lng);
+      const { lat, lng, placeKind, placeName } = await geocodeAddress(q);
+      onSelect(lat, lng, { placeKind, placeName });
     } catch (err) {
       setError(err?.message || 'Location not found — try a US city, address, or ZIP code');
     } finally {
@@ -140,8 +152,8 @@ export default function LocationGate({ onSelect }) {
           Choose a location to analyze
         </h2>
         <p className="text-sm text-white/50 mb-6">
-          The 3D map loads after you pick — already framed on your area —
-          so there&apos;s no waiting on a map you didn&apos;t ask for.
+          We estimate USDA&apos;s low-income &amp; low-access test for the
+          census tract at the spot you pick. The map loads after you choose.
         </p>
 
         <div className="relative" ref={dropRef}>
@@ -202,13 +214,17 @@ export default function LocationGate({ onSelect }) {
         <div className="mt-6 flex gap-2 flex-wrap items-center">
           <span className="text-xs text-white/30 mr-1">Try:</span>
           {EXAMPLE_LOCATIONS.map((loc) => {
-            const tag = designationTag(loc);
+            const tag = verdictTag(loc);
+            const title = [loc.label, tag && `computed for this tract: ${tag.text}`, loc.note]
+              .filter(Boolean)
+              .join(' · ');
             return (
               <button
                 key={loc.label}
                 type="button"
-                onClick={() => onSelect(loc.lat, loc.lng)}
-                title={tag ? `Model verdict: ${tag.text}` : loc.label}
+                onClick={() => onSelect(loc.lat, loc.lng, chipOptions(loc))}
+                title={title}
+                aria-label={title}
                 className="gate-chip btn-press px-3 py-2 min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full text-xs transition-[border-color,color,background-color] duration-150 hover:border-[#5ef2a0]/40 hover:text-white/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ef2a0]"
                 style={{
                   background: 'rgba(5,6,8,0.75)',
@@ -225,6 +241,7 @@ export default function LocationGate({ onSelect }) {
                   </span>
                 )}
                 {loc.label}
+                {loc.note && <span className="text-white/35">· {loc.note}</span>}
               </button>
             );
           })}

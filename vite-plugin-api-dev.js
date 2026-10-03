@@ -12,7 +12,6 @@ import { loadEnv } from 'vite';
 
 const ROUTES = {
   '/api/acs': 'api/acs.js',
-  '/api/overpass': 'api/overpass.js',
 };
 const SERVER_ENV = ['CENSUS_KEY'];
 const MAX_BODY_BYTES = 16 * 1024;

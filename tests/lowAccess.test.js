@@ -62,8 +62,9 @@ function blocksWithPops(pops) {
 
 // --- geo ------------------------------------------------------------------
 
-test('haversineMiles matches the storeDistanceFetch formula (3958.8 mi radius)', () => {
-  // Reference values produced by src/pipeline/storeDistanceFetch.js on 2026-10-02.
+test('haversineMiles keeps the original formula (3958.8 mi radius)', () => {
+  // Reference values produced on 2026-10-02 by the haversine the app used
+  // before it moved to src/lib/geo.js (that store-lookup module is retired).
   const cases = [
     [[37.42105, -121.9727, 37.3382, -121.8863], 7.43453010908616],
     [[33.4106, -91.0618, 33.4, -91.05], 0.9998237675612783],

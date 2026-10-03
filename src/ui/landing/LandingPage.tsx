@@ -20,52 +20,52 @@ const TREE = [
   { code: "RISK-18", title: "18% of households have no vehicle", depth: 1, mark: "risk" },
   { code: "NOTE-37", title: "37% of residents are food insecure", depth: 1, mark: "dash" },
   { code: "DEED-75", title: "A 75-year covenant in a 128-page deed", depth: 1, mark: "risk" },
-  { code: "EPIC-02", title: "What one new grocery changes", depth: 0, mark: "epic" },
-  { code: "CHG-10", title: "About 10% lower local obesity in three years", depth: 1, mark: "bars" },
-  { code: "US-03", title: "Read the designation and the reason beside it", depth: 1, mark: "dash" },
-  { code: "SRC-USDA", title: "Tracts come from the Food Access Atlas", depth: 1, mark: "bars" },
+  { code: "EPIC-02", title: "What one new supermarket changes", depth: 0, mark: "epic" },
+  { code: "CALC-01", title: "Residents brought within the distance limit, computed", depth: 1, mark: "bars" },
+  { code: "US-03", title: "Read the test result and the reason beside it", depth: 1, mark: "dash" },
+  { code: "SRC-USDA", title: "The rule comes from USDA ERS's Food Access Research Atlas", depth: 1, mark: "bars" },
 ] as const;
 
 const PLACES = [
-  { name: "Greenville, MS", meta: "Designated", tone: "desert" },
+  { name: "Greenville, MS", meta: "Meets test", tone: "desert" },
   { name: "Woonsocket, RI", meta: "Cited case", tone: "deed" },
-  { name: "San Jose, CA", meta: "Served", tone: "served" },
+  { name: "San Jose, CA", meta: "City summary", tone: "served" },
   { name: "Detroit, MI", meta: "Example", tone: "tract" },
   { name: "Compton, CA", meta: "Example", tone: "tract" },
   { name: "Chicago", meta: "South Side", tone: "served" },
 ] as const;
 
 const STATEMENT = [
-  "For decades, whether a neighborhood could buy food lived in a closed store, a deed, or a number nobody put on the same page. Every plan started from scratch. Every team rebuilt the map.",
-  "That era is over.",
-  "Food access in the next decade will be won by the teams that keep every designation, every reason, and every source together, and treat each place as the start of the next one.",
-  "Food Desert AI is built to make that the record.",
+  "Whether a neighborhood can reach a supermarket usually shows up as one label on a map, with the rule behind it out of sight.",
+  "This app shows the rule.",
+  "It computes USDA ERS's low-income and low-access test on 2020 Census blocks and USDA's list of SNAP-authorized supermarkets, and puts both published USDA maps beside the result.",
+  "It is an estimate for one census tract at a time: not an official designation, and not a rating of a city.",
 ] as const;
 
 const FAQS = [
   {
     q: "What does Food Desert AI actually check?",
-    a: "You give it a US address. It returns a designation — food desert or not — and the reasons that decision rests on, instead of a single unlabeled score.",
+    a: "You give it a US place. It finds the 2020 census tract at that point and applies USDA ERS's low-income and low-access rule: low income is USDA ERS's 2025 flag; low access means at least 33% or 500 of the tract's residents live more than 1 mile (urban) or 10 miles (rural), in a straight line from their 2020 Census block, from a SNAP-authorized supermarket. The answer is an estimate (meets the test, doesn't, or unknown with the reason), not an official USDA designation.",
   },
   {
     q: "Where do the numbers come from?",
-    a: "Designations follow the USDA Food Access Research Atlas. The Woonsocket figures on this page — one supermarket for about 45,000 people, 37% food insecure, 18% with no vehicle, a 75-year covenant — are from reporting and a Senate letter, linked below.",
+    a: "Tracts and block populations come from the 2020 Census (TIGERweb); stores from USDA's SNAP Retailer Locator (supermarkets and super stores, dated); the income flag and the published 2019 and 2025 maps from the USDA ERS Food Access Research Atlas. The Woonsocket figures on this page — one supermarket for about 45,000 people, 37% food insecure, 18% with no vehicle, a 75-year covenant — are from reporting and a Senate letter, linked below.",
   },
   {
     q: "What changes if a store opens?",
-    a: "The simulator asks that question on a real place. Research tied to one new grocery has found about a 10% drop in local obesity within three years. The model is there so a team can see the access change before anyone breaks ground.",
+    a: "Place a store on the map and the same rule runs again on the same tract: how many residents it brings within the distance limit, and whether the test result changes. Only supermarkets count, as in USDA's supermarket-based measure; small grocers, dollar stores and farmers markets are labeled as not counted. The numbers are computed access, not a forecast.",
   },
   {
-    q: "Why does nutrition belong in an access tool?",
-    a: "Adequate nutrition supports immunity, growth, concentration, and lower long-term risk of diabetes, heart disease, and obesity. Without it, chronic disease, developmental delays, and slower recovery get more likely. Distance to a store is one reason those outcomes cluster.",
+    q: "Will a new store improve health?",
+    a: "This app does not project health outcomes. Studies of new supermarkets found no measurable change in BMI in Philadelphia (Cummins et al. 2014) or Pittsburgh (Dubowitz et al. 2015) and no change in children's diets in the Bronx (Elbel et al. 2015); food insecurity fell 11.8% relative to a comparison neighborhood in Pittsburgh (Richardson et al. 2017).",
   },
   {
     q: "What does Launch simulation do?",
-    a: "It opens the same location gate as the product: search a city, address, or ZIP, then read the designation on the map. Nothing on this page is a separate demo mode.",
+    a: "It opens the same location gate as the product: search a city, address, or ZIP, then read the tract test beside the map. For a city it says which tract it is showing and can add up the tract results for everyone inside the city boundary. Nothing on this page is a separate demo mode.",
   },
   {
     q: "Does this replace the USDA atlas?",
-    a: "No. It is a way to read a tract, keep the source next to the answer, and test an intervention. The atlas stays the record.",
+    a: "No. USDA ERS publishes the official maps. This app estimates the same rule live, shows both published USDA maps beside the estimate, and names the input when they differ. The atlas stays the record.",
   },
 ] as const;
 
@@ -290,11 +290,12 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
       </header>
 
       <section className="df-wrap df-hero">
-        <h1>The AI workspace for food access</h1>
+        <h1>Food access, tested tract by tract</h1>
         <p>
-          Food Desert AI helps neighbors, planners, and services teams turn an address into a
-          designation, a reason, and a test of what one new grocery changes — so the estimate
-          can be checked, and the team stays on the same map.
+          Food Desert AI turns a US address into USDA’s low-income and low-access test for its
+          census tract, computed live on 2020 Census blocks and USDA’s SNAP supermarket list, with
+          the reason beside the result and a test of what one new supermarket changes. An estimate,
+          not an official designation.
         </p>
         <div className="df-actions">
           <button type="button" className="df-btn df-btn-green" onClick={onLaunchSimulation}>
@@ -325,7 +326,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
                   <span ref={addrRef} />
                   <i className="df-caret" />
                 </div>
-                <p className="df-chip">USDA Food Access Atlas · example place</p>
+                <p className="df-chip">USDA ERS rule · 2020 census tract</p>
               </div>
 
               <div className="df-scene">
@@ -333,51 +334,51 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
                 <div className="df-result-head">
                   <div>
                     <h2>Greenville, Mississippi</h2>
-                    <p>The model marks this example place as designated.</p>
+                    <p>Census tract 6 meets the test in this estimate.</p>
                   </div>
-                  <span className="df-badge">Food desert</span>
+                  <span className="df-badge">Meets test</span>
                 </div>
                 <div className="df-map" aria-hidden="true">
                   <span className="df-pin" ref={pinRef} />
                 </div>
                 <ul className="df-rows">
-                  <li><span>Designation</span><b>Low income, low access</b></li>
-                  <li><span>Rule</span><b>Supermarket beyond a reasonable trip</b></li>
-                  <li><span>Next</span><b>Ask what a new store changes</b></li>
+                  <li><span>Test</span><b>Low income, low access</b></li>
+                  <li><span>Rule</span><b>Most residents over 1 mile from a supermarket</b></li>
+                  <li><span>Next</span><b>Place a store and run it again</b></li>
                 </ul>
               </div>
 
               <div className="df-scene">
                 <p className="df-kicker">Testing a new store…</p>
-                <h2>Place a grocery in Greenville</h2>
+                <h2>Place a supermarket in Greenville</h2>
                 <div className="df-shift">
                   <div className="df-shift-card">
                     <small>Now</small>
-                    <strong>Designated</strong>
+                    <strong>Meets test</strong>
                   </div>
                   <em>→</em>
                   <div className="df-shift-card">
                     <small>With a store</small>
-                    <strong>Access changes</strong>
+                    <strong>Recomputed</strong>
                   </div>
                 </div>
                 <p className="df-note">
-                  One new grocery has been tied to about a 10% drop in local obesity within three years.
-                  The simulator is how a team looks at that question on a real place.
+                  The same rule runs again on the same Census blocks with your store added:
+                  computed access, not a health forecast.
                 </p>
               </div>
 
               <div className="df-scene">
-                <p className="df-kicker">Drafting a brief…</p>
+                <p className="df-kicker">Sharing the result…</p>
                 <div className="df-to">
-                  <span>To</span>
-                  <b>Planning board <i>×</i></b>
+                  <span>Link</span>
+                  <b>Greenville + 1 store <i>↗</i></b>
                 </div>
-                <h2>Greenville access</h2>
+                <h2>Greenville, tract 6</h2>
                 <p className="df-letter">
-                  <span className="df-letter-line">Hi — Greenville is designated a food desert in this model.</span>
-                  <span className="df-letter-line">The brief keeps that label next to the source,</span>
-                  <span className="df-letter-line">so the estimate is something the room can check.</span>
+                  <span className="df-letter-line">The link reopens this tract and the store you placed.</span>
+                  <span className="df-letter-line">Both published USDA maps sit beside the estimate,</span>
+                  <span className="df-letter-line">so anyone who opens it can check the same numbers.</span>
                 </p>
               </div>
             </div>
@@ -387,7 +388,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
 
       <section className="df-gaps" id="how" ref={gapsRef}>
         <div className="df-wrap">
-          <h2>Access fails in the gaps. Food Desert AI is built to close them.</h2>
+          <h2>Access fails in the gaps. Food Desert AI shows the rule behind each one.</h2>
           <div className="df-board">
             <div className="df-panel df-panel-blue">
               <ul className="df-tree">
@@ -403,10 +404,10 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
             <div className="df-panel df-panel-green">
               <p className="df-reviewed">
                 <i /><i /><i />
-                Reviewed 3 sources
+                Census blocks · SNAP stores · USDA ERS
               </p>
               <div className="df-doc">
-                <h3>Access brief</h3>
+                <h3>Tract test</h3>
                 <span /><span /><span className="is-short" />
                 <span /><span className="is-mid" /><span />
               </div>
@@ -425,24 +426,24 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
           </div>
           <div className="df-captions">
             <article>
-              <h3>Discovery that doesn’t disappear.</h3>
+              <h3>The reason, not just a label.</h3>
               <p>
-                Every address, designation, and assumption is kept from the moment it’s looked up,
-                so the reason lives in the record, not in someone’s head.
+                Every result names the rule, the counts behind it, and the data dates; an unknown
+                says which input was missing.
               </p>
             </article>
             <article>
-              <h3>Input to deliverable instantly.</h3>
+              <h3>Tracts, not cities.</h3>
               <p>
-                Point Food Desert AI at an address and get back a designation, the rule, and a brief
-                that is ready to hand to the room.
+                USDA rates census tracts. A city search shows the tract at that point and can add up
+                every tract inside the city boundary.
               </p>
             </article>
             <article>
-              <h3>Every place makes the next one clearer.</h3>
+              <h3>A link that replays it.</h3>
               <p>
-                What one tract showed stays with the next address, so the team is not starting the
-                map over every time.
+                Share a link and it reopens the same place with the stores you placed, so someone else
+                can check the same estimate.
               </p>
             </article>
           </div>
@@ -468,13 +469,13 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
           <h2>Built so the answer can be checked</h2>
           <div className="df-cards">
             <article>
-              <p className="df-card-kicker">The designation</p>
+              <p className="df-card-kicker">The test</p>
               <h3>A label with a rule under it</h3>
-              <p>Low income and low access, read from the tract — not a vibe and not a national average pasted onto one block.</p>
+              <p>Low income from USDA ERS 2025; low access computed on the tract’s 2020 Census blocks: at least 33% or 500 residents beyond 1 mile (urban) or 10 miles (rural) from a SNAP supermarket.</p>
               <ul>
-                <li>23.5 million Americans live in a government-defined food desert</li>
-                <li>2.5× higher stroke risk where fresh food is out of reach</li>
-                <li>The atlas remains the source of the designation</li>
+                <li>Straight-line distance from each populated 2020 Census block</li>
+                <li>Every unknown names the input that was missing</li>
+                <li>USDA’s own 2019 and 2025 maps shown beside it</li>
               </ul>
             </article>
             <article>
@@ -489,11 +490,11 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
             </article>
             <article>
               <p className="df-card-kicker">The intervention</p>
-              <h3>One store, then the health line</h3>
-              <p>The simulator asks what changes if a full-service grocery opens. The health figure stays cited.</p>
+              <h3>One store, recomputed</h3>
+              <p>Place a store and the same rule runs again on the same blocks: residents brought within the limit, and whether the result changes.</p>
               <ul>
-                <li>About 10% lower local obesity within three years</li>
-                <li>Nutrition risk stays visible next to distance</li>
+                <li>Only supermarkets count; other store types are labeled as not counted</li>
+                <li>No health or jobs projections: computed access only</li>
                 <li>Launch the same tool the rest of the product uses</li>
               </ul>
             </article>
@@ -542,7 +543,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
           <Mark />
           <span>Food Desert</span>
         </div>
-        <p>The workspace for reading a food desert, and for testing what a store would change.</p>
+        <p>An estimate of USDA’s low-income and low-access test, and of what a new supermarket would change.</p>
         <div className="df-foot-cols">
           <div>
             <p>Navigation</p>
@@ -557,7 +558,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
             <a href={SENATE_URL} target="_blank" rel="noreferrer">Senate letter</a>
           </div>
         </div>
-        <p className="df-copy">Food Desert AI · Impact simulator</p>
+        <p className="df-copy">Food Desert AI · access-test estimate</p>
       </footer>
     </div>
   );

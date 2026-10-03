@@ -1,305 +1,279 @@
-# Food Desert Simulator - Technical Project Handoff
+# Food Desert AI - Technical Project Handoff
 
-Last updated: 2026-04-12
+Last updated: 2026-10-03 (access-test redesign, docs/07)
 Primary audience: engineers and coding agents taking over implementation.
 Secondary audience: technical product owners needing implementation-level detail.
 
+The method contract is `docs/07-access-test-redesign.md`; this file maps it
+onto the code. Decisions and their rejected alternatives live in
+`DECISIONS.md`.
+
 ## 1. Product Intent and System Boundaries
 
-The application is a tract-centric decision support tool for food access analysis in the US. It combines USDA, CDC, Census, and OSM-derived data to:
+For one searched US point, the app estimates whether the 2020 census tract
+containing it meets USDA ERS's low-income and low-access test (the measure
+often called a food desert), shows the counts behind the answer and the two
+published USDA maps beside it, and recomputes the test when the visitor places
+stores. A city search can also be summarized across the tracts inside the
+city boundary.
 
-1. Classify food access designation state for the selected community.
-2. Surface the evidence chain behind classification decisions.
-3. Estimate intervention impact (access, health, economic, and true-cost dimensions).
-4. Provide scenario tooling for strategic planning and comparison.
+Boundaries:
 
-Current architecture assumes one selected location at a time, resolved to one tract context, with projection outputs computed in-browser.
+1. USDA rates tracts, not cities. The verdict is always per tract; a city gets
+   a summary, never a verdict.
+2. It is an estimate with ERS's rule, not an official designation.
+3. No projections: no jobs, dollars, health outcomes or commute costs. The
+   scenario reports computed access numbers only.
+4. Everything runs in the browser except Census ACS (`api/acs.js`, keeps
+   `CENSUS_KEY` server-side). The data the test needs is either keyless
+   (Census TIGERweb, CORS) or committed under `public/data/`.
 
-## 2. Current Decision Standard (Important)
+## 2. The Rule (what the app computes)
 
-Food desert classification is currently distance-first using a community-average distance model with explicit Unknown handling.
+Unit: the 2020 census tract containing the point.
 
-Primary threshold rules:
+1. For each populated 2020 Census block (POP100 > 0), `d` = straight-line
+   (haversine) miles from the block's internal point to the nearest counted
+   store.
+2. `T` = 1 mi if the tract is urban, 10 mi if rural. Urban/rural from ERS 2025
+   `Urban`; without an ERS row, the population majority of block `UR` codes
+   (`urbanSource: 'block_ur'`).
+3. `beyond` = residents with `d > T` (a block at exactly `T` is within);
+   `share = beyond / population`.
+4. Low access = `share >= 0.33 || beyond >= 500`.
+5. Low income = ERS 2025 `LowIncomeTracts` as published.
+6. Verdict = three-valued AND: a known `false` decides NOT MET; otherwise any
+   unknown input gives UNKNOWN with a named reason.
 
-1. Urban: designated when community-average supermarket distance >= 1 mile.
-2. Rural: designated when community-average supermarket distance >= 5 miles.
-3. If distance is unavailable, final designation defaults to Unknown.
+Unknown reasons (each shown in plain words): `tract_unavailable`, `no_tract`,
+`no_residents`, `blocks_unavailable`, `blocks_incomplete`,
+`stores_unavailable`, `income_unavailable`, `urban_unavailable`.
 
-Implementation:
+Counted stores: SNAP Retailer Locator `Store_Type IN ('Supermarket','Super
+Store')` minus the hand-reviewed rules in `scripts/store-exclusions.json`
+(warehouse clubs, military commissaries/exchanges, fuel stations).
 
-- Classification evaluator: src/engine/foodDesertEvaluation.js
-- Pipeline wiring: src/pipeline/normalizer.js
+## 3. Repository Layout
 
-Distance model inputs:
+Runtime shell:
 
-- Distance for classification uses sampled community-average distance.
-- Center-point nearest distance is retained as a reference metric for transparency.
+- `src/App.jsx` — landing ↔ tracker.
+- `src/TrackerApp.jsx` — owns the search (`handleLocationSearch`), the payload
+  (`communityData`), the placed pins, the URL hash, the City summary state and
+  the pipeline log.
 
-## 3. Repository Layout and Ownership
+Pipeline (`src/pipeline/`, fetching):
 
-Top-level runtime files:
+- `tractLookup.js` — `lookupTract(lat, lng)` → `{ status, tract: { geoid,
+  state, county, tract, name, basename, pop, hu, intptLat, intptLng } }` via
+  TIGERweb Census2020 layer 6; `lookupPlace(lat, lng)` via layers 26/28
+  (incorporated wins over CDP); `queryTiger` (GET helper).
+- `blockLoader.js` — `loadTractBlocks(tract)`: bundled county file
+  (`BUNDLED_COUNTIES` = 06085, 06001, 28151, 04001) or TIGERweb layer 10 live;
+  block populations must sum to the tract POP100 or the result is
+  `blocks_incomplete`.
+- `storeLoader.js` — `loadStoresNear(bbox, radiusMi)` from the 2-degree tiles;
+  a listed tile that fails makes the whole answer `stores_unavailable` (never
+  an empty list).
+- `ersLoader.js` — `loadErsTract(geoid20)` → `{ status, e2025, e2019,
+  e2019Reason }`; 2019 rows match by identical GEOID only.
+- `normalizer.js` — `buildCommunityData(lat, lng, { forceRefresh })` and the
+  pure `assembleCommunityData(...)`; cache prefix `fds:community:v3:`.
+- `placeLoader.js` — City summary: `loadPlaceSummary(place, lookups)` and the
+  pure `assemblePlaceSummary(...)` (section 6).
+- `cdcFetch.js`, `censusFetch.js` — community profile (CDC PLACES; ACS via
+  `/api/acs`). Both fail independently of the test.
 
-- App shell and orchestration: src/App.jsx
-- Map/search experience: src/components/StreetsGlView.jsx
-- Profile, trace, confidence badges, compare UI: src/components/CommunityStatsPanel.jsx
+Engine (`src/engine/`, pure, no fetch):
 
-Data pipeline modules:
+- `lowAccess.js` — `nearestDistances(blocks, stores)` (grid-indexed),
+  `nearestStore`, `populationLowAccessFromDistances`, `populationLowAccess`,
+  `distanceBands`, `isBorderline`.
+- `foodAccessVerdict.js` — `evaluateFoodAccess({ lowIncome, lowAccess,
+  unknownReason })` → `{ status, qualifier, reason }`.
+- `scenarioEngine.js` — `evaluatePlacedStoreScenario(communityData, pins)`.
 
-- Geocoder and tract resolution: src/pipeline/geocoder.js
-- USDA tract ingestion and derived USDA context: src/pipeline/usdaFetch.js
-- CDC health metrics: src/pipeline/cdcFetch.js
-- Census ACS demographics: src/pipeline/censusFetch.js
-- OSM distance service: src/pipeline/storeDistanceFetch.js
-- Data normalization/merge: src/pipeline/normalizer.js
+Lib: `geo.js` (haversine, point in polygon), `urlState.js` (hash codec),
+`storeFormats.js` (pin formats), `locationSearch.js` (Nominatim + Census
+geocoder, `placeKindFromNominatim`), `storeTooltip.js` (`escapeHtml` for
+Leaflet HTML), `stateCodes.js`, `projection.js`.
 
-Core engines:
+Components: `CommunityStatsPanel.jsx` (Tract view, City notice, hosts
+`CitySummary.jsx`), `ScenarioResultCard.jsx`, `StreetsGlView.jsx` + `MapView.jsx`
+(2D Leaflet map; Streets GL 3D parked behind `ENABLE_STREETS_GL`),
+`LocationGate.jsx`, `MobileResultsView.jsx`, `DesignationAtlasView.jsx` (US
+map: ERS 2019 CSV by state), `AgentStatusFeed.jsx` (pipeline log).
 
-- Designation evaluator: src/engine/foodDesertEvaluation.js
-- Impact projection: src/engine/projectionEngine.js
-- Simulation scoring: src/engine/simulationEngine.js
-- Model constants/correlations: src/engine/correlations.js
+Data builders (`scripts/`, Node; print counts, assert completeness, exit 1 on
+any failed check): `build-store-snapshot.mjs`, `build-ers-shards.mjs`,
+`build-block-bundles.mjs`; `check-bundle-for-keys.mjs` runs after
+`vite build`.
 
-Test coverage roots:
+Tests (`tests/`, `node --test`): `lowAccess`, `foodAccessVerdict`,
+`scenarioEngine`, `normalizer`, `loaders`, `placeLoader`, `urlState`,
+`locationSearch`, `storeTooltip`, `acsHandler`, `clientFetch`, `keyHygiene`,
+`bundleGuard`.
 
-- Designation behavior: tests/foodDesertEvaluation.test.js
-- USDA fixtures and divergence checks: tests/knownFoodDesertCases.test.js
-- Projection economics calibration: tests/projectionEconomics.test.js
-- Community-average distance helpers: tests/storeDistanceFetch.test.js
+## 4. Data (committed, dated)
 
-## 4. End-to-End Data Flow
+- `public/data/stores/` — `manifest.json` (`source, serviceUrl,
+  dataLastEditDate, retrievedAt, counts, tileDeg: 2, tiles`) and
+  `<latFloor>_<lngFloor>.json` rows `[lat, lng, type, name]` (`type` `M` =
+  Supermarket, `S` = Super Store). A tile absent from the manifest has no
+  counted stores.
+- `public/data/ers/<SSCCC>.json` — per county: `f2025`/`t2025` (2020 tracts,
+  keyed by `CensusTract20`) and `f2019`/`t2019` (2010 tracts, keyed by
+  `GEOID10`). `MedianFamilyIncome` 250001 is the ACS top-code ("$250,000 or
+  more").
+- `public/data/blocks/<SSCCC>.json` — bundled counties only: `tracts: {
+  tract6: { pop, name, blocks: [[block4, pop, hu, lat, lng, ur, place7]] } }`,
+  `places: { place7: { name, pop } }` (`place7` = the place whose
+  full-resolution polygon contains the block's internal point; `pop` is the
+  place's POP100).
+- `public/data/food_atlas.csv` — ERS 2019 atlas for the US map mode only.
 
-Request path:
+## 5. End-to-End Data Flow (tract)
 
-1. User selects location in map/search UI.
-2. App requests normalized tract payload from buildCommunityData.
-3. buildCommunityData resolves tract metadata and fetches source payloads in parallel.
-4. Normalizer computes classification context and projection inputs.
-5. App computes impact output with projectImpact.
-6. UI renders profile, confidence, trace, and impact sections.
+1. Search (gate, in-map search, example chip, share link, map click) →
+   `handleLocationSearch(lat, lng, { placeKind, placeName, pins,
+   fromSharedLink, forceRefresh, keepCitySummary })`.
+2. `buildCommunityData`: cache (memory, then localStorage, 15 min TTL) →
+   `lookupTract` → in parallel: `loadTractBlocks` (then `loadStoresNear` over
+   the blocks' bbox + 30 mi), `loadErsTract`, `lookupPlace`, CDC PLACES, ACS.
+3. `assembleCommunityData` computes distances, the low-access stats, bands,
+   borderline, the verdict, the references and the exact-spot line.
+4. Payload: `{ meta: { fips, stateAbbr, stateFips, countyFips, tractName,
+   lat, lng, place, retrievedAt, cache }, access: { status, reason,
+   threshold, urban, urbanSource, population, beyond, share, byShare,
+   byCount, lowAccess, borderline, bands, lowIncome, verdict, references,
+   point, blocks (with baseline miles), blocksSource, stores (area + 5 mi),
+   storesDataset }, health, demographics, ers }`.
+5. Payloads carrying a fetch-failure reason are never cached.
 
-Fetch sequence in normalizer:
+## 6. City Summary (`src/pipeline/placeLoader.js`)
 
-1. coordsToGeo(lat, lng)
-2. getUsdaData(fips)
-3. getCdcData(stateAbbr, fips)
-4. getCensusData(fips)
-5. getNearestSupermarketDistance(lat, lng)
+Shown only for a city search (Nominatim `addresstype` city/town/village/
+municipality, carried as `lastSearch.placeKind === 'city'`) whose TIGERweb
+place at the point has a matching name; the "Summarize {City}" button calls
+`TrackerApp.runCitySummary({ ...meta.place, countyFips })`.
 
-## 5. Distance Model Internals (Community-Average)
+1. In-city blocks. If the searched tract's county is bundled and the place's
+   in-place blocks across the bundled counties of its state add up to the
+   bundle's recorded POP100, use the bundles. Otherwise live: the place
+   polygon (TIGERweb layer 26 or 28, full resolution, `outSR=4326`) and every
+   populated layer-10 block intersecting it (POST with the polygon;
+   `returnCountOnly` first; six side-by-side pages above 3,000 blocks; unique
+   GEOIDs must equal the count), filtered by internal point in polygon.
+2. The in-city population must equal the place POP100, else Unknown
+   `place_incomplete`.
+3. Tract details for every touched tract (layer 6, POST `GEOID IN (...)`,
+   100 per query): name, POP100, internal point.
+4. All blocks of each touched tract: bundled, or reuse the in-city blocks when
+   they already sum to the tract POP100, else `loadTractBlocks`.
+5. ERS rows per tract, stores over all those blocks' bbox + 30 mi, then the
+   same engine functions as the tract view, tract by tract.
+6. Output: residents beyond their own tract's limit (in-city blocks only),
+   residents in tracts meeting the test and the tract count, residents in
+   tracts flagged on the 2019 map (identical GEOID) and the 2025 SRAM map, and
+   a tract list `{ geoid, basename, inCityPop, population, share, status,
+   threshold, intptLat, intptLng, ... }`. Any load failure → `{ status:
+   'unknown', reason }` with no totals (`place_unavailable`, `no_place`,
+   `place_incomplete`, `blocks_unavailable`, `blocks_incomplete`,
+   `tracts_unavailable`, `stores_unavailable`, `ers_unavailable`,
+   `urban_unavailable`, `no_residents`). A tract that is itself Unknown (e.g.
+   no ERS 2025 row) is counted and named separately, not hidden.
 
-Distance module: src/pipeline/storeDistanceFetch.js
+Measured 2026-10-03 (headless Chromium, dev build): San Jose (bundled)
+in-city population 1,013,240 across 235 tracts in about 0.3 s; Sacramento
+(live, place 0664000) 524,943 across 147 tracts in about 3 s.
 
-What it does now:
+The summary state lives in `TrackerApp` (`citySummary`), survives opening a
+tract from its table (`keepCitySummary: true`), and closes on any other
+search; a stale run is dropped by nonce and aborted.
 
-1. Queries Overpass for supermarket-tagged elements within 50 miles of the center.
-2. Builds 9 sample points (center + offsets).
-3. Computes nearest-store distance for each sample point via Haversine.
-4. Computes community average from sample nearest distances.
-5. Exposes both:
-   - communityAverageSupermarketMiles (primary for classification)
-   - centerNearestSupermarketMiles (reference only)
+## 7. Placed-Store Scenario
 
-Returned distance payload fields:
+Pins: `{ id, lat, lng, format, createdAt }`, `format` in `s` (supermarket or
+supercenter, counts), `g`, `d`, `f` (shown, not counted). Up to 10 pins.
+`evaluatePlacedStoreScenario` returns `null` without pins, otherwise `{
+counting, nonCounting, before, after, broughtWithin, flipped, gap, halfMile,
+noVehicleEstimate }`, recomputing each block's distance as `min(baseline,
+nearest counting pin)` with the same `T` and income flag. Duplicates and far
+pins change nothing by construction.
 
-1. nearestSupermarketMiles: backward-compatible alias carrying community average.
-2. communityAverageSupermarketMiles
-3. centerNearestSupermarketMiles
-4. communityDistanceSampleCount
-5. distanceModel
-6. isTwentyFivePlusMiles
-7. checkedRadiusMiles
-8. source
+URL hash: `lat`, `lng`, `layout`, panel sizes, `pins=lat,lng;…` (4 decimals)
+and index-aligned `pt=s;g;…` (missing/invalid token → `s`).
 
-Failure behavior:
+## 8. UI Surfaces
 
-- Endpoint failover attempts second Overpass host.
-- On full failure, returns null distance fields and source=unavailable.
+1. Tract view: verdict card (header, pill, scope line, qualifier sentence,
+   borderline), distance bands, exact-spot line, references with the
+   differing input named, sources note, evaluation trace, community profile.
+2. City notice and City summary (sortable table; a row opens that tract).
+3. Scenario card (map overlay on desktop, stacked on phones) with per-pin
+   format select and remove.
+4. Pipeline log: one line per step from the payload.
 
-Known caveats:
-
-1. Not road-network travel time/distance.
-2. OSM tagging completeness affects quality.
-3. Sampling model is spatially representative, not population-weighted.
-
-## 6. Classification Engine Contract
-
-Evaluator API: evaluateFoodDesertDesignation
-
-Inputs:
-
-1. isRural
-2. nearestSupermarketMiles (currently community average from pipeline)
-3. isTwentyFivePlusMiles
-4. usdaLilaFlag
-5. urbanThresholdMiles (default 1)
-6. ruralThresholdMiles (default 5)
-7. unavailableMode (default unknown)
-
-Outputs:
-
-1. finalDesignation (designated | not_designated | unknown)
-2. isFoodDesert (true | false | null)
-3. distanceDesignation
-4. usdaDesignation
-5. sourceComparable
-6. sourceDisagreement
-7. designationMethod
-8. distanceThresholdMiles
-9. distanceRuleEvaluable
-10. isFoodDesertByDistanceRule
-
-Method labels currently used:
-
-1. distance_rule_urban_1mi
-2. distance_rule_rural_5mi
-3. distance_rule_unavailable_unknown
-4. distance_rule_unavailable_usda_fallback
-5. distance_rule_unavailable
-
-## 7. USDA Context vs Final Distance Classification
-
-USDA-derived fields are still retained as diagnostics and policy context:
-
-1. accessRule remains USDA 1/10-mile benchmark context.
-2. qualifyingLowAccessPct for USDA low-access tests.
-3. low-income tests based on poverty/income threshold logic.
-
-Important distinction:
-
-- USDA low-access benchmark in UI is not the same as final distance-first designation threshold.
-- Final designation threshold is now 1 mile urban / 5 miles rural over community-average distance.
-
-## 8. Projection Engine Technical Notes
-
-Projection module: src/engine/projectionEngine.js
-
-The engine emits:
-
-1. foodAccess impact metrics
-2. health impact metrics
-3. economic impact metrics
-4. true-cost before/after trip economics
-5. simulation summary
-
-Economic calibration currently includes:
-
-1. Bounded capture rate.
-2. Access-need factor from qualifying low-access share.
-3. Revenue cap for practical single-store scale.
-4. Transparency fields:
-   - annualCapturedSalesRaw
-   - annualRevenueCap
-   - annualCapturedSalesCapped
-
-Maintained by tests/formulas:
-
-- annualLocalImpact == round(annualCapturedSales * economicMultiplier)
+Number rules: counts to about the nearest 10 (exact below 100) with "≈",
+shares to whole percent, "computed" never "measured", every Unknown names its
+reason.
 
 ## 9. Caching and Freshness
 
-Community payload cache:
+- Community payload: memory + localStorage, 15 min TTL, keyed by the point
+  (5 decimals); `meta.cache.status` is `fresh | memory | local`. Force refresh
+  bypasses both.
+- Loaders cache their committed files per session (bundles, ERS shards, store
+  manifest and tiles); a failed load is never cached.
+- City summary: not cached; its bundle reads use their own in-memory cache.
 
-- In-memory + localStorage.
-- TTL: 15 minutes.
-- Meta attached as payload.meta.cache.
-- Status values: fresh | memory | local.
+## 10. Environment and Runtime Configuration
 
-Force refresh path:
+Env vars:
 
-- UI can bypass community cache and force fresh retrieval.
+1. `CENSUS_KEY` (server-only, read by `api/acs.js` on Vercel and by the local
+   dev middleware in `vite-plugin-api-dev.js`; never `VITE_`-prefixed).
+2. `VITE_CARTO_KEY` (optional; public-by-design raster tile key override).
 
-## 10. UI Surfaces and Technical Behavior
+The runtime AI narrative (`api/llmapi.js`, AICard) was removed on 2026-10-02
+and Overpass (`api/overpass.js`) on the same day; see `DECISIONS.md`.
+`npm run build` runs `scripts/check-bundle-for-keys.mjs`, which fails the
+build if a private key value or key shape is in `dist/`.
 
-Key transparency elements:
+Local API route (`vite-plugin-api-dev.js` runs the real handler in dev and
+preview): `/api/acs` → `api/acs.js` (GET `?fips=<11-digit tract>`).
 
-1. Source confidence badges.
-2. Evaluation trace drawer (criterion-level details).
-3. Threshold sensitivity panel with live override preview.
-4. Scenario compare table (baseline/current/saved).
+Production pass-through rewrites (`vercel.json`, no keys) are limited to the
+exact upstream paths the app calls: `/api/census-geocoder/geocoder/
+{geographies/coordinates, locations/onelineaddress}`, `/api/nominatim/
+{search, reverse}` and `/api/cdc/resource/cwsq-ngmh.json`. The Vite dev
+server proxies the same three prefixes.
 
-Distance presentation now:
+TIGERweb is called directly from the browser (keyless, CORS): GET for point
+lookups and per-tract blocks, POST for the City summary's polygon and
+`GEOID IN` queries.
 
-1. Community avg supermarket distance (est.)
-2. Center-point nearest (reference)
+## 11. Testing and Build Commands
 
-Logs now explicitly call out:
+1. `npm test` (node --test)
+2. `npx eslint .` (two pre-existing errors in `src/ui/landing/GooeyNav.jsx`)
+3. `npm run build` (vite build + bundle key check)
 
-1. Community-average distance used for classification.
-2. Center-point nearest as reference.
-3. USDA benchmark diagnostics separately.
+## 12. Risk Register
 
-## 11. Environment and Runtime Configuration
+1. TIGERweb availability: a failed tract, block or polygon call gives Unknown
+   with its reason (never a partial count). Bundled counties avoid the block
+   calls for the demo tracts.
+2. The SNAP list misses supermarkets that don't take SNAP, and follows SNAP's
+   own store-type labels.
+3. Census block populations carry disclosure-avoidance noise.
+4. Very large live cities send a large polygon in each POST page; untested
+   above Sacramento's size.
 
-Current env vars used:
+## 13. Handoff Runbook
 
-1. CENSUS_KEY (server-only, read by api/acs.js on Vercel and by the local
-   dev middleware in vite-plugin-api-dev.js; never VITE_-prefixed)
-2. VITE_CARTO_KEY (optional; public-by-design raster tile key override)
-
-The runtime AI narrative (api/llmapi.js, AICard) was removed on 2026-10-02;
-see DECISIONS.md. `npm run build` runs scripts/check-bundle-for-keys.mjs,
-which fails the build if a private key value or key shape is in dist/.
-
-Local API routes (vite-plugin-api-dev.js runs the real handlers in dev and
-preview):
-
-1. /api/acs -> api/acs.js (GET ?fips=<11-digit tract>)
-2. /api/overpass -> api/overpass.js (POST JSON {lat, lng}; the server builds
-   the supermarket query and races three mirrors)
-
-Production pass-through rewrites (vercel.json, no keys) are limited to the
-exact upstream paths the app calls: /api/census-geocoder/geocoder/
-{geographies/coordinates, locations/onelineaddress}, /api/nominatim/{search,
-reverse} and /api/cdc/resource/cwsq-ngmh.json.
-
-Vite proxy routes (local dev only, plain pass-through, no keys):
-
-1. /api/census-geocoder
-2. /api/nominatim
-3. /api/cdc
-
-## 12. Testing and Build Commands
-
-Primary checks:
-
-1. npm test -- --runInBand
-2. npm run build
-
-Current status at handoff:
-
-1. Tests passing: 29
-2. Build: passing
-
-## 13. Risk Register
-
-1. Overpass availability and throttling can induce Unknown classifications.
-2. OSM completeness can bias distance estimates by geography.
-3. Community sample offsets are fixed and not tuned by tract geometry.
-4. Current sampled average is not population-weighted.
-
-## 14. Recommended Next Technical Iterations
-
-1. Population-weighted sampling using Census block-group centroids and population weights.
-2. Optional road-network distance fallback for high-stakes planning mode.
-3. Persisted telemetry for stage timings and source failure rates.
-4. Expand disagreement analytics dashboard (distance vs USDA cohorts over multiple tracts).
-5. Snapshot tests for trace drawer wording and model metadata rendering.
-
-## 15. Handoff Runbook for Successor Engineers
-
-1. Start with this file and verify current thresholds in evaluator.
-2. Confirm normalizer still passes community-average distance into evaluator.
-3. Validate UI wording if changing policy thresholds.
-4. Preserve backward-compatible distance fields unless migration is coordinated.
-5. Run tests/build before and after modifying pipeline contracts.
-
-## 16. Quick File Reference Map
-
-- Classification thresholds: src/engine/foodDesertEvaluation.js
-- Distance modeling: src/pipeline/storeDistanceFetch.js
-- Merge and designation wiring: src/pipeline/normalizer.js
-- Runtime logs and orchestration: src/App.jsx
-- Profile/trace/stat rendering: src/components/CommunityStatsPanel.jsx
-- Projection formulas: src/engine/projectionEngine.js
-- Distance model tests: tests/storeDistanceFetch.test.js
-
+1. Read `docs/07-access-test-redesign.md`, then this file.
+2. Change the rule only in `src/engine/` and keep `normalizer.js`,
+   `scenarioEngine.js` and `placeLoader.js` on the same functions.
+3. Rebuild data with the `scripts/` builders; never hand-edit generated files.
+4. Run tests, lint and build before and after changing a pipeline contract.

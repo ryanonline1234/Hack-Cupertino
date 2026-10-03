@@ -11,10 +11,14 @@ const TYPE_COLORS = {
 };
 
 export default function AgentStatusFeed({ logs, loading }) {
-  const bottomRef = useRef(null);
+  const scrollRef = useRef(null);
 
+  // Scroll the log box only. scrollIntoView also scrolls every scrollable
+  // ancestor, which on phones jumped the whole results page past the verdict
+  // and the scenario card to the bottom of the log.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollRef.current;
+    if (el && typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [logs]);
 
   return (
@@ -33,7 +37,7 @@ export default function AgentStatusFeed({ logs, loading }) {
       </PanelHeader>
 
       {/* Log entries */}
-      <div className="flex-1 overflow-y-auto min-h-0 space-y-0.5 font-mono">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 space-y-0.5 font-mono">
         {logs.map((log, idx) => {
           const style = TYPE_COLORS[log.type] || TYPE_COLORS.info;
           return (
@@ -52,7 +56,6 @@ export default function AgentStatusFeed({ logs, loading }) {
             </div>
           );
         })}
-        <div ref={bottomRef} />
       </div>
     </div>
   );

@@ -4,8 +4,8 @@ function toRad(degrees) {
   return (degrees * Math.PI) / 180;
 }
 
-// Same formula and radius as the original export in
-// src/pipeline/storeDistanceFetch.js, so distances stay bit-identical.
+// Same formula and radius as the app's original haversine, so distances
+// stay bit-identical with earlier results.
 export function haversineMiles(aLat, aLng, bLat, bLng) {
   const dLat = toRad(bLat - aLat);
   const dLng = toRad(bLng - aLng);

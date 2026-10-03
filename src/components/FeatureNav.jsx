@@ -86,7 +86,7 @@ function ModeToggle({ mode, onModeChange }) {
           color: isDesignation ? 'var(--neon)' : 'rgba(255,255,255,0.45)',
           background: isDesignation ? 'rgba(0,255,153,0.12)' : 'transparent',
         }}
-        title="US designation map"
+        title="USDA 2019 low-income & low-access map (LRAM)"
       >
         US Map
       </button>
@@ -95,8 +95,11 @@ function ModeToggle({ mode, onModeChange }) {
 }
 
 export default function FeatureNav({ communityData, loading, layout, onToggleLayout, mode, onModeChange, onHome }) {
+  // "CA · Tract 5046.02" from TIGERweb's NAME ("Census Tract 5046.02").
+  const meta = communityData?.meta;
+  const tractLabel = String(meta?.tractName || '').replace(/^Census Tract\s+/i, '') || meta?.fips?.slice(-6);
   const locationLabel = communityData
-    ? `${communityData.meta.stateAbbr} · Tract ${communityData.meta.fips?.slice(-6)}`
+    ? (tractLabel ? `${meta.stateAbbr ? `${meta.stateAbbr} · ` : ''}Tract ${tractLabel}` : 'Tract not found')
     : null;
   const cacheBadge = formatCacheBadge(communityData?.meta?.cache);
 
@@ -200,7 +203,7 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
 
       {/* Right: data sources */}
       <div className="hidden md:flex items-center gap-1.5">
-        {['USDA', 'CDC', 'Census'].map((src) => (
+        {['USDA ERS', 'Census', 'SNAP list'].map((src) => (
           <span
             key={src}
             className="text-[10px] px-2 py-0.5 rounded"

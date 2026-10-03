@@ -18,6 +18,9 @@ const BANNED_STRINGS = [
   'VITE_ANTHROPIC_KEY',
   'LLMAPI_KEY',
   'VITE_CENSUS_KEY',
+  // Overpass is retired (docs/07): stores come from the committed SNAP list.
+  '/api/overpass',
+  'overpass-api.de',
 ];
 
 function walk(dir) {
@@ -41,13 +44,21 @@ test('the runtime LLM relay and narrative card are gone', () => {
   assert.equal(existsSync(path.join(ROOT, 'src/components/AICard.jsx')), false);
 });
 
-test('no shipped source references the LLM path or retired key names', () => {
+test('the Overpass relay, its dev route and the OSM store client are gone', () => {
+  assert.equal(existsSync(path.join(ROOT, 'api/overpass.js')), false);
+  assert.equal(existsSync(path.join(ROOT, 'src/pipeline/storeDistanceFetch.js')), false);
+});
+
+test('no shipped source references the LLM path, Overpass or retired key names', () => {
   const hits = [];
   for (const file of shippedSourceFiles()) {
-    const text = readFileSync(file, 'utf8');
-    for (const banned of BANNED_STRINGS) {
-      if (text.includes(banned)) hits.push(`${path.relative(ROOT, file)}: ${banned}`);
-    }
+    const rel = path.relative(ROOT, file);
+    const lines = readFileSync(file, 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      for (const banned of BANNED_STRINGS) {
+        if (line.includes(banned)) hits.push(`${rel}:${i + 1}: ${banned}`);
+      }
+    });
   }
   assert.deepEqual(hits, []);
 });
