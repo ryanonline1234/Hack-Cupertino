@@ -5,9 +5,11 @@ _Updated: 2026-10-02 (security batch: relays closed, keys out of the bundle)_
 Branch `security/close-relays` (off main @ 7361547, which includes
 Siddharth's UI overhaul): runtime AI narrative removed, Census key behind
 `api/acs.js`, `api/overpass.js` limited to `{lat, lng}`, dev middleware runs
-the real handlers, build fails on a leaked key. Committed locally; NOT pushed,
-NOT deployed. Production still serves the old bundle with both leaked keys
-until this ships and the keys are revoked.
+the real handlers, build fails on a leaked key, OSM names escaped in tooltips,
+pass-through rewrites exact. Pushed 2026-10-02; Vercel preview
+hack-cupertino-87r72si74-ryanonline1234s-projects.vercel.app (2a65ae8) is
+READY. NOT merged: production still serves the old bundle with both leaked
+keys. Blocked on CENSUS_KEY in Vercel (preview /api/acs answers 503).
 
 ## Verified (2026-10-02)
 - `npm test`: 75/75 pass (36 new: handler validation, client calls,
@@ -29,6 +31,12 @@ until this ships and the keys are revoked.
   params, v2 cache prefix, stale docs). Re-checked under Vercel's Node runtime
   (@vercel/node dev server): malformed JSON → 400 and the function stays up;
   padded body → 413; valid → 200; /api/acs extra or duplicate params → 400.
+- Vercel preview (2a65ae8): build log shows `[key-guard] ok` with both old
+  VITE_ keys present in the build env; 15 deployed files (11 JS) contain no
+  key value or key shape; /api/llmapi and /api/census 404; /api/overpass 400
+  on raw QL and malformed JSON, stays up, 200 for San Jose (532 KB, 8 s);
+  rewrites: nominatim ui/status and other paths 404, geocoder/reverse/CDC
+  200; /api/acs 503 (no CENSUS_KEY yet).
 - Exposure audit: Census key and the LLMApi key (stored as
   VITE_ANTHROPIC_KEY) are in production and 33 of 34 deployments, all public;
   never committed to git (63 commits scanned); repo is public.
@@ -43,8 +51,9 @@ until this ships and the keys are revoked.
    narrative — plus the video-script line (CAC_SUBMISSION.md:18) and the
    landing headline "The AI workspace for food access" (LandingPage.tsx:293).
    Use docs/AI_USE_LOG.md.
-3. Owner: add `CENSUS_KEY` (Sensitive; Production + Preview) in Vercel.
-4. Push the branch → check the Vercel preview. Gate before merging:
+3. Owner: add `CENSUS_KEY` (Sensitive; Production + Preview) in Vercel, then
+   redeploy the preview.
+4. Re-check the preview (branch already pushed). Gate before merging:
    `GET <preview>/api/acs?fips=06085504602` returns 200 with population > 0
    (a 503 means CENSUS_KEY is missing for Preview), and an Alviso search
    shows non-zero income. Then merge to main (= production).
