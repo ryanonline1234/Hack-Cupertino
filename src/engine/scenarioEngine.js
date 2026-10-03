@@ -1,86 +1,124 @@
-/*
- * Placed-store scenarios ("what if a grocery store opened HERE?").
- *
- * Pure recompute over the already-fetched store set plus user-placed
- * hypothetical stores — no network. Regenerates the deterministic pipeline
- * sample points and re-runs the designation evaluator with identical inputs
- * except the new distance, so before/after deltas are apples-to-apples.
- *
- * Approximation, documented: the pipeline keeps the 200 nearest-first store
- * points, so far-field detail is capped. A placed store near the community
- * (the only case the UI reasons about) always dominates the minimum.
- */
+// Placed-store scenarios: what USDA ERS's tract test would say if supermarkets
+// opened at the pinned spots. Pure recompute on the baseline payload from
+// buildCommunityData: same blocks, same T, same income flag; each block's
+// distance becomes min(baseline, nearest counting pin). Only supermarket pins
+// (format 's') join the store set, so small grocers, dollar stores, farmers
+// markets, duplicates and far-away pins change nothing by construction.
 import {
-  buildCommunitySamplePoints,
-  haversineMiles,
-} from '../pipeline/storeDistanceFetch.js';
-import { evaluateFoodDesertDesignation } from './foodDesertEvaluation.js';
+  COUNT_THRESHOLD,
+  SHARE_THRESHOLD,
+  nearestDistances,
+  populationLowAccessFromDistances,
+} from './lowAccess.js';
+import { evaluateFoodAccess } from './foodAccessVerdict.js';
 
-function nearestOver(points, lat, lng) {
-  let best = null;
-  for (const p of points) {
-    if (!Number.isFinite(p?.lat) || !Number.isFinite(p?.lng)) continue;
-    const d = haversineMiles(lat, lng, p.lat, p.lng);
-    if (best == null || d < best) best = d;
-  }
-  return best;
+const PIN_FORMATS = ['s', 'g', 'd', 'f'];
+const COUNTING_FORMAT = 's';
+const HALF_MILE = 0.5;
+// ERS TractHUNV apportioned by housing units is too rough to show below this.
+const MIN_NO_VEHICLE_ESTIMATE = 20;
+
+// A missing or unknown format means supermarket, as it does in share links.
+function pinFormat(format) {
+  return PIN_FORMATS.includes(format) ? format : COUNTING_FORMAT;
 }
 
-export function designationLabel(result, isFoodDesertFallback) {
-  if (!result) return 'unknown';
-  if (result.isFoodDesert === true) return 'designated';
-  if (result.isFoodDesert === false) return 'not designated';
-  return isFoodDesertFallback ? 'designated (USDA context)' : 'unknown';
+function validPin(p) {
+  return p && Number.isFinite(p.lat) && Number.isFinite(p.lng) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180;
 }
 
-export function evaluatePlacedStoreScenario(communityData, placedStores, center) {
-  const placed = (placedStores || []).filter(
-    (p) => Number.isFinite(p?.lat) && Number.isFinite(p?.lng),
-  );
-  if (!communityData || placed.length === 0) return null;
-  if (!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lng)) {
-    return null;
+// Payloads carry each block's baseline miles (null = no counted store within
+// the loaded radius). Without them, recompute from the payload's stores.
+function baselineDistances(access) {
+  const { blocks } = access;
+  if (blocks.every((b) => b.miles === null || Number.isFinite(b.miles))) {
+    return Float64Array.from(blocks, (b) => (b.miles === null ? Infinity : b.miles));
   }
+  return nearestDistances(blocks, Array.isArray(access.stores) ? access.stores : []);
+}
 
-  const { foodAccess } = communityData;
-  if (!foodAccess) return null;
+function side(blocks, distances, threshold, lowIncome) {
+  const stats = populationLowAccessFromDistances(blocks, distances, threshold);
+  return { ...stats, verdict: evaluateFoodAccess({ lowIncome, lowAccess: stats.lowAccess }) };
+}
 
-  const baseStores = Array.isArray(foodAccess.stores) ? foodAccess.stores : [];
-  const allStores = [...baseStores, ...placed];
+function residentsWithin(blocks, distances, miles) {
+  let n = 0;
+  for (let i = 0; i < blocks.length; i++) {
+    if (blocks[i].pop > 0 && distances[i] <= miles) n += blocks[i].pop;
+  }
+  return n;
+}
 
-  const beforeAvg = Number.isFinite(foodAccess.communityAverageSupermarketMiles)
-    ? Number(foodAccess.communityAverageSupermarketMiles)
+function housingShareBeyond(blocks, distances, miles) {
+  let total = 0;
+  let beyond = 0;
+  for (let i = 0; i < blocks.length; i++) {
+    const hu = blocks[i].hu > 0 ? blocks[i].hu : 0;
+    total += hu;
+    if (!(distances[i] <= miles)) beyond += hu;
+  }
+  return total > 0 ? beyond / total : null;
+}
+
+// Largest `beyond` that is no longer low access. The step down re-checks with
+// the engine's own comparison: 0.33 * 300 is 99, and 99 / 300 is still >= 0.33.
+function maxBeyondNotLowAccess(population) {
+  let b = Math.min(COUNT_THRESHOLD - 1, Math.floor(population * SHARE_THRESHOLD));
+  while (b > 0 && b / population >= SHARE_THRESHOLD) b--;
+  return b;
+}
+
+function gapAfter(after) {
+  if (after.lowAccess !== true) return null;
+  return {
+    residentsOver: after.byCount ? after.beyond - (COUNT_THRESHOLD - 1) : null,
+    shareOverPct: after.byShare ? after.share * 100 - SHARE_THRESHOLD * 100 : null,
+    residentsToClear: after.beyond - maxBeyondNotLowAccess(after.population),
+  };
+}
+
+// pins: [{ lat, lng, format }], format 's' | 'g' | 'd' | 'f' (default 's').
+// Returns null with no valid pins, no blocks, or no known baseline.
+export function evaluatePlacedStoreScenario(communityData, pins) {
+  const access = communityData?.access;
+  const blocks = access?.blocks;
+  if (!Array.isArray(pins) || !Array.isArray(blocks) || blocks.length === 0) return null;
+  if (!Number.isFinite(access.threshold) || typeof access.lowAccess !== 'boolean') return null;
+
+  const placed = pins.filter(validPin);
+  if (placed.length === 0) return null;
+  const counting = placed.filter((p) => pinFormat(p.format) === COUNTING_FORMAT);
+
+  const threshold = access.threshold;
+  const lowIncome = access.lowIncome ?? null;
+  const base = baselineDistances(access);
+  const toPins = nearestDistances(blocks, counting);
+  const next = base.map((d, i) => Math.min(d, toPins[i]));
+
+  const before = side(blocks, base, threshold, lowIncome);
+  const after = side(blocks, next, threshold, lowIncome);
+
+  const halfMile = access.urban === true
+    ? { before: residentsWithin(blocks, base, HALF_MILE), after: residentsWithin(blocks, next, HALF_MILE) }
     : null;
 
-  const samplePoints = buildCommunitySamplePoints(center.lat, center.lng);
-  const afterDistances = samplePoints
-    .map((point) => nearestOver(allStores, point.lat, point.lng))
-    .filter((d) => Number.isFinite(d));
-  if (afterDistances.length === 0) return null;
-  const afterAvg = afterDistances.reduce((a, b) => a + b, 0) / afterDistances.length;
-
-  const sharedInputs = {
-    isRural: Boolean(foodAccess.isRural),
-    isTwentyFivePlusMiles: foodAccess.isTwentyFivePlusMiles ?? null,
-    usdaLilaFlag: Boolean(foodAccess.usdaLilaFlag),
-    unavailableMode: 'unknown',
-  };
-  const after = evaluateFoodDesertDesignation({
-    ...sharedInputs,
-    nearestSupermarketMiles: afterAvg,
-  });
-  const before = evaluateFoodDesertDesignation({
-    ...sharedInputs,
-    nearestSupermarketMiles: beforeAvg,
-  });
+  let noVehicleEstimate = null;
+  const hunv = communityData.ers?.e2025?.tractHUNV;
+  const shareBefore = housingShareBeyond(blocks, base, HALF_MILE);
+  if (Number.isFinite(hunv) && shareBefore !== null && hunv * shareBefore >= MIN_NO_VEHICLE_ESTIMATE) {
+    noVehicleEstimate = { before: hunv * shareBefore, after: hunv * housingShareBeyond(blocks, next, HALF_MILE) };
+  }
 
   return {
-    placedCount: placed.length,
-    beforeAvg,
-    afterAvg,
-    beforeLabel: designationLabel(before, foodAccess.isFoodDesert),
-    afterLabel: designationLabel(after, foodAccess.isFoodDesert),
-    flipped: designationLabel(before, foodAccess.isFoodDesert)
-      !== designationLabel(after, foodAccess.isFoodDesert),
+    counting: counting.length,
+    nonCounting: placed.length - counting.length,
+    before,
+    after,
+    broughtWithin: before.beyond - after.beyond,
+    flipped: before.verdict.status === 'met' && after.verdict.status === 'not_met',
+    gap: gapAfter(after),
+    halfMile,
+    noVehicleEstimate,
   };
 }

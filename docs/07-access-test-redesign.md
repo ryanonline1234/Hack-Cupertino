@@ -52,6 +52,7 @@ Unknown, never a guess (each with a named reason):
 | `blocks_incomplete` | Σ block POP100 ≠ tract POP100 |
 | `stores_unavailable` | any needed store tile failed to load |
 | `income_unavailable` | no ERS 2025 row (verdict can still be NOT MET if not low access) |
+| `urban_unavailable` | no ERS Urban flag and no U/R population majority among blocks (practically unreachable) |
 
 ## Data (built by scripts, committed, dated)
 
@@ -117,15 +118,15 @@ Everywhere else blocks come live from TIGERweb (keyless, CORS) per tract.
 storeDistanceFetch), `pointInPolygon`.
 
 `src/engine/lowAccess.js`
-- `nearestStoreMiles(point, stores)` → miles or `Infinity` (grid index allowed).
+- `nearestStore(lat, lng, stores)` → `{ miles, store }` (`Infinity`/`null` with no stores).
 - `populationLowAccess(blocks, stores, thresholdMi)` →
   `{ population, beyond, share, byShare, byCount, lowAccess }`;
   `blocks: [{ pop, hu, lat, lng }]`, `stores: [{ lat, lng }]`. Population 0 →
   `lowAccess: null`.
-- `distanceBands(blocks, stores, T)` → residents beyond T split into
-  `[T, 1.1T)`, `[1.1T, 1.5T)`, `≥ 1.5T`.
-- `isBorderline(blocks, stores, T)` → low-access flag differs between 0.9T and
-  1.1T.
+- `distanceBands(blocks, distances, T)` → residents beyond T split into
+  `(T, 1.1T]`, `(1.1T, 1.5T]`, `> 1.5T` (a block at exactly T is within).
+- `isBorderline(blocks, distances, T)` → low-access flag differs between 0.9T
+  and 1.1T.
 
 `src/engine/foodAccessVerdict.js`
 - `evaluateFoodAccess({ lowIncome, lowAccess, unknownReason })` →
@@ -148,8 +149,10 @@ storeDistanceFetch), `pointInPolygon`.
 
 ### Pipeline
 `src/pipeline/tractLookup.js` — point → `{ geoid, state, county, tract, name,
-pop, hu, intptLat, intptLng }` via TIGERweb Census2020 layer 6; place lookup
-via layers 26/28 → `{ geoid, name, pop } | null`.
+basename, pop, hu, intptLat, intptLng }` via TIGERweb Census2020 layer 6
+(`name` = "Census Tract 5046.02", `basename` = "5046.02"); place lookup via
+layers 26/28 → `{ status: 'ok'|'no_place'|'unavailable', place: { geoid,
+name, basename, pop, kind } | null }`.
 `src/pipeline/blockLoader.js` — `loadTractBlocks(tract)` → bundled county file
 if present, else TIGERweb layer 10; completeness check; `{ status, blocks,
 source }`.
@@ -172,7 +175,8 @@ Payload:
             borderline, bands, lowIncome, verdict,
             references: { lram2019, sram2025, differNote },
             point: { miles, store },        // nearest counted store to the exact spot
-            blocks, stores, storesDataset }, // kept for scenario + map
+            blocks, stores, storesDataset }, // blocks carry baseline `miles`;
+                                             // stores = area + 5 mi for the map
   health, demographics, ers }
 ```
 

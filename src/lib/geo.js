@@ -1,0 +1,34 @@
+export const EARTH_RADIUS_MILES = 3958.8;
+
+function toRad(degrees) {
+  return (degrees * Math.PI) / 180;
+}
+
+// Same formula and radius as the original export in
+// src/pipeline/storeDistanceFetch.js, so distances stay bit-identical.
+export function haversineMiles(aLat, aLng, bLat, bLng) {
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+
+  return EARTH_RADIUS_MILES * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+// rings: [[[lng, lat], ...], ...] as ArcGIS/GeoJSON give them. Even-odd over
+// every ring, so holes and multi-part polygons need no ring-role bookkeeping.
+export function pointInPolygon(lat, lng, rings) {
+  let inside = false;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+      if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+        inside = !inside;
+      }
+    }
+  }
+  return inside;
+}

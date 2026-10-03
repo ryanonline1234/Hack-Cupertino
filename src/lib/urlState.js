@@ -3,7 +3,7 @@
  * page reload (or a copied link) restores the same view.
  *
  * Format:
- *   #lat=37.339&lng=-121.894&layout=split&bh=320&sw=560&hl=1&pins=37.3390,-121.8940;37.3412,-121.8901
+ *   #lat=37.339&lng=-121.894&layout=split&bh=320&sw=560&hl=1&pins=37.3390,-121.8940;37.3412,-121.8901&pt=s;g
  *
  * Fields:
  *   lat, lng → analyzed location (will trigger pipeline run on hydrate)
@@ -13,9 +13,14 @@
  *   hl       → '1' if highlight food sources mode was on (informational
  *              hint for child components; the feature lives in StreetsGlView)
  *   pins     → placed-store scenario pins as lat,lng pairs joined by ';'.
- *              Restored as grocery pins after the pipeline runs on hydrate,
- *              so a copied link replays the full "place a store" scenario
- *              with no database — the URL is the share payload.
+ *              Restored after the pipeline runs on hydrate, so a copied link
+ *              replays the full "place a store" scenario with no database —
+ *              the URL is the share payload.
+ *   pt       → store format per pin, index-aligned with pins and joined by
+ *              ';': s (supermarket/supercenter), g (small grocery), d (dollar
+ *              store), f (farmers/mobile market). A missing or unknown token
+ *              means s, which is what every link from before pt= meant.
+ *              Omitted when every pin is s.
  *
  * We use the URL hash (not search params) so the history doesn't pollute
  * server-side rendering or bust the cache when the user shares a link.
@@ -24,6 +29,13 @@
 // Placed pins share the Sim Lab 10-pin cap so a link can never encode more
 // pins than the UI itself allows.
 export const MAX_SHARED_PINS = 10;
+
+export const PIN_FORMATS = ['s', 'g', 'd', 'f'];
+const DEFAULT_PIN_FORMAT = 's';
+
+function pinFormat(token) {
+  return PIN_FORMATS.includes(token) ? token : DEFAULT_PIN_FORMAT;
+}
 
 // 4 decimals ≈ 11 m precision — plenty for a scenario pin, keeps links short.
 function formatPin(pin) {
@@ -40,6 +52,13 @@ function parsePin(segment) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
   return { lat, lng };
+}
+
+function readNumber(params, key) {
+  const raw = params.get(key);
+  if (raw === null || raw.trim() === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
 }
 
 export function encodeAppState(state) {
@@ -61,8 +80,18 @@ export function encodeAppState(state) {
   if (state.highlight) params.set('hl', '1');
 
   if (Array.isArray(state.pins) && state.pins.length > 0) {
-    const encoded = state.pins.slice(0, MAX_SHARED_PINS).map(formatPin).filter(Boolean);
-    if (encoded.length > 0) params.set('pins', encoded.join(';'));
+    // Pair each pin with its format before dropping invalid pins, so the two
+    // lists can't drift out of alignment.
+    const encoded = state.pins
+      .slice(0, MAX_SHARED_PINS)
+      .map((pin) => ({ segment: formatPin(pin), token: pinFormat(pin?.format) }))
+      .filter((p) => p.segment);
+    if (encoded.length > 0) {
+      params.set('pins', encoded.map((p) => p.segment).join(';'));
+      if (encoded.some((p) => p.token !== DEFAULT_PIN_FORMAT)) {
+        params.set('pt', encoded.map((p) => p.token).join(';'));
+      }
+    }
   }
 
   return params.toString();
@@ -74,9 +103,11 @@ export function decodeAppState(hashOrSearch) {
   const params = new URLSearchParams(cleaned);
   const result = {};
 
-  const lat = Number(params.get('lat'));
-  const lng = Number(params.get('lng'));
-  if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+  // Number(null) and Number('') are 0, so an absent or empty key must be
+  // ruled out first or a pins-only hash would land at 0,0.
+  const lat = readNumber(params, 'lat');
+  const lng = readNumber(params, 'lng');
+  if (lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
     result.lat = lat;
     result.lng = lng;
   }
@@ -102,7 +133,15 @@ export function decodeAppState(hashOrSearch) {
 
   const rawPins = params.get('pins');
   if (typeof rawPins === 'string' && rawPins.length > 0) {
-    const pins = rawPins.split(';').slice(0, MAX_SHARED_PINS).map(parsePin).filter(Boolean);
+    const tokens = (params.get('pt') || '').split(';');
+    const pins = rawPins
+      .split(';')
+      .slice(0, MAX_SHARED_PINS)
+      .map((segment, i) => {
+        const pin = parsePin(segment);
+        return pin && { ...pin, format: pinFormat(tokens[i]) };
+      })
+      .filter(Boolean);
     if (pins.length > 0) result.pins = pins;
   }
 
