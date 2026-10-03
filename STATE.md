@@ -1,12 +1,13 @@
 # State — Food Desert AI
-_Updated: 2026-10-03 (redesign + Suggest sites + docs on branch redesign/access-test)_
+_Updated: 2026-10-03 (redesign merged to main and live)_
 
 ## Now
-Production (main @ e69da03) still runs the old 9-point verdict, minus the
-closed relays. Branch `redesign/access-test` holds the redesign from
-docs/07: USDA ERS's low-income & low-access test on 2020 Census blocks and a
-dated USDA SNAP store list, Point/Tract/City scope, store-format pins and a
-computed-only impact card. Pushed 2026-10-03 for a Vercel preview; NOT merged, NOT in production.
+Live in production (food-desert-ai.vercel.app, main @ 4f36d89, deployed
+2026-10-03): the docs/07 access-test redesign, docs/08 Suggest sites and
+action plan, the security fixes, the rewritten AI disclosure and the repo
+docs. Production check after deploy: data files and /api/acs serve,
+/api/overpass and /api/llmapi are 404, no key values in the 14 bundle files,
+Alviso + village pin flips MEETS → DOES NOT MEET.
 
 ## Verified (2026-10-03)
 - `npm test`: 230/230. Lint: only the 2 pre-existing GooeyNav.jsx errors.
@@ -31,18 +32,20 @@ computed-only impact card. Pushed 2026-10-03 for a Vercel preview; NOT merged, N
    §3; written by Claude on request 2026-10-03), fill `[NAME]`, and confirm
    the September 2026 line. The rest of the CAC packet's answer prose
    (§1–§2, judges' steps) still describes the old method.
-2. Owner: review the Vercel preview of `redesign/access-test` (pushed
-   2026-10-03).
-3. Owner: decide product naming ("Food Desert AI — Impact Simulator" in the
+2. Owner: decide product naming ("Food Desert AI — Impact Simulator" in the
    nav, title and PWA name; the impact projections it implied are gone).
-4. Merge to main (production) on the owner's OK; re-verify the demo chips live.
-5. Owner, whenever: delete VITE_ANTHROPIC_KEY, LLMAPI_KEY and
+3. Before the Oct 11 freeze: rebuild the store snapshot once
+   (`node scripts/build-store-snapshot.mjs`), re-run the tests and re-verify
+   the demo chips live; never rebuild after the freeze.
+4. Owner, whenever: delete VITE_ANTHROPIC_KEY, LLMAPI_KEY and
    OPEN_ROUTER_API_KEY in Vercel; Deployment Protection; key rotation.
-6. Before the Oct 11 freeze: rebuild the store snapshot once
-   (`node scripts/build-store-snapshot.mjs`) and re-run the golden tests;
-   never after the freeze.
+5. Ask Siddharth to delete the unused React Bits copies (license + lint).
 
 ## Known, not fixed
+- A browser that visited before a deploy can show the previous build once (the
+  old service worker serves the cached shell; seen on 2026-10-03, fixed by one
+  reload). Before recording the video, load the site and reload once. Roadmap
+  item GAP-P6 (service-worker update handling) would remove the window.
 - Unused React Bits copies in the public repo (src/ui/landing/GooeyNav.jsx,
   FlexCarousel.jsx; MIT + Commons Clause forbids redistributing the
   components) and their 2 lint errors: Siddharth's files; ask him to delete.
