@@ -3,6 +3,21 @@
 Append-only. New decisions go on top with today's date; old entries are never
 edited. Each entry names the rejected alternative.
 
+## 2026-10-02 — Store names are escaped before Leaflet; pass-through rewrites are exact
+Leaflet writes string tooltip content with innerHTML, and store names come from
+OpenStreetMap, which anyone can edit, so a shop=supermarket node named with an
+<img onerror> tag ran script on the app origin (reproduced in headless
+Chromium). Tooltips now go through src/lib/storeTooltip.js, which escapes the
+name. Rejected alternative: stripping names server-side in api/overpass.js,
+which leaves the sink unsafe for any other source of names. Separately, the
+three remaining vercel.json rewrites (Census geocoder, Nominatim, CDC) were
+wildcards that would serve any upstream path, including Nominatim's own HTML
+and script, on the app origin; each is now a named parameter constrained to
+the exact paths the app calls (checked with @vercel/routing-utils 6.6.0: the
+5 used paths map as before, others match nothing). Rejected alternative:
+replacing them with dedicated functions, more code for no added safety while
+they carry no keys. The local Vite proxies stay prefix-based (dev only).
+
 ## 2026-10-02 — Review fixes to the relay batch: fail closed, cache only complete answers
 An adversarial review of the batch (reproduced under Vercel's own Node
 runtime) found that Vercel's lazy req.body getter throws on invalid JSON, which

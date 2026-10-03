@@ -247,6 +247,11 @@ preview):
 2. /api/overpass -> api/overpass.js (POST JSON {lat, lng}; the server builds
    the supermarket query and races three mirrors)
 
+Production pass-through rewrites (vercel.json, no keys) are limited to the
+exact upstream paths the app calls: /api/census-geocoder/geocoder/
+{geographies/coordinates, locations/onelineaddress}, /api/nominatim/{search,
+reverse} and /api/cdc/resource/cwsq-ngmh.json.
+
 Vite proxy routes (local dev only, plain pass-through, no keys):
 
 1. /api/census-geocoder

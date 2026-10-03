@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import { storeTooltipLabel } from '../lib/storeTooltip';
 // Import Leaflet's CSS here too — DesignationAtlasView.jsx imports it, but
 // when StreetsGlView falls back to MapView (2D mode) the atlas may not have
 // been loaded yet, so the map would render with broken tiles/zoom controls.
@@ -139,7 +140,7 @@ export default function MapView({
           fillOpacity: 0.85,
           weight: 1.5,
         }).bindTooltip(
-          `${s.name || 'Supermarket'}${Number.isFinite(s.distanceMiles) ? ` · ${s.distanceMiles.toFixed(1)} mi` : ''}`,
+          storeTooltipLabel(s),
           { direction: 'top', offset: [0, -6] },
         )),
     );

@@ -1,16 +1,16 @@
 {
   "rewrites": [
     {
-      "source": "/api/census-geocoder/:path*",
-      "destination": "https://geocoding.geo.census.gov/:path*"
+      "source": "/api/census-geocoder/geocoder/:path(geographies/coordinates|locations/onelineaddress)",
+      "destination": "https://geocoding.geo.census.gov/geocoder/:path"
     },
     {
-      "source": "/api/nominatim/:path*",
-      "destination": "https://nominatim.openstreetmap.org/:path*"
+      "source": "/api/nominatim/:path(search|reverse)",
+      "destination": "https://nominatim.openstreetmap.org/:path"
     },
     {
-      "source": "/api/cdc/:path*",
-      "destination": "https://data.cdc.gov/:path*"
+      "source": "/api/cdc/resource/:path(cwsq-ngmh\\.json)",
+      "destination": "https://data.cdc.gov/resource/:path"
     }
   ]
 }

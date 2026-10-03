@@ -10,8 +10,9 @@ NOT deployed. Production still serves the old bundle with both leaked keys
 until this ships and the keys are revoked.
 
 ## Verified (2026-10-02)
-- `npm test`: 70/70 pass (31 new: handler validation, client calls,
-  key-hygiene scan, bundle guard, review regressions).
+- `npm test`: 75/75 pass (36 new: handler validation, client calls,
+  key-hygiene scan, bundle guard, review regressions, tooltip escaping,
+  exact rewrite coverage).
 - `npm run lint`: only the 2 pre-existing react-hooks/purity errors in
   `src/ui/landing/GooeyNav.jsx` (unused React Bits copy from 7361547).
 - `npm run build`: green; key check passes even with the old VITE_ keys still
@@ -33,10 +34,10 @@ until this ships and the keys are revoked.
   never committed to git (63 commits scanned); repo is public.
 
 ## Pending (in order)
-1. Owner, now: revoke the LLMApi key(s) (VITE_ANTHROPIC_KEY, LLMAPI_KEY) and
-   check usage since Apr 12; check OpenRouter Activity since Sep 11 and revoke
-   the key; request a new Census key and paste it into local `.env` as
-   `CENSUS_KEY` (the name is already renamed there).
+1. Owner, when convenient (owner call 2026-10-02: spend is $0 and capped at
+   the 1-cent minimum, so rotation is not blocking): revoke the LLMApi key(s)
+   (VITE_ANTHROPIC_KEY, LLMAPI_KEY) and the OpenRouter key; request a new
+   Census key for local `.env` as `CENSUS_KEY` (the name is already renamed).
 2. Owner: write the AI-disclosure wording (README "AI disclosure",
    docs/CAC_SUBMISSION.md §3 lines 66-67) — both still describe the removed
    narrative — plus the video-script line (CAC_SUBMISSION.md:18) and the
@@ -56,8 +57,6 @@ until this ships and the keys are revoked.
 - None. docs/01, 02, 03 and 06 carry superseded notes; PROJECT_HANDOFF §11 updated.
 
 ## Known, not fixed in this batch (owner's call)
-- Stored XSS: OSM store names go into Leaflet tooltips as HTML
-  (MapView.jsx:141; roadmap SECCODE-P5). Reproduced in headless Chromium.
-- vercel.json still has three wildcard pass-through rewrites (nominatim, cdc,
-  census-geocoder) that can serve third-party HTML on the app origin.
 - No rate limit on /api/overpass or /api/acs (Vercel Firewall rule).
+- Fixed in this batch after review: stored XSS via OSM store names in Leaflet
+  tooltips (roadmap SECCODE-P5) and the wildcard pass-through rewrites.

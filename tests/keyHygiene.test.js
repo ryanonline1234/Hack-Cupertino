@@ -68,3 +68,37 @@ test('vercel.json no longer exposes a raw Census API pass-through', () => {
   const destinations = (config.rewrites || []).map((r) => r.destination);
   assert.ok(!destinations.some((d) => d.startsWith('https://api.census.gov')));
 });
+
+// Turn a vercel.json source like "/api/x/:path(a|b)" into a RegExp.
+function sourceToRegExp(source) {
+  const pattern = source.replace(/:[A-Za-z]+\(([^)]*(?:\([^)]*\)[^)]*)*)\)/g, '($1)');
+  return new RegExp(`^${pattern}$`);
+}
+
+test('pass-through rewrites cover exactly the upstream paths the app calls', () => {
+  const config = JSON.parse(readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
+  const sources = (config.rewrites || []).map((r) => r.source);
+  for (const source of sources) {
+    assert.ok(!source.includes('*'), `wildcard rewrite left in vercel.json: ${source}`);
+  }
+  const matchers = sources.map(sourceToRegExp);
+  const covered = (p) => matchers.some((re) => re.test(p));
+
+  const used = [
+    '/api/cdc/resource/cwsq-ngmh.json',
+    '/api/census-geocoder/geocoder/geographies/coordinates',
+    '/api/census-geocoder/geocoder/locations/onelineaddress',
+    '/api/nominatim/reverse',
+    '/api/nominatim/search',
+  ];
+  for (const p of used) assert.ok(covered(p), `no rewrite for ${p}`);
+
+  const unused = [
+    '/api/nominatim/ui/search.html',
+    '/api/nominatim/status',
+    '/api/cdc/resource/other.json',
+    '/api/census-geocoder/geocoder/',
+    '/api/census-geocoder/',
+  ];
+  for (const p of unused) assert.ok(!covered(p), `rewrite still forwards ${p}`);
+});
