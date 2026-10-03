@@ -52,7 +52,7 @@ npm run dev -- --host 127.0.0.1 --port 5173
 | `CENSUS_KEY` | No | Census ACS demographics, read server-side by `api/acs.js` (Vercel) and by the local dev middleware. Never prefix it with `VITE_`: Vite inlines `VITE_*` values into the client bundle. Without it, demographics fall back to built-in defaults. |
 | `VITE_CARTO_KEY` | No | Optional override for the US map's CARTO raster tiles; the built-in key is public by design |
 
-**Judges / reviewers without keys:** the app runs fully keyless. Maps, designation classification, evidence trace, impact projections, scenario compare, and sample tracts all work; only the Census demographic rows fall back to defaults.
+**Judges / reviewers without keys:** the app runs without any key. Maps, designation classification (distance rule and USDA atlas flag), the evidence trace, scenario compare and sample tracts all work. Without `CENSUS_KEY`, the Census figures fall back to zero: population, income and poverty rows, the income-based low-income test, and every population-driven impact number.
 
 `npm run build` ends with `scripts/check-bundle-for-keys.mjs`, which fails the build if any private key value (or a known key shape) appears in `dist/`. It prints the variable name, never the value.
 

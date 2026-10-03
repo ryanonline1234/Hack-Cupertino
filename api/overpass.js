@@ -73,7 +73,24 @@ export default async function handler(req, res) {
     return;
   }
 
-  const text = bodyText(req.body);
+  // Check the declared size before touching req.body: on Vercel a JSON body
+  // arrives already parsed, so its re-serialized length says nothing about
+  // how big the request really was.
+  const declaredLength = Number(req.headers?.['content-length']);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    res.status(413).json({ error: 'Body too large' });
+    return;
+  }
+
+  // Vercel's req.body is a lazy getter that throws on invalid JSON; an
+  // uncaught throw here would crash the function instead of answering 400.
+  let text;
+  try {
+    text = bodyText(req.body);
+  } catch {
+    res.status(400).json({ error: 'Expected JSON {lat, lng} inside the United States' });
+    return;
+  }
   if (Buffer.byteLength(text, 'utf8') > MAX_BODY_BYTES) {
     res.status(413).json({ error: 'Body too large' });
     return;

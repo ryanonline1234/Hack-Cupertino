@@ -52,6 +52,10 @@ New `src/engine/scenarioEngine.js`, function
 - Pure function of (communityData, placedStores): unit-testable, no fetch.
 
 ### Executive summary — scenario delta line
+_Superseded 2026-10-02: AICard and the runtime narrative were removed (see
+DECISIONS.md). The two subsections below are history; ScenarioResultCard
+carries the scenario delta._
+
 `AICard` appends (outside the existing 3-line slice) when scenario is active:
 "With N placed store(s): community average X → Y mi; designation A → B."
 TrackerApp holds `scenarioResult` state, recomputed with each pin change,

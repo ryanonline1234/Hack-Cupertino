@@ -21,7 +21,8 @@ renders the compat globe at 390×390 square, screenshot-confirmed circle.
 - Pre-search: reuses `LocationGate` full-screen (same fuzzy search).
 - Post-search: sticky slim header (brand, New-search toggle, Share when
   data is present) + the existing `<Panels>` stack
-  (CommunityStatsPanel, AICard narrative, AgentStatusFeed log) in a
+  (CommunityStatsPanel, AICard narrative, AgentStatusFeed log; AICard
+  removed 2026-10-02, see DECISIONS.md) in a
   natural page scroll. No iframe, no canvas map, no WebGL.
 - Designation-atlas mode is desktop-only: on mobile the mode toggle is
   hidden and `mode` is forced to tracker (atlas is a map; without a map

@@ -33,8 +33,11 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Only ?fips= is accepted, so extra parameters can't be used to bust the
+  // CDN cache and drive unlimited keyed Census calls for one tract.
+  const params = Object.keys(req.query || {});
   const fips = req.query?.fips;
-  if (typeof fips !== 'string' || !/^\d{11}$/.test(fips)) {
+  if (params.some((name) => name !== 'fips') || typeof fips !== 'string' || !/^\d{11}$/.test(fips)) {
     res.status(400).json({ error: 'Expected fips as an 11-digit census tract id' });
     return;
   }
@@ -72,7 +75,10 @@ export default async function handler(req, res) {
     const [medianIncome, population, povertyPop, ownerNoVeh, renterNoVeh] =
       tractRow.slice(0, 5).map(Number);
 
-    res.setHeader('Cache-Control', 'public, s-maxage=86400');
+    // ACS 2022 is a fixed release, so a complete answer can sit at the CDN for
+    // a day. A partial one (state median missing) must not: it would pin a
+    // failing low-income income test for every visitor to this tract.
+    res.setHeader('Cache-Control', stateMedianFamilyIncome > 0 ? 'public, s-maxage=86400' : 'no-store');
     res.status(200).json({
       medianIncome: medianIncome > 0 ? medianIncome : 0,
       population: population > 0 ? population : 0,

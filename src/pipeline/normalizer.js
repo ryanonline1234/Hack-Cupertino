@@ -6,7 +6,10 @@ import { getNearestSupermarketDistance } from './storeDistanceFetch.js';
 import { evaluateFoodDesertDesignation } from '../engine/foodDesertEvaluation.js';
 
 const COMMUNITY_CACHE_TTL_MS = 1000 * 60 * 15;
-const COMMUNITY_CACHE_PREFIX = 'fds:community:';
+// v2 (2026-10-02): Census figures now come from /api/acs. Clients built
+// before that wrote zeroed demographics after the old /api/census rewrite was
+// removed; the new prefix makes sure those entries are never read back.
+const COMMUNITY_CACHE_PREFIX = 'fds:community:v2:';
 const communityMemoryCache = new Map();
 
 function cacheKey(fips, lat, lng) {

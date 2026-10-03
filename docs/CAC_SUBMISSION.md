@@ -78,7 +78,7 @@ Open-source libraries/frameworks used (per rules, documented here): React, Vite,
 3. Read the designation + **evidence trace** + confidence badges.
 4. Open the **impact panel**, move the threshold slider, **save a scenario** and compare.
 5. Switch to **US map mode** and try **similar tracts**.
-6. Census demographics come from the server-side `api/acs.js` (needs `CENSUS_KEY` on the server); everything above works without it.
+6. Census demographics come from the server-side `api/acs.js` (needs `CENSUS_KEY` on the server). Without it, designation and the evidence trace still work, but population, income and poverty figures, the income-based low-income test and the population-driven impact numbers fall back to zero.
 
 Source: `https://github.com/ryanonline1234/Hack-Cupertino` (`food-desert-simulator/`). Created after October 30, 2025 (see git history).
 

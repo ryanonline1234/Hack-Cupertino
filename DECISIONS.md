@@ -3,6 +3,20 @@
 Append-only. New decisions go on top with today's date; old entries are never
 edited. Each entry names the rejected alternative.
 
+## 2026-10-02 — Review fixes to the relay batch: fail closed, cache only complete answers
+An adversarial review of the batch (reproduced under Vercel's own Node
+runtime) found that Vercel's lazy req.body getter throws on invalid JSON, which
+crashed /api/overpass instead of answering 400; the handler now catches it, and
+the dev middleware now copies Vercel's body semantics so dev can't hide it
+again. The 256 B cap now checks Content-Length before the body is read (Vercel
+hands over a parsed object, so its re-serialized size proved nothing).
+/api/acs rejects any parameter but fips (cache-busting), and sends no-store
+when the state median is missing, so a transient Census failure can't sit at
+the CDN for a day. The community cache prefix moves to v2 so zeros written by
+pre-deploy clients are never read back. Rejected alternative: shipping as
+first committed, since each of these is reachable by a stranger or by an
+ordinary deploy.
+
 ## 2026-10-02 — Runtime AI narrative removed end to end (closes the /api/llmapi relay)
 api/llmapi.js forwarded any caller's messages and any model id to OpenRouter on
 the project key, and the narrative it fed leaked model reasoning in 11 of 11

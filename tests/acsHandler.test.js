@@ -132,3 +132,46 @@ test('a failed state query still returns the tract figures', async () => {
     stub.restore();
   }
 });
+
+test('a partial answer (state query failed) is not cached at the CDN', async () => {
+  const stub = stubFetch(async (url) => (
+    url.includes('for=tract') ? censusUpstream(url) : new Response('busy', { status: 429 })
+  ));
+  try {
+    await withKey(FAKE_KEY, async () => {
+      const res = mockRes();
+      await handler(get({ fips: '06085504602' }), res);
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.headers['cache-control'], 'no-store');
+    });
+  } finally {
+    stub.restore();
+  }
+});
+
+test('a complete answer is cached at the CDN for a day', async () => {
+  const stub = stubFetch(async (url) => censusUpstream(url));
+  try {
+    await withKey(FAKE_KEY, async () => {
+      const res = mockRes();
+      await handler(get({ fips: '06085504602' }), res);
+      assert.equal(res.headers['cache-control'], 'public, s-maxage=86400');
+    });
+  } finally {
+    stub.restore();
+  }
+});
+
+test('extra query parameters are rejected so they cannot bust the CDN cache', async () => {
+  const stub = stubFetch(() => { throw new Error('must not reach upstream'); });
+  try {
+    await withKey(FAKE_KEY, async () => {
+      const res = mockRes();
+      await handler(get({ fips: '06085504602', cb: '1' }), res);
+      assert.equal(res.statusCode, 400);
+    });
+    assert.equal(stub.calls.length, 0);
+  } finally {
+    stub.restore();
+  }
+});

@@ -41,16 +41,23 @@ function adapt(req, res, url, rawBody) {
   for (const [name, value] of url.searchParams) {
     req.query[name] = name in req.query ? [].concat(req.query[name], value) : value;
   }
-  const isJson = (req.headers['content-type'] || '').includes('application/json');
-  if (rawBody && isJson) {
-    try {
-      req.body = JSON.parse(rawBody);
-    } catch {
-      req.body = rawBody;
-    }
-  } else {
-    req.body = rawBody;
-  }
+  // Match Vercel's body semantics so dev can't hide a production crash:
+  // JSON is parsed lazily and an invalid body throws on access; a request
+  // with no Content-Type gets an empty body.
+  const contentType = req.headers['content-type'] || '';
+  Object.defineProperty(req, 'body', {
+    configurable: true,
+    get() {
+      if (!contentType) return '';
+      if (!contentType.includes('application/json')) return rawBody;
+      if (!rawBody) return {};
+      try {
+        return JSON.parse(rawBody);
+      } catch {
+        throw Object.assign(new Error('Invalid JSON'), { status: 400 });
+      }
+    },
+  });
 
   res.status = (code) => {
     res.statusCode = code;

@@ -111,3 +111,36 @@ test('returns 502 when every mirror fails', async () => {
     stub.restore();
   }
 });
+
+test('a body that fails Vercel JSON parsing gets 400, not a crash', async () => {
+  const stub = stubFetch(() => { throw new Error('must not reach upstream'); });
+  try {
+    const req = {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'content-length': '24' },
+    };
+    // Vercel's req.body is a lazy getter that throws on invalid JSON.
+    Object.defineProperty(req, 'body', {
+      get() { throw Object.assign(new Error('Invalid JSON'), { statusCode: 400 }); },
+    });
+    const res = mockRes();
+    await handler(req, res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(stub.calls.length, 0);
+  } finally {
+    stub.restore();
+  }
+});
+
+test('the size cap applies to the raw body, not the re-serialized object', async () => {
+  const stub = stubFetch(() => { throw new Error('must not reach upstream'); });
+  try {
+    const res = mockRes();
+    // Vercel hands over a parsed object; the raw request was 100 kB of padding.
+    await handler(post({ ...SAN_JOSE }, { 'content-length': '100000' }), res);
+    assert.equal(res.statusCode, 413);
+    assert.equal(stub.calls.length, 0);
+  } finally {
+    stub.restore();
+  }
+});

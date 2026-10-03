@@ -5,7 +5,12 @@ export async function getCensusData(fips) {
 
   try {
     const res = await fetch(`/api/acs?fips=${fips}`);
-    if (!res.ok) return defaultCensus();
+    if (!res.ok) {
+      // 503 means the deployment has no CENSUS_KEY; say so instead of
+      // silently showing zeros.
+      console.warn(`Census data unavailable (/api/acs ${res.status}); demographics fall back to defaults.`);
+      return defaultCensus();
+    }
     const data = await res.json();
     return { ...defaultCensus(), ...pickCensusFields(data) };
   } catch {
