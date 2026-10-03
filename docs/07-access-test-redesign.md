@@ -89,17 +89,25 @@ and `FARA_2019/MapServer/30` (2010 tracts).
   SD_SRAM_LILATracts_1And10, TractHUNV, OHU2020, PovertyRate,
   MedianFamilyIncome, GroupQuartersFlag` (keyed by `CensusTract20`; never
   `CensusTract24`).
-- f2019 = `LILATracts_1And10, LA1and10, lapop1share, lapop10share, Urban`.
+- f2019 = `LILATracts_1And10, LA1and10, lapop1share, lapop10share, Urban`
+  (keyed by `GEOID10`). A null 2019 share means "not published" (every null
+  is on a tract that isn't low access), never 0%.
+- `MedianFamilyIncome` 250001 is the ACS top-code: show "$250,000 or more".
+- No 2025 rows exist for Puerto Rico; 295 zero-population (mostly water)
+  tracts have none either — those are `no_residents`, not `income_unavailable`.
 
 ### Blocks bundle — `public/data/blocks/<SSCCC>.json` (bundled counties only)
 Counties: 06085 Santa Clara, 06001 Alameda (CA-17), 28151 Washington MS
 (Greenville demo), 04001 Apache AZ (Chinle rural case).
 Source: TIGERweb `tigerWMS_Census2020/MapServer/10` (blocks) + `/6` (tracts)
 + `/26` and `/28` (incorporated places, CDPs).
-`{ retrievedAt, tracts: { "<tract6>": { pop: <tract POP100>, name, blocks:
-[[block4, pop, hu, lat, lng, ur, place7], …] } } }` where `place7` is the
-7-digit place GEOID containing the block's internal point (full-resolution
-polygon) or `""`.
+`{ retrievedAt, source, tracts: { "<tract6>": { pop: <tract POP100>, name,
+blocks: [[block4, pop, hu, lat, lng, ur, place7], …] } }, places: {
+"<place7>": { name, pop } } }` where `place7` is the 7-digit place GEOID
+containing the block's internal point (full-resolution polygon; incorporated
+place wins over CDP) or `""`. Tract `name` is TIGERweb NAME ("Census Tract
+5046.02"); place `name` keeps the Census suffix ("San Jose city"), so labels
+strip it.
 Everywhere else blocks come live from TIGERweb (keyless, CORS) per tract.
 
 ## Modules
@@ -123,7 +131,13 @@ storeDistanceFetch), `pointInPolygon`.
 - `evaluateFoodAccess({ lowIncome, lowAccess, unknownReason })` →
   `{ status: 'met'|'not_met'|'unknown', qualifier, reason }`, qualifier one
   of `li_la`, `la_not_li`, `li_not_la`, `neither`, `la_income_unknown`,
-  `not_la_income_unknown`, `unknown`.
+  `not_la_income_unknown`, `not_li_access_unknown`, `unknown`. `false` wins:
+  not low income → NOT MET even when access is unknown, and not low access →
+  NOT MET even when income is unknown.
+- For scenario recompute: `nearestDistances(blocks, stores)` → per-block miles
+  (grid-indexed, fine for ~35k blocks × ~1k stores) and
+  `populationLowAccessFromDistances(blocks, distances, T)`; adding pins is
+  `min(before, distanceToPins)` per block.
 
 `src/engine/scenarioEngine.js` (rewritten)
 - `evaluatePlacedStoreScenario(communityData, pins)` → `null` with no pins;

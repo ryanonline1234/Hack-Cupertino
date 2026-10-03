@@ -1,0 +1,102 @@
+{
+  "about": "Hand-reviewed exclusions applied by scripts/build-store-snapshot.mjs to the SNAP Supermarket + Super Store pull (docs/07 'Stores'). Rules are tested against the named field in file order; a record is attributed to the FIRST rule it matches, so per-rule counts in public/data/stores/manifest.json add up. Reviewed 2026-10-02 against every matched name (data last edited 2026-09-17).",
+  "reviewed": "2026-10-02",
+  "rules": [
+    {
+      "id": "costco",
+      "field": "Store_Name",
+      "pattern": "\\bCOSTCO\\b",
+      "flags": "i",
+      "reason": "Warehouse club (paid membership): Costco Wholesale warehouses, Costco Business Centers and one in-warehouse 'Costco Pharmacy' listing."
+    },
+    {
+      "id": "sams-club",
+      "field": "Store_Name",
+      "pattern": "\\bSAM['\u2019`]?S\\s+CLUB\\b",
+      "flags": "i",
+      "reason": "Warehouse club (paid membership): Sam's Club. Requires 'CLUB' so 'Sam's Foods Supermarket' (Atwater CA) is not matched."
+    },
+    {
+      "id": "bjs-wholesale",
+      "field": "Store_Name",
+      "pattern": "\\bB\\.?\\s?J['\u2019`]?S\\s+(WHOLESALE|MEMBERSHIP)\\b|^BJ['\u2019`]?S\\s+\\d+$",
+      "flags": "i",
+      "reason": "Warehouse club (paid membership): BJ's Wholesale Club, incl. the 'B JS WHOLESALE CLUB', 'BJS WHOLESALE CLUB' and 'BJ'S MEMBERSHIP CLUB' spellings, plus the number-only listing 'BJs 351' (6607 Wilson Blvd, Falls Church VA: judgment call, the BJ's club at Seven Corners). A bare 'BJ'S' is deliberately not matched because it also names non-club stores."
+    },
+    {
+      "id": "commissary",
+      "field": "Store_Name",
+      "pattern": "\\bCOMMISSARY\\b",
+      "flags": "i",
+      "reason": "Military commissary (DeCA): sells only to authorized patrons (service members, retirees, dependents). Every match on 2026-10-02 is a DeCA store with a store number on or beside an installation."
+    },
+    {
+      "id": "commissary-by-installation",
+      "field": "Store_Name",
+      "pattern": "\\bAFB\\b|\\bAIR\\s+FORCE\\s+BASE\\b|\\bDECA\\b|\\bARSENAL\\b|\\bNASJRB\\b",
+      "flags": "i",
+      "reason": "DeCA commissaries listed under the installation name without the word 'commissary': 'Charleston AFB SC 308', 'Kirtland AFB 821', 'McGuire Air force Base 2323', 'Picatinney Arsenal 2104', 'NASJRB Ft Worth 630', 'DECA KINGSVILLE 620'."
+    },
+    {
+      "id": "navy-exchange",
+      "field": "Store_Name",
+      "pattern": "\\bNAVY\\s+EXCHANGE\\b|\\bNEX\\b",
+      "flags": "i",
+      "reason": "Navy Exchange (NEX): on-installation retail for authorized patrons only. Matches 'Navy Exchange' itself, never a bare 'Exchange' (e.g. '185 Exchange Street Food Corp/Key Food', Chicopee MA, is kept)."
+    },
+    {
+      "id": "naval-hospital-mini-mart",
+      "field": "Store_Name",
+      "pattern": "^NAVAL\\s+HOSPITAL\\s+MINI\\s+MART$",
+      "flags": "i",
+      "reason": "Judgment call: the mini mart at U.S. Naval Hospital Guam (Farenholt Ave & Hessler St). The name lacks 'exchange' but the store is inside the installation, which only authorized patrons can enter."
+    },
+    {
+      "id": "marine-corps-exchange",
+      "field": "Store_Name",
+      "pattern": "\\bMARINE\\s+CORPS\\s+EXCHANGE\\b|\\bMCX\\b",
+      "flags": "i",
+      "reason": "Marine Corps Exchange (MCX): on-installation retail for authorized patrons only. Matches nothing on 2026-10-02; kept so a refresh can't let one in silently. Only the store name is tested, so Guam stores on 'Marine Corps Dr' are unaffected."
+    },
+    {
+      "id": "army-air-force-exchange",
+      "field": "Store_Name",
+      "pattern": "\\bAAFES\\b|\\bARMY\\s*(&|AND)\\s*AIR\\s+FORCE\\s+EXCHANGE\\b|\\bPOST\\s+EXCHANGE\\b|\\bBASE\\s+EXCHANGE\\b|\\bCOAST\\s+GUARD\\s+EXCHANGE\\b|\\bCGX\\b",
+      "flags": "i",
+      "reason": "Army & Air Force Exchange Service (AAFES, PX/BX) and Coast Guard Exchange (CGX): on-installation retail for authorized patrons only. Matches nothing on 2026-10-02; kept for refreshes."
+    },
+    {
+      "id": "fuel-station",
+      "field": "Store_Name",
+      "pattern": "\\bFUEL|\\bGAS\\s*['\u2019`]?\\s*N['\u2019`]?\\s+GO\\b",
+      "flags": "i",
+      "reason": "Supermarket-branded fuel station, not a grocery store: 'Safeway Fuel Station', 'Von's Fuel Station', 'Vons Fuel Center', 'Albertsons Fuel', 'Martin's Super Market Fuel Center', 'Bens Supercenter Fuelcenter BC', and (judgment call) 'Food City Gas N Go Express', Food City's fuel-and-convenience format."
+    }
+  ],
+  "knownBadCoordinates": [
+    {
+      "recordId": 1125295,
+      "state": "GU",
+      "name": "Pay Less Markets Sumay",
+      "reason": "Address is Santa Rita, Guam; geocoded to Santa Rita, Pampanga, Philippines (15.00441, 120.6053), outside Guam."
+    },
+    {
+      "recordId": 476187,
+      "state": "GU",
+      "name": "OROTE DECA COMMISSARY 3338",
+      "reason": "Same Philippines geocode as Pay Less Markets Sumay. Already removed by the 'commissary' rule, so normally never reaches the coordinate check."
+    },
+    {
+      "recordId": 1057746,
+      "state": "WI",
+      "name": "Village Market",
+      "reason": "Address is 133 Main St, Manitowish Waters WI; geocoded to 43.607124, -93.673035 (Minnesota/Iowa line), outside Wisconsin."
+    },
+    {
+      "recordId": 1672263,
+      "state": "NY",
+      "name": "Super Fresh",
+      "reason": "Address is 4125 Greenpoint Ave, Sunnyside (Queens) NY; geocoded to 35.379372, -118.99341 (Bakersfield, CA), outside New York."
+    }
+  ]
+}
