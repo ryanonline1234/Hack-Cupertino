@@ -7,11 +7,11 @@ Siddharth's UI overhaul): runtime AI narrative removed, Census key behind
 `api/acs.js`, `api/overpass.js` limited to `{lat, lng}`, dev middleware runs
 the real handlers, build fails on a leaked key, OSM names escaped in tooltips,
 pass-through rewrites exact. Merged to main (fast-forward, fb14c53) and live
-in production 2026-10-02 at the owner's call, before CENSUS_KEY was added:
-until it is set in Vercel and production is redeployed, /api/acs answers 503
-and every Census figure on screen is zero (income test, population-driven
-impact numbers). Older deployment URLs still serve the old key-bearing
-bundles and relays until the keys are revoked or protection is on.
+in production 2026-10-02. CENSUS_KEY added in Vercel (Sensitive, Production +
+Preview; VITE_CENSUS_KEY deleted) and production redeployed at e69da03:
+/api/acs serves real ACS figures. Older deployment URLs still serve the old
+key-bearing bundles and relays until the keys are revoked or Deployment
+Protection is on (owner deferred rotation: spend $0, capped at $0.01).
 
 ## Verified (2026-10-02)
 - `npm test`: 75/75 pass (36 new: handler validation, client calls,
@@ -42,7 +42,12 @@ bundles and relays until the keys are revoked or protection is on.
 - Production (food-desert-ai.vercel.app @ fb14c53, after deploy): 14 files,
   no key value or key shape; /api/llmapi and /api/census 404; /api/overpass
   400 on raw QL and malformed JSON, 200 for San Jose; nominatim ui 404;
-  geocoder, reverse and CDC 200; /api/acs 503 (no CENSUS_KEY).
+  geocoder, reverse and CDC 200; /api/acs 503 (no CENSUS_KEY yet).
+- Production @ e69da03 (after CENSUS_KEY): /api/acs 200 for Alviso
+  (population 1,920, median income $107,438) and Greenville 28151000600;
+  400 on a bad FIPS; bundle still has no key value. Production Alviso search
+  fetched /api/acs 200 and stored the real figures (panel count-up not
+  visually confirmed: the browser pane was hidden).
 - Exposure audit: Census key and the LLMApi key (stored as
   VITE_ANTHROPIC_KEY) are in production and 33 of 34 deployments, all public;
   never committed to git (63 commits scanned); repo is public.
@@ -57,13 +62,10 @@ bundles and relays until the keys are revoked or protection is on.
    narrative — plus the video-script line (CAC_SUBMISSION.md:18) and the
    landing headline "The AI workspace for food access" (LandingPage.tsx:293).
    Use docs/AI_USE_LOG.md.
-3. Owner: add `CENSUS_KEY` (Sensitive; Production + Preview) in Vercel, then
-   redeploy production (env changes only apply to new deployments).
-4. After that redeploy: `GET https://food-desert-ai.vercel.app/api/acs?fips=06085504602`
-   returns 200 with population > 0, and an Alviso search shows non-zero income.
-5. After deploy: delete VITE_CENSUS_KEY, VITE_ANTHROPIC_KEY, LLMAPI_KEY and
-   OPEN_ROUTER_API_KEY in Vercel; turn on Standard Deployment Protection.
-6. Then: the access-test / impact / store-format design (10 open decisions
+3. Owner, whenever: delete VITE_ANTHROPIC_KEY, LLMAPI_KEY and
+   OPEN_ROUTER_API_KEY in Vercel (nothing reads them now); turn on Standard
+   Deployment Protection.
+4. Then: the access-test / impact / store-format design (10 open decisions
    from the 2026-10-02 session); roadmap W1-W3 items still open.
 
 ## Pending spec patches
