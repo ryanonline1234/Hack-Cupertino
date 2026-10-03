@@ -1,5 +1,16 @@
 export const EARTH_RADIUS_MILES = 3958.8;
 
+// Placed stores and share links carry 4 decimals (≈11 m). Points that can
+// become pins (suggested sites) are scored at this precision, so "Add as
+// store" lands exactly where the site was scored. toFixed rounding, as a
+// share link encodes it, so a replayed link decodes to the same number, and
+// rounding twice changes nothing.
+export const PIN_DECIMALS = 4;
+
+export function roundCoord(x, decimals = PIN_DECIMALS) {
+  return Number(Number(x).toFixed(decimals));
+}
+
 function toRad(degrees) {
   return (degrees * Math.PI) / 180;
 }

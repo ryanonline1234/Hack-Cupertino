@@ -3,6 +3,7 @@ import L from 'leaflet';
 import { escapeHtml, storeTooltipLabel } from '../lib/storeTooltip';
 import { haversineMiles } from '../lib/geo';
 import { placedPinLabel, storeFormatInfo } from '../lib/storeFormats';
+import { siteLabel } from '../lib/siteLabels';
 // Import Leaflet's CSS here too — DesignationAtlasView.jsx imports it, but
 // when StreetsGlView falls back to MapView (2D mode) the atlas may not have
 // been loaded yet, so the map would render with broken tiles/zoom controls.
@@ -43,6 +44,36 @@ const PINS_PANE = 'placedPins';
 // under the location marker, and below tooltipPane (650), so tooltips stay
 // readable over the pins.
 const PINS_PANE_Z = 640;
+// Suggested sites (docs/08): numbered dashed circles, a different shape from
+// the solid/ring pins, in their own pane just under the placed pins (so a
+// store added at a suggested spot covers its marker) and over the location
+// marker.
+const SUGGEST_PANE = 'suggestedSites';
+const SUGGEST_PANE_Z = 630;
+const SUGGEST_SIZE = 26;
+
+// The marker's HTML is fixed markup plus the pick's number (an integer), so
+// nothing third-party reaches innerHTML here. Tokens resolve in the DOM, and
+// the dark outer ring keeps the dashed edge visible on light tiles.
+function suggestMarkerHtml(n) {
+  const num = Number.isInteger(n) && n > 0 ? String(n) : '';
+  return (
+    `<span style="display:flex;align-items:center;justify-content:center;box-sizing:border-box;` +
+    `width:${SUGGEST_SIZE}px;height:${SUGGEST_SIZE}px;border-radius:9999px;` +
+    `border:2px dashed var(--orange);background:var(--void);color:var(--orange);` +
+    `box-shadow:0 0 0 2px var(--void);font:700 12px/1 Inter,sans-serif;">${num}</span>`
+  );
+}
+
+// Tooltip HTML: siteLabel escapes the OpenStreetMap name; everything else is
+// a fixed string or a computed number, escaped anyway.
+function suggestTooltip(site) {
+  const n = Number.isInteger(site.n) && site.n > 0 ? ` ${site.n}` : '';
+  const label = siteLabel(site) ?? 'Candidate site';
+  const gain = typeof site.gainText === 'string' && site.gainText ? ` · ${escapeHtml(site.gainText)}` : '';
+  return `Suggested site${n} · ${label}${gain}`;
+}
+
 // The payload's map stores are the tract area + 5 mi, so this cap only
 // matters in the densest cities; nearest stores are kept first.
 const MAX_STORE_MARKERS = 2000;
@@ -56,6 +87,8 @@ const MAX_STORE_MARKERS = 2000;
  *                gray ring with a dark halo
  *   placeArmed / onPlaceAt(lat, lng)   armed clicks place a store instead of
  *                analyzing the clicked spot
+ *   suggestedSites  suggestion picks [{ id, n, lat, lng, kind, sqft, name,
+ *                gainText }], drawn as numbered dashed markers (not pins)
  */
 export default function MapView({
   center = { lat: 39.5, lng: -98.35 },
@@ -68,6 +101,7 @@ export default function MapView({
   placedPins = [],
   placeArmed = false,
   onPlaceAt,
+  suggestedSites = [],
   // True when the map is actually shown. The parent keeps both renderers
   // mounted and hides the inactive one, so a Leaflet map initialized while
   // hidden measures 0×0 — this effect re-syncs size the moment it appears.
@@ -78,6 +112,7 @@ export default function MapView({
   const markerRef = useRef(null);
   const storesLayerRef = useRef(null);
   const pinsLayerRef = useRef(null);
+  const suggestLayerRef = useRef(null);
   const rendererRef = useRef(null);
   // Refs mirror the latest props for the once-bound map click handler.
   const placeArmedRef = useRef(placeArmed);
@@ -102,6 +137,7 @@ export default function MapView({
     // Placed stores sit in their own pane above the store canvas and the
     // location marker, whichever layer happened to be added first.
     map.createPane(PINS_PANE).style.zIndex = String(PINS_PANE_Z);
+    map.createPane(SUGGEST_PANE).style.zIndex = String(SUGGEST_PANE_Z);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -262,6 +298,41 @@ export default function MapView({
     layer.addTo(map);
     pinsLayerRef.current = layer;
   }, [placedPins]);
+
+  // Suggested sites: visual only (the list in the Tract view is the
+  // keyboard and screen-reader surface), so the markers take no tab stops.
+  // Marker clicks don't reach the map, so they never re-analyze or place.
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map) return;
+
+    if (suggestLayerRef.current) {
+      suggestLayerRef.current.remove();
+      suggestLayerRef.current = null;
+    }
+    const sites = Array.isArray(suggestedSites)
+      ? suggestedSites.filter((s) => Number.isFinite(s?.lat) && Number.isFinite(s?.lng))
+      : [];
+    if (sites.length === 0) return;
+
+    const half = SUGGEST_SIZE / 2;
+    const layer = L.layerGroup(
+      sites.map((s) => L.marker([s.lat, s.lng], {
+        icon: L.divIcon({
+          className: 'fds-suggest-marker',
+          html: suggestMarkerHtml(s.n),
+          iconSize: [SUGGEST_SIZE, SUGGEST_SIZE],
+          iconAnchor: [half, half],
+          tooltipAnchor: [0, -half],
+        }),
+        pane: SUGGEST_PANE,
+        keyboard: false,
+        riseOnHover: true,
+      }).bindTooltip(suggestTooltip(s), { direction: 'top' })),
+    );
+    layer.addTo(map);
+    suggestLayerRef.current = layer;
+  }, [suggestedSites]);
 
   useEffect(() => {
     const map = mapInstance.current;

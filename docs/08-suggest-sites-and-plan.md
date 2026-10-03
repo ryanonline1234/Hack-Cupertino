@@ -38,28 +38,45 @@ reason: null | 'not_low_access' | 'no_gain' | 'unknown_baseline' }`
 - Returns `reason: 'not_low_access'` with no picks when the baseline isn't low
   access, `unknown_baseline` when access is Unknown.
 - `verdictAfter` uses `evaluateFoodAccess` with the tract's `lowIncome`.
-- Candidates are `{ id, lat, lng, label, kind, sqft?, name? }`.
+- Candidates are `{ id, lat, lng, label, kind, sqft?, name? }`, at pin
+  precision (4 decimals, `roundCoord` in `src/lib/geo.js`): the site loader
+  and `blockCandidates` round them before scoring, so "Add as store" lands
+  exactly where a pick was scored and the scenario card repeats the list's
+  numbers. (Rounding after scoring moved boundary blocks across T: review of
+  2026-10-03, 9 picks in the bundled counties.)
 
 Candidate sources:
 - **Commercial** (bundled counties 06085, 06001, 28151, 04001 only): existing
   commercial sites from OpenStreetMap, pulled at build time by
   `scripts/build-site-candidates.mjs` into `public/data/sites/<SSCCC>.json`
   (dated, committed): vacant or disused shops (`shop=vacant`,
-  `disused:shop=*`), retail/commercial buildings with a footprint of at least
-  10,000 sq ft (`building=retail|commercial|supermarket` polygons), and
-  `landuse=retail` areas of at least 2 acres (centroid). Fast-food lots and
-  operating supermarkets are not candidates. Format:
-  `{ retrievedAt, source, license: 'ODbL', sites: [[id, lat, lng, kind, sqft,
-  name], …] }`, kind `vacant` | `building` | `retail_area`.
+  `disused:shop=*` not occupied again), retail and commercial buildings with
+  a footprint of at least 10,000 sq ft (`building=retail|commercial`
+  polygons), and `landuse=retail` areas of at least 2 acres (centroid).
+  Not candidates: fast-food lots and operating supermarkets; any building or
+  retail area in active use (a `shop` other than `vacant`, or an `amenity`,
+  `office`, `craft`, `healthcare`, `leisure`, `tourism` or `club` tag on the
+  feature: warehouse clubs, restaurants, hotels, clinics, lodges, offices,
+  car dealers, department stores, malls); a `building=supermarket` that
+  isn't vacant or disused; and any building or retail area with a
+  `shop=supermarket` node or polygon inside it. Format:
+  `{ retrievedAt, source, license: 'ODbL', counts, sites: [[id, lat, lng,
+  kind, sqft, name], …] }`, kind `vacant` | `building` (`building=retail`) |
+  `commercial_building` (`building=commercial`, often offices) |
+  `retail_area`; `name` only for vacant shops (on anything else it's the
+  business there now), else `''`.
   Use candidates within the tract's block bounding box expanded by T.
 - **Blocks** (everywhere else, or when no commercial candidate gains
   anything): the tract's populated block internal points.
 
-Labels (fixed strings, third-party names escaped):
+Labels (fixed strings; the only third-party text is a vacant shop's name,
+escaped):
 - vacant: "Vacant shop{ · name} (OpenStreetMap)"
-- building: "Retail building, ≈{sqft rounded to 1,000} sq ft footprint{ · name} (OpenStreetMap)"
-- retail_area: "Retail area, ≈{acres, 1 decimal} acres{ · name} (OpenStreetMap)"
-- blocks: "Inside a populated Census block (no commercial-site data here)"
+- building: "Retail building, ≈{sqft rounded to 1,000} sq ft footprint (OpenStreetMap)"
+- commercial_building: "Commercial building (offices or shops), ≈{sqft rounded to 1,000} sq ft footprint (OpenStreetMap)"
+- retail_area: "Retail area, ≈{acres, 1 decimal} acres (OpenStreetMap)"
+- blocks: "Inside a populated Census block (not a commercial site)" (true
+  however blocks were reached; the list's note says why)
 
 Always shown with the suggestions: "Distance only. Ignores land, zoning,
 cost, and whether a grocer would open there. Commercial sites are existing

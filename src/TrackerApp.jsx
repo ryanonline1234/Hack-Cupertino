@@ -8,10 +8,14 @@ import DesignationAtlasView from './components/DesignationAtlasView';
 import CommunityStatsPanel from './components/CommunityStatsPanel';
 import AgentStatusFeed from './components/AgentStatusFeed';
 import ResizeHandle from './components/ResizeHandle';
+import SuggestedSites from './components/SuggestedSites';
 import { buildCommunityData } from './pipeline/normalizer';
 import { evaluatePlacedStoreScenario } from './engine/scenarioEngine';
+import { suggestSites } from './engine/suggestSites';
+import { buildActionPlan } from './engine/actionPlan';
+import { candidateFallback, loadSiteCandidates, tractCandidates } from './pipeline/siteLoader';
 import { loadPlaceSummary } from './pipeline/placeLoader';
-import { haversineMiles } from './lib/geo';
+import { PIN_DECIMALS, haversineMiles, roundCoord } from './lib/geo';
 import { MAX_SHARED_PINS, PIN_FORMATS, decodeAppState, writeAppStateToHash } from './lib/urlState';
 import { DEFAULT_STORE_FORMAT, placedPinLabel, storeFormatInfo } from './lib/storeFormats';
 import { approxCount, fmtBeyond, fmtMiles, fmtShare } from './lib/format';
@@ -26,10 +30,16 @@ const DEFAULT_SPLIT_VW = 0.50;
 const MAX_PINS = MAX_SHARED_PINS;
 // Undo keeps this many earlier pin arrays.
 const PIN_HISTORY_CAP = 20;
+// Stable empty list, so the map's suggestion layer isn't redrawn every render.
+const NO_PICKS = [];
 // Headings TrackerApp moves focus to (ids set in CommunityStatsPanel and
 // CitySummary). A request waits this long for its heading to render.
 const VERDICT_HEADING_ID = 'fds-verdict-heading';
 const CITY_SUMMARY_HEADING_ID = 'fds-city-summary-heading';
+// The Suggested sites list heading (SuggestedSites) and the Tract view's
+// "Suggest sites" button (CommunityStatsPanel), for focus after open/dismiss.
+const SUGGEST_HEADING_ID = 'fds-suggest-heading';
+const SUGGEST_BUTTON_ID = 'fds-suggest-button';
 const FOCUS_WAIT_MS = 60000;
 // Fetch failures a fresh request can fix (the verdict card's Try again).
 // Community-profile call outcomes other than 'ok' (normalizer profileStatus).
@@ -144,8 +154,9 @@ function normalizeFormat(format) {
 
 // Share links carry pins to 4 decimals and the location to 5
 // (src/lib/urlState.js). Rounding the live values the same way makes the
-// result on screen exactly what the link replays.
-const roundTo = (x, decimals) => Number(Number(x).toFixed(decimals));
+// result on screen exactly what the link replays. roundCoord is also what
+// suggested sites are scored at, so an added pick lands where it was scored.
+const roundTo = roundCoord;
 
 // Placed pins plus an undo history of earlier pin arrays (newest last).
 // Every change a visitor makes (add, remove, format, clear) pushes the array
@@ -156,6 +167,12 @@ function pinsReducer(state, action) {
   switch (action.type) {
     case 'add':
       return state.pins.length >= MAX_PINS ? state : commit([...state.pins, action.pin]);
+    case 'addMany': {
+      // "Add all" suggested sites: one history entry, so one Undo removes them.
+      const room = MAX_PINS - state.pins.length;
+      const added = Array.isArray(action.pins) ? action.pins.slice(0, Math.max(0, room)) : [];
+      return added.length === 0 ? state : commit([...state.pins, ...added]);
+    }
     case 'format': {
       const pin = state.pins.find((p) => p.id === action.id);
       if (!pin || pin.format === action.format) return state;
@@ -192,6 +209,9 @@ function Panels({
   onCloseCitySummary,
   onRetryCitySummary,
   onRetry,
+  onSuggestSites,
+  suggestedSites,
+  actionPlan,
   dataError,
   logs,
 }) {
@@ -208,6 +228,9 @@ function Panels({
           onCloseCitySummary={onCloseCitySummary}
           onRetryCitySummary={onRetryCitySummary}
           onRetry={onRetry}
+          onSuggestSites={onSuggestSites}
+          suggestedSites={suggestedSites}
+          actionPlan={actionPlan}
         />
       </div>
 
@@ -287,6 +310,13 @@ export default function TrackerApp({ onHome }) {
   // again, a City-summary row or clearing the stores; the City summary after
   // Summarize. Applied by the effect after every render, below.
   const pendingFocusRef = useRef(null);
+  // Suggest sites (docs/08 §3): { id, status: 'loading'|'ready', data, loaded,
+  // mode: 'auto'|'blocks' } or null. `data` is the communityData it was asked
+  // for (a new search drops it); `loaded` is the loadSiteCandidates result.
+  // The picks themselves are recomputed from it (below) whenever the pins
+  // change, so they always build on the visitor's current stores.
+  const [siteRequest, setSiteRequest] = useState(null);
+  const siteRequestIdRef = useRef(0);
 
   const scenarioResult = useMemo(
     () => evaluatePlacedStoreScenario(communityData, pins),
@@ -544,6 +574,8 @@ export default function TrackerApp({ onHome }) {
     setDataError('');
     setMapCenter({ lat, lng });
     dispatchPins({ type: 'reset' });
+    siteRequestIdRef.current += 1;
+    setSiteRequest(null);
 
     addLog(`Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}${opts.placeName ? ` (${opts.placeName})` : ''}`, 'system');
     if (forceRefresh) addLog('Refresh requested: skipping cached results for this point.', 'info');
@@ -682,7 +714,9 @@ export default function TrackerApp({ onHome }) {
     addLog(scenarioLine.text, scenarioLine.flipped ? 'success' : 'info');
   }, [scenarioLine, addLog]);
 
-  function addPin(plat, plng, format = DEFAULT_STORE_FORMAT) {
+  // source: what placed it, for the log ("suggested site 1"); the map's own
+  // placements pass none.
+  function addPin(plat, plng, format = DEFAULT_STORE_FORMAT, source = null) {
     if (!communityData) {
       addLog('Load a location before placing a store.', 'warning');
       return;
@@ -690,8 +724,8 @@ export default function TrackerApp({ onHome }) {
     // 4 decimals, as a share link carries it.
     const pin = {
       id: makePinId(),
-      lat: roundTo(Number.isFinite(plat) ? plat : mapCenter.lat, 4),
-      lng: roundTo(Number.isFinite(plng) ? plng : mapCenter.lng, 4),
+      lat: roundTo(Number.isFinite(plat) ? plat : mapCenter.lat, PIN_DECIMALS),
+      lng: roundTo(Number.isFinite(plng) ? plng : mapCenter.lng, PIN_DECIMALS),
       format: normalizeFormat(format),
       createdAt: Date.now(),
     };
@@ -701,7 +735,7 @@ export default function TrackerApp({ onHome }) {
       return;
     }
     dispatchPins({ type: 'add', pin });
-    addLog(`Placed: ${storeFormatInfo(pin.format).label} at ${pin.lat.toFixed(4)}, ${pin.lng.toFixed(4)}`, 'success');
+    addLog(`Placed: ${storeFormatInfo(pin.format).label} at ${pin.lat.toFixed(4)}, ${pin.lng.toFixed(4)}${source ? ` (${source})` : ''}`, 'success');
   }
 
   function setPinFormat(id, format) {
@@ -739,6 +773,197 @@ export default function TrackerApp({ onHome }) {
     if (opts?.fromCard) requestFocus(VERDICT_HEADING_ID);
     addLog('Placed stores cleared (Undo brings them back); showing the tract as it is', 'info');
   }
+
+  // ------------------------------------------------------------ suggest sites
+  // docs/08 §3. Offered only when access is known and the tract is low access
+  // (the baseline, not the scenario; with stores that already end low access
+  // the list says there's nothing more to suggest).
+  const access = communityData?.access;
+  const canSuggest = Boolean(access)
+    && access.lowAccess === true
+    && Array.isArray(access.blocks)
+    && access.blocks.length > 0
+    && Number.isFinite(access.threshold);
+
+  // The picks for the current pins: suggestSites is pure and fast (ms), so it
+  // reruns on every pin change from the candidates already loaded. The
+  // commercial candidates are the tract's box (docs/08); when they're missing
+  // or gain nobody, suggestSites runs on the tract's block points and
+  // candidateFallback says why.
+  const siteSuggestion = useMemo(() => {
+    if (!siteRequest || siteRequest.data !== communityData || !communityData?.access) return null;
+    if (siteRequest.status !== 'ready') return { status: 'loading' };
+    const { access: a } = communityData;
+    const prepared = siteRequest.mode === 'blocks'
+      ? { candidates: undefined, from: 'blocks', fallback: 'chosen_blocks', considered: 0 }
+      : tractCandidates(siteRequest.loaded, a.blocks, a.threshold);
+    let result;
+    try {
+      result = suggestSites({
+        blocks: a.blocks,
+        threshold: a.threshold,
+        candidates: prepared.candidates,
+        existingPins: pins,
+        lowIncome: a.lowIncome,
+      });
+    } catch {
+      result = { source: prepared.from, picks: [], flippedAt: null, reason: 'unknown_baseline' };
+    }
+    const picks = result.picks;
+    const stillLowAccess = picks.length > 0 && picks[picks.length - 1].lowAccessAfter === true;
+    return {
+      status: 'ready',
+      result,
+      prepared,
+      mode: siteRequest.mode,
+      fallback: candidateFallback(prepared, result),
+      dataset: siteRequest.loaded?.status === 'ok' ? siteRequest.loaded.dataset : null,
+      // Commercial picks that leave the tract low access: block points (any
+      // populated block) may do better, so the list offers them.
+      canTryBlocks: siteRequest.mode === 'auto' && result.source === 'commercial' && stillLowAccess,
+      canGoBack: siteRequest.mode === 'blocks',
+    };
+  }, [siteRequest, communityData, pins]);
+
+  const suggestedPicks = siteSuggestion?.status === 'ready' ? siteSuggestion.result.picks : NO_PICKS;
+  const mapSuggestedSites = useMemo(
+    () => suggestedPicks.map((p, i) => ({
+      id: p.candidate.id,
+      n: i + 1,
+      lat: p.candidate.lat,
+      lng: p.candidate.lng,
+      kind: p.candidate.kind,
+      sqft: p.candidate.sqft ?? null,
+      name: p.candidate.name ?? null,
+      gainText: `+${approx(p.gain)} residents within ${threshold} mi`,
+    })),
+    [suggestedPicks, threshold],
+  );
+
+  // One line for the armed Place-store banner (its live region).
+  let suggestStatus = null;
+  if (siteSuggestion?.status === 'loading') suggestStatus = 'Finding suggested sites…';
+  else if (siteSuggestion?.status === 'ready') {
+    const n = suggestedPicks.length;
+    suggestStatus = n > 0
+      ? `${plural(n, 'suggested site')} on the map (numbered, dashed); details and Add as store in the Tract view.`
+      : siteSuggestion.result.reason === 'not_low_access'
+        ? 'Suggested sites: with your placed stores the tract is no longer low access.'
+        : 'Suggested sites: none found.';
+  }
+
+  // The rules-based plan (docs/08 §2), recomputed when the pins or the
+  // suggestions change; empty unless the verdict is MET or NOT MET.
+  const actionPlan = useMemo(() => {
+    if (!communityData?.access) return [];
+    return buildActionPlan({
+      access: communityData.access,
+      ers: communityData.ers,
+      scenario: scenarioResult,
+      suggestions: siteSuggestion?.status === 'ready' ? siteSuggestion.result : null,
+      meta: communityData.meta,
+    });
+  }, [communityData, scenarioResult, siteSuggestion]);
+
+  // origin 'tract': the Tract view button, which the list replaces, so focus
+  // moves to the list heading. 'banner': the map's armed banner keeps focus
+  // and announces the result in its live region.
+  async function handleSuggestSites(origin = 'tract') {
+    const data = communityData;
+    if (!data || !canSuggest) return;
+    siteRequestIdRef.current += 1;
+    const id = siteRequestIdRef.current;
+    setSiteRequest({ id, status: 'loading', data, loaded: null, mode: 'auto' });
+    if (origin === 'tract') requestFocus(SUGGEST_HEADING_ID);
+    let loaded;
+    try {
+      loaded = await loadSiteCandidates(data.meta?.countyFips);
+    } catch {
+      loaded = { status: 'unavailable', candidates: [], dataset: null };
+    }
+    if (siteRequestIdRef.current !== id) return;
+    setSiteRequest({ id, status: 'ready', data, loaded, mode: 'auto' });
+  }
+
+  function handleSuggestMode(mode) {
+    setSiteRequest((r) => (r && r.status === 'ready' && r.mode !== mode ? { ...r, mode } : r));
+  }
+
+  function handleDismissSuggestions() {
+    siteRequestIdRef.current += 1;
+    setSiteRequest(null);
+    if (canSuggest) requestFocus(SUGGEST_BUTTON_ID);
+    addLog('Suggested sites dismissed (nothing was added).', 'info');
+  }
+
+  // "Add as store": a supermarket pin at the pick, rounded like every pin.
+  // Picks are scored at pin precision already (siteLoader, blockCandidates),
+  // so the rounding doesn't move them and the scenario card repeats the
+  // list's numbers.
+  function handleAddSuggested(index) {
+    const pick = suggestedPicks[index];
+    if (!pick) return;
+    addPin(pick.candidate.lat, pick.candidate.lng, 's', `suggested site ${index + 1}`);
+  }
+
+  function handleAddAllSuggested() {
+    if (!communityData || suggestedPicks.length === 0) return;
+    if (pins.length + suggestedPicks.length > MAX_PINS) {
+      addLog(`Store limit is ${MAX_PINS}: remove a store to add all ${suggestedPicks.length} suggested sites.`, 'warning');
+      return;
+    }
+    const now = Date.now();
+    const fresh = suggestedPicks
+      .map((p, i) => ({
+        id: makePinId(),
+        lat: roundTo(p.candidate.lat, PIN_DECIMALS),
+        lng: roundTo(p.candidate.lng, PIN_DECIMALS),
+        format: 's',
+        createdAt: now + i,
+      }))
+      .filter(isValidPoint);
+    if (fresh.length === 0) return;
+    dispatchPins({ type: 'addMany', pins: fresh });
+    addLog(`Placed ${plural(fresh.length, 'suggested site')} as supermarkets (one Undo removes them).`, 'success');
+  }
+
+  // Log lines per docs/08, once per request (and per block/commercial switch),
+  // from exactly the result the list shows.
+  const loggedSiteRequestRef = useRef('');
+  useEffect(() => {
+    if (!siteRequest || siteRequest.status !== 'ready' || siteSuggestion?.status !== 'ready') return;
+    const key = `${siteRequest.id}:${siteRequest.mode}`;
+    if (loggedSiteRequestRef.current === key) return;
+    loggedSiteRequestRef.current = key;
+    const { result, fallback, prepared } = siteSuggestion;
+    const T = threshold;
+    const county = siteRequest.data?.meta?.countyFips ?? 'this county';
+    const fallbackLine = {
+      unavailable: [`Commercial-site file for county ${county} didn't load; suggesting points inside populated Census blocks instead.`, 'warning'],
+      not_bundled: ['No OpenStreetMap commercial-site file for this county; suggesting points inside populated Census blocks.', 'info'],
+      none_in_range: [`No OpenStreetMap commercial site within ${T} mi of this tract's blocks; suggesting points inside populated Census blocks.`, 'info'],
+      no_gain_commercial: [`None of the ${prepared.considered} OpenStreetMap commercial sites near this tract brings anyone within ${T} mi; suggesting points inside populated Census blocks instead.`, 'info'],
+    }[fallback];
+    if (fallbackLine && result.picks.length > 0) addLog(fallbackLine[0], fallbackLine[1]);
+    const picks = result.picks;
+    if (picks.length > 0) {
+      const last = picks[picks.length - 1];
+      const outcome = result.flippedAt
+        ? 'tract would no longer meet the test'
+        : last.lowAccessAfter === false
+          ? 'tract would no longer be low access'
+          : `still low access (${fmtBeyond(last.beyondAfter) ?? 'n/a'} residents beyond ${T} mi)`;
+      const from = result.source === 'commercial' ? 'OpenStreetMap commercial candidates' : 'Census block points';
+      addLog(`Suggested sites (computed): ${plural(picks.length, 'site')} from ${from} → ${outcome}`, result.flippedAt ? 'success' : 'info');
+    } else {
+      const why = result.reason === 'not_low_access'
+        ? (scenarioResult?.counting > 0 ? 'with your placed stores the tract is no longer low access' : 'the tract is not low access')
+        : result.reason === 'unknown_baseline'
+          ? "this tract's distances aren't available"
+          : `no candidate brings anyone new within ${T} mi`;
+      addLog(`Suggested sites: none — ${why}.`, 'info');
+    }
+  }, [siteRequest, siteSuggestion, threshold, scenarioResult, addLog]);
 
   // Fires once the analysis delivers data: pending pins (shared link,
   // example chip, refresh) become real pins with their formats, and the
@@ -856,6 +1081,22 @@ export default function TrackerApp({ onHome }) {
   // Census place (the panel also requires the names to match), and not
   // while a summary is open.
   const canSummarize = Boolean(communityData?.meta?.place) && lastSearch?.placeKind === 'city' && !citySummary;
+  // The open list renders in the Tract view (desktop and phones alike).
+  const suggestedSitesNode = siteSuggestion ? (
+    <SuggestedSites
+      view={siteSuggestion}
+      threshold={threshold}
+      hasPins={scenarioResult?.counting > 0}
+      slotsLeft={MAX_PINS - pins.length}
+      maxPins={MAX_PINS}
+      headingId={SUGGEST_HEADING_ID}
+      onAdd={handleAddSuggested}
+      onAddAll={handleAddAllSuggested}
+      onDismiss={handleDismissSuggestions}
+      onTryBlocks={() => handleSuggestMode('blocks')}
+      onBackToCommercial={() => handleSuggestMode('auto')}
+    />
+  ) : null;
   const panelProps = {
     communityData,
     loading,
@@ -866,6 +1107,9 @@ export default function TrackerApp({ onHome }) {
     onCloseCitySummary: closeCitySummary,
     onRetryCitySummary: citySummary?.place ? () => runCitySummary(citySummary.place) : undefined,
     onRetry: handleRetry,
+    onSuggestSites: canSuggest ? () => handleSuggestSites('tract') : undefined,
+    suggestedSites: suggestedSitesNode,
+    actionPlan,
     dataError,
     logs,
   };
@@ -965,6 +1209,9 @@ export default function TrackerApp({ onHome }) {
       stores={mapStores}
       storesLoaded={communityData?.access?.storesDataset != null}
       storesNotCovered={communityData?.access?.reason === 'stores_not_covered'}
+      onSuggestSites={canSuggest ? () => handleSuggestSites('banner') : undefined}
+      suggestedSites={mapSuggestedSites}
+      suggestStatus={suggestStatus}
     />
   );
 

@@ -9,9 +9,11 @@ import LocationGate from './LocationGate';
  * Pre-search reuses LocationGate (same fuzzy search + examples; an example
  * may carry pins, passed through in options). Post-search stacks the
  * scenario card (when stores are placed) above the same panels as desktop:
- * the Tract view (CommunityStatsPanel) and the pipeline log. Placing a new
- * store needs the desktop map, but stores replayed from a shared link or an
- * example can be changed or removed here from the scenario card.
+ * the Tract view (CommunityStatsPanel) and the pipeline log. Placing a store
+ * by hand needs the desktop map, but the Tract view's "Suggest sites" list
+ * (no map markers here) can add its sites as stores, and stores replayed
+ * from a shared link or an example can be changed or removed here from the
+ * scenario card.
  *
  * Props:
  *   locationPicked, communityData, loading, dataError,
@@ -132,9 +134,9 @@ export default function MobileResultsView({
             {panels}
             {communityData && (
               <p className="text-center text-[11px] leading-relaxed px-6 text-white/60">
-                The map, the USDA 2019 atlas and placing new stores are
-                desktop-only. Use Share above to open this location on a
-                bigger screen.
+                The map, the USDA 2019 atlas and placing stores by hand are
+                desktop-only; suggested sites can be added here. Use Share
+                above to open this location on a bigger screen.
               </p>
             )}
           </div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { MapPin } from 'lucide-react';
 import PanelHeader from './bits/PanelHeader';
 import CitySummary from './CitySummary';
+import ActionPlan from './ActionPlan';
 import { approxCount, cdcFigure, fmtBeyond, fmtMiles, fmtShare, roundedCount } from '../lib/format';
 
 /*
@@ -21,7 +22,13 @@ import { approxCount, cdcFigure, fmtBeyond, fmtMiles, fmtShare, roundedCount } f
  *        null when none is open), onCitySummaryTract(row),
  *        onCloseCitySummary(), onRetryCitySummary(),
  *        onRetry() (re-runs the search without the cache; the verdict card
- *        offers it when a source failed to load).
+ *        offers it when a source failed to load),
+ *        onSuggestSites() (optional; the "Suggest sites" button renders only
+ *        when provided, i.e. access is known and the tract is low access,
+ *        and no suggestion list is open),
+ *        suggestedSites (React node: the open SuggestedSites list, or null),
+ *        actionPlan (buildActionPlan items; the card renders under the
+ *        References block when there are any).
  */
 
 const ACS_TOP_CODE = 250001;
@@ -280,6 +287,34 @@ function CityNotice({ lastSearch, meta, onSummarizeCity }) {
 // TrackerApp moves focus here (Try again, opening a City-summary row,
 // clearing the placed stores) by this id.
 const VERDICT_HEADING_ID = 'fds-verdict-heading';
+// And here after the suggestion list is dismissed.
+const SUGGEST_BUTTON_ID = 'fds-suggest-button';
+
+// docs/08 §3: where supermarkets would change the measured result. Shown only
+// for a known, low-access tract (TrackerApp passes onSuggestSites then).
+function SuggestButton({ threshold, onSuggestSites }) {
+  return (
+    <div className="mb-3">
+      <button
+        id={SUGGEST_BUTTON_ID}
+        type="button"
+        onClick={() => onSuggestSites()}
+        className="min-h-[40px] rounded-full px-3.5 text-[11px] font-semibold btn-press focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--cyan)]"
+        style={{
+          color: 'var(--orange)',
+          border: '1px dashed color-mix(in srgb, var(--orange) 55%, transparent)',
+          background: 'color-mix(in srgb, var(--orange) 10%, transparent)',
+        }}
+      >
+        Suggest sites
+      </button>
+      <p className="mt-1 text-[11px] leading-snug text-white/60">
+        Where a supermarket would bring the most residents within {Number.isFinite(threshold) ? milesWord(threshold) : 'the limit'}.
+        Distance only.
+      </p>
+    </div>
+  );
+}
 
 function VerdictCard({ meta, access, onRetry }) {
   const status = PILL[access.status] ? access.status : 'unknown';
@@ -640,6 +675,9 @@ export default function CommunityStatsPanel({
   onCloseCitySummary,
   onRetryCitySummary,
   onRetry,
+  onSuggestSites,
+  suggestedSites = null,
+  actionPlan = null,
 }) {
   // With a City summary open, everything renders in one stable shell so the
   // summary (and its sort/fold state) survives the tract reloading below it
@@ -660,7 +698,14 @@ export default function CommunityStatsPanel({
             onRetry={onRetryCitySummary}
           />
           {ready ? (
-            <TractBody communityData={communityData} onRetry={onRetry} animate />
+            <TractBody
+              communityData={communityData}
+              onRetry={onRetry}
+              onSuggestSites={onSuggestSites}
+              suggestedSites={suggestedSites}
+              actionPlan={actionPlan}
+              animate
+            />
           ) : loading ? (
             <div className="flex flex-col gap-1 animate-pulse">
               <div className="skeleton h-8 rounded-lg mb-2" />
@@ -699,20 +744,30 @@ export default function CommunityStatsPanel({
 
       <div className="flex-1 overflow-y-auto min-h-0">
         <CityNotice lastSearch={lastSearch} meta={communityData.meta} onSummarizeCity={onSummarizeCity} />
-        <TractBody communityData={communityData} onRetry={onRetry} />
+        <TractBody
+          communityData={communityData}
+          onRetry={onRetry}
+          onSuggestSites={onSuggestSites}
+          suggestedSites={suggestedSites}
+          actionPlan={actionPlan}
+        />
       </div>
     </div>
   );
 }
 
-// Verdict, bands, the exact-spot line, references, sources, trace, profile.
-function TractBody({ communityData, onRetry, animate = false }) {
+// Verdict, Suggest sites (or the open list), bands, the exact-spot line,
+// references, the action plan, sources, trace, profile.
+function TractBody({ communityData, onRetry, onSuggestSites, suggestedSites, actionPlan, animate = false }) {
   const { meta, access, health, demographics } = communityData;
   const hasTract = Boolean(meta?.fips);
   const point = pointSentence(access.point);
   return (
     <div className={animate ? 'animate-fade-slide-up' : undefined}>
       <VerdictCard meta={meta} access={access} onRetry={onRetry} />
+      {suggestedSites ?? (typeof onSuggestSites === 'function' && (
+        <SuggestButton threshold={access.threshold} onSuggestSites={onSuggestSites} />
+      ))}
       <DistanceBands access={access} />
 
       {hasTract && point && (
@@ -722,6 +777,7 @@ function TractBody({ communityData, onRetry, animate = false }) {
       )}
 
       {hasTract && <References references={access.references} />}
+      {hasTract && <ActionPlan items={actionPlan} />}
       <SourcesNote access={access} />
       {hasTract && <EvaluationTrace communityData={communityData} />}
       {hasTract && (

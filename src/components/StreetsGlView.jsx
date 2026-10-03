@@ -185,6 +185,12 @@ function SuggestionIcon({ cls }) {
  *                 accepted as an alias)
  *   onPlaceStore(lat, lng, format)  format is the sticky banner choice
  *   onUndoPin, onClearPins, onShareScenario, scenarioCard (React node)
+ *   onSuggestSites()  optional; the armed banner offers "Suggest sites" only
+ *                 when provided (access known and the tract low access)
+ *   suggestedSites  suggestion picks for the 2D map ([{ id, n, lat, lng, kind,
+ *                 sqft, name, gainText }]); numbered dashed markers, not pins
+ *   suggestStatus  one line about the suggestions for the banner's live
+ *                 region (null when there are none)
  */
 export default function StreetsGlView({
   lat,
@@ -203,6 +209,9 @@ export default function StreetsGlView({
   placedStores,
   pins,
   onPlaceStore,
+  onSuggestSites,
+  suggestedSites = [],
+  suggestStatus = null,
 }) {
   const placedPins = Array.isArray(placedStores) ? placedStores : Array.isArray(pins) ? pins : [];
   const [query, setQuery]               = useState('');
@@ -558,6 +567,7 @@ export default function StreetsGlView({
           placedPins={placedPins}
           placeArmed={placeArmed}
           onPlaceAt={placeStore}
+          suggestedSites={suggestedSites}
           visible={useFallbackMap}
         />
       </div>
@@ -795,6 +805,31 @@ export default function StreetsGlView({
         </div>
       )}
 
+      {/* Suggested-sites key: what the dashed numbered circles are. */}
+      {useFallbackMap && hasData && suggestedSites.length > 0 && (
+        <div
+          className="pointer-events-auto flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-3 py-1.5 rounded-2xl text-[11px] animate-fade-slide-up max-w-full"
+          style={{
+            background: 'rgba(5,6,8,0.85)',
+            border: '1px dashed color-mix(in srgb, var(--orange) 45%, transparent)',
+            color: 'rgba(255,255,255,0.8)',
+            backdropFilter: 'blur(12px)',
+          }}
+        >
+          <span
+            aria-hidden="true"
+            className="inline-flex items-center justify-center rounded-full text-[10px] font-bold"
+            style={{ width: 18, height: 18, color: 'var(--orange)', border: '2px dashed var(--orange)', background: 'var(--void)' }}
+          >
+            1
+          </span>
+          <span>
+            Suggested {suggestedSites.length === 1 ? 'site' : `sites 1–${suggestedSites.length}`} (distance only, not
+            stores yet) · listed in the Tract view
+          </span>
+        </div>
+      )}
+
       {/* Place-store banner: format choice (sticky) + experiment controls. */}
       {placeArmed && hasData && (
         <div
@@ -832,6 +867,10 @@ export default function StreetsGlView({
             })}
           </div>
           {formatNote && <p className="text-white/55 leading-snug">{formatNote}</p>}
+          {/* Always mounted so the live region announces the first update. */}
+          <p className={suggestStatus ? 'text-white/70 leading-snug' : 'sr-only'} role="status" aria-live="polite">
+            {suggestStatus ?? ''}
+          </p>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-white/60">
               {atPinLimit
@@ -844,6 +883,21 @@ export default function StreetsGlView({
               {placedPins.length} placed
             </span>
             <span className="flex-1" />
+            {typeof onSuggestSites === 'function' && (
+              <button
+                type="button"
+                onClick={() => onSuggestSites()}
+                title="Find where a supermarket would bring the most residents within the distance limit (distance only)"
+                className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--cyan)]"
+                style={{
+                  background: 'color-mix(in srgb, var(--orange) 12%, transparent)',
+                  border: '1px dashed color-mix(in srgb, var(--orange) 55%, transparent)',
+                  color: 'var(--orange)',
+                }}
+              >
+                Suggest sites
+              </button>
+            )}
             <button
               type="button"
               disabled={atPinLimit}
