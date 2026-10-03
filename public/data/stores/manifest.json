@@ -1,5 +1,5 @@
 {
- "source": "USDA FNS SNAP Retailer Locator, Store_Type IN ('Supermarket','Super Store'), minus the hand-reviewed exclusions in scripts/store-exclusions.json and coordinates that fall outside their state",
+ "source": "USDA FNS SNAP Retailer Locator, Store_Type IN ('Supermarket','Super Store'), minus the hand-reviewed exclusions in scripts/store-exclusions.json and coordinates that fall outside their state, with the hand-checked coordinate corrections listed there",
  "serviceUrl": "https://services1.arcgis.com/RLQu0rK7h4kbsBq5/arcgis/rest/services/snap_retailer_location_data/FeatureServer/0",
  "where": "Store_Type IN ('Supermarket','Super Store')",
  "dataLastEditDate": "2026-09-17T13:33:58.255Z",
@@ -20,6 +20,7 @@
    "fuel-station": 7
   },
   "badCoordinates": 3,
+  "corrected": 1,
   "kept": 38627,
   "keptSupermarket": 19452,
   "keptSuperStore": 19175
@@ -49,6 +50,23 @@
    "lng": -118.99341,
    "problem": "outside NY bounding box",
    "reason": "Address is 4125 Greenpoint Ave, Sunnyside (Queens) NY; geocoded to 35.379372, -118.99341 (Bakersfield, CA), outside New York."
+  }
+ ],
+ "coordinateCorrections": [
+  {
+   "recordId": 343765,
+   "name": "Bashas' Dine Market 33",
+   "from": {
+    "lat": 36.091755,
+    "lng": -109.62362
+   },
+   "to": {
+    "lat": 36.1627817,
+    "lng": -109.585938
+   },
+   "reason": "Address is 'Hwy 191 & Rte 7' (Tseyi Shopping Center), Chinle AZ 86503, but USDA's coordinate is open land about 5.4 mi southwest of Chinle (5.3 mi from the store); the Census geocoder can't match the intersection address either. Moved to the OpenStreetMap supermarket for Bashas' on the Chambers-Mexican Water Highway (US-191) in Chinle, which matches the SNAP address. Inside AZ either way, so the state-box check can't catch it.",
+   "source": "USDA SNAP Retailer Locator Record_ID 343765 (Store_Type Super Store; Latitude 36.091755, Longitude -109.62362, re-read 2026-10-03); OpenStreetMap node 4335066877, shop=supermarket, name Bashas' (36.1627817, -109.5859380), via Nominatim 2026-10-03.",
+   "checked": "2026-10-03"
   }
  ],
  "tileDeg": 2,

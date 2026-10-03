@@ -9,7 +9,10 @@ const ACS_BASE = 'https://api.census.gov/data/2022/acs/acs5';
 
 // B19013 median household income, B01003 total population, B17001_002
 // population below poverty, B25044_003/_010 owner/renter households with no
-// vehicle. B19113 is the state's median family income (low-income test).
+// vehicle. B19113 is the state's median family income. The community profile
+// shows only population, poverty rate and median household income; the
+// no-vehicle and state-median fields are returned but nothing reads them (the
+// low-income test uses USDA ERS 2025 LowIncomeTracts, not ACS).
 const TRACT_VARIABLES = 'B19013_001E,B01003_001E,B17001_002E,B25044_003E,B25044_010E';
 const STATE_VARIABLES = 'B19113_001E';
 
@@ -76,8 +79,8 @@ export default async function handler(req, res) {
       tractRow.slice(0, 5).map(Number);
 
     // ACS 2022 is a fixed release, so a complete answer can sit at the CDN for
-    // a day. A partial one (state median missing) must not: it would pin a
-    // failing low-income income test for every visitor to this tract.
+    // a day. A partial one (state median missing) must not: a transient
+    // Census failure would then be served to every visitor of this tract.
     res.setHeader('Cache-Control', stateMedianFamilyIncome > 0 ? 'public, s-maxage=86400' : 'no-store');
     res.status(200).json({
       medianIncome: medianIncome > 0 ? medianIncome : 0,

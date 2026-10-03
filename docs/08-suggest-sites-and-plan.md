@@ -60,7 +60,8 @@ Candidate sources:
   car dealers, department stores, malls); a `building=supermarket` that
   isn't vacant or disused; and any building or retail area with a
   `shop=supermarket` node or polygon inside it. Format:
-  `{ retrievedAt, source, license: 'ODbL', counts, sites: [[id, lat, lng,
+  `{ retrievedAt, source: 'OpenStreetMap via Overpass', license: 'ODbL (©
+  OpenStreetMap contributors)', counts, osmBase, bbox, sites: [[id, lat, lng,
   kind, sqft, name], …] }`, kind `vacant` | `building` (`building=retail`) |
   `commercial_building` (`building=commercial`, often offices) |
   `retail_area`; `name` only for vacant shops (on anything else it's the
@@ -93,11 +94,11 @@ the panel); no item invents a number. Rules:
 
 | when | item |
 |---|---|
-| suggestions picked and they flip the verdict | "Site a full-line grocery store near suggested site 1" — why: residents brought within T and the flip |
+| suggestions picked and they flip the verdict | "Site a full-line grocery store near suggested site 1" (or "…near suggested sites 1 and 2", "…1, 2 and 3" when the flip takes more picks) — why: residents brought within T and the flip |
 | low access, low income | "Make sure a new store can take SNAP and WIC" (FNS retailer authorization; WIC is by state agency) |
 | no-vehicle households ≥ 100 (ERS TractHUNV) or rural | "Cover distance a single store can't": SNAP online purchasing; mobile market or transit routes |
 | low income | "Make healthy food cheaper, not just closer": the Gus Schumacher Nutrition Incentive Program (GusNIP) |
-| low access, low income | "Financing for a grocery in a low-income, low-access area": USDA's Healthy Food Financing Initiative (and California FreshWorks for CA tracts) |
+| low access, low income | "Financing for a grocery in a low-income, low-access area": America's Healthy Food Financing Initiative (Reinvestment Fund in partnership with USDA, `investinginfood.com`). California FreshWorks for CA tracts is wired in but off: its site didn't verify on 2026-10-03 (HTTP 500), so no CA line shows until a verified `caFreshWorks` source is added |
 | low access, not low income | "Access is limited, but this isn't a low-income tract, so USDA's test isn't met and low-income financing programs may not apply" |
 | not low access | "Distance isn't the barrier here; affordability may be" (GusNIP, SNAP) |
 
@@ -123,7 +124,10 @@ advice from USDA; check each program's current eligibility."
 ## Acceptance
 
 - suggestSites: Alviso 06085504602 with block candidates finds a site with
-  gain ≥ 1,800 (the village); Greenville 28151000600 flips with one site;
+  gain ≥ 1,800 (the village); Greenville 28151000600 flips with one site on
+  block candidates (in the app's default mode its only gaining commercial
+  site brings ≈1,060 within 1 mi and leaves it meeting the test, so the list
+  offers "Try Census block points instead");
   `not_low_access` for Cupertino 06085508101; existing counting pins are
   respected; deterministic (same input → same picks); gain never negative;
   stops at the flip.

@@ -659,6 +659,10 @@ function CommunityProfile({ demographics, health, healthStatus, acsStatus }) {
         value={obesity.label ?? fmtWholePct(obesity.value)}
         note={obesity.note}
       />
+      {/* Required by the Census Data API terms of service. */}
+      <p className="mt-1.5 text-[10px] leading-snug text-white/60">
+        This product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau.
+      </p>
     </div>
   );
 }

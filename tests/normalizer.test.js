@@ -970,11 +970,27 @@ test('golden: 06085512100 (ERS urban, rural-majority blocks) is never judged rur
   assert.equal(cached.data.access.reason, null);
 }));
 
-test('golden: Chinle AZ 04001944202 is rural and low access by count only', withStorage(async () => {
+// Chinle's only counted supermarket, Bashas' Dine Market 33 (SNAP Record_ID
+// 343765), is served about 5.3 mi southwest of the store; the committed tile
+// carries the coordinateCorrections entry in scripts/store-exclusions.json
+// (OpenStreetMap, in Chinle). With the USDA coordinate the tract met the
+// test, low access by count only (1,088 of 3,608 beyond 10 mi, 30.2%); with
+// the store in Chinle it is low income but not low access.
+test('golden: Chinle AZ 04001944202 is rural and NOT MET once Bashas\' sits in Chinle', withStorage(async () => {
   const data = await golden('04001944202', 36.17013, -109.48008);
   assert.equal(data.access.urban, false);
   assert.equal(data.access.threshold, 10);
-  assert.equal(data.access.lowAccess, true);
-  assert.equal(data.access.byCount, true);
+  assert.equal(data.access.population, 3608);
+  assert.equal(data.access.beyond, 215);
+  assert.equal(Math.round(data.access.share * 1000), 60);
+  assert.equal(data.access.byCount, false);
   assert.equal(data.access.byShare, false);
+  assert.equal(data.access.lowAccess, false);
+  assert.equal(data.access.lowIncome, true);
+  assert.deepEqual(data.access.verdict, { status: 'not_met', qualifier: 'li_not_la', reason: null });
+  // The nearest counted store is Bashas' at the corrected point, not USDA's.
+  const { store, miles } = data.access.point;
+  assert.equal(store.name, "Bashas' Dine Market 33");
+  assert.deepEqual([store.lat, store.lng], [36.16278, -109.58594]);
+  assert.equal(Math.round(miles * 100), 593);
 }));

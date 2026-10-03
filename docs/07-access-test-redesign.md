@@ -46,7 +46,7 @@ Unknown, never a guess (each with a named reason):
 | reason | when |
 |---|---|
 | `tract_unavailable` | point → tract lookup failed (network) |
-| `no_tract` | point is outside any US tract |
+| `no_tract` | point is outside any US tract (as built: no payload at all; the search reports "No census tract found. Try a different US location." instead of an UNKNOWN pill) |
 | `no_residents` | tract POP100 = 0 ("USDA does not rate tracts without residents") |
 | `blocks_unavailable` | block fetch failed |
 | `blocks_incomplete` | Σ block POP100 ≠ tract POP100 |
@@ -70,15 +70,26 @@ reviewed by hand and committed in `scripts/store-exclusions.json` (warehouse
 clubs: Costco, Sam's Club, BJ's Wholesale; military commissaries/exchanges;
 fuel stations), each rule with its match count. Target and Dollar General
 Market count (SNAP's own type label is followed; LRAM counted mass
-merchandisers).
+merchandisers). Where SNAP's own coordinate is provably wrong, a hand-checked
+`coordinateCorrections` entry in the same file moves the record (each names
+the exact coordinate it replaces, its evidence and the date checked; the
+build fails if the record is gone, renamed or moved upstream) and the
+manifest counts it in `counts.corrected`: so far one, Bashas' Dine Market 33
+in Chinle AZ, served on open land 5.3 mi southwest of the store.
 
-- `manifest.json`: `{ source, serviceUrl, dataLastEditDate, retrievedAt,
-  counts: {supermarket, superStore, excluded: {rule: n}, kept}, tileDeg: 2,
-  tiles: { "<latFloor>_<lngFloor>": n } }` where floors are multiples of 2.
+- `manifest.json`: `{ source, serviceUrl, where, dataLastEditDate,
+  retrievedAt, counts: {supermarket, superStore, excluded: {rule: n},
+  badCoordinates, corrected, kept, keptSupermarket, keptSuperStore},
+  exclusionRule, badCoordinates: [...], coordinateCorrections: [{ recordId,
+  name, from, to, reason, source, checked }], tileDeg: 2, tileRow, tiles: {
+  "<latFloor>_<lngFloor>": n } }` where floors are multiples of 2.
 - `<latFloor>_<lngFloor>.json`: `[[lat, lng, type, name], …]`, lat/lng to 5
   decimals, `type` `"M"` (Supermarket) or `"S"` (Super Store).
 - Build asserts: unique `Record_ID` count of the pulled set equals the
-  service's `returnCountOnly` for the same where-clause; zero bad coords.
+  service's `returnCountOnly` for the same where-clause; every coordinate
+  outside the US + territories box or its own state's box is listed in
+  `knownBadCoordinates` with a reason (3 dropped in the 2026-10-03 snapshot),
+  or the build fails.
 - A tile absent from `manifest.tiles` means "no counted stores there"; a tile
   listed but failing to load means `stores_unavailable`. Never treat a fetch
   failure as an empty tile.
@@ -93,8 +104,11 @@ and `FARA_2019/MapServer/30` (2010 tracts).
   MedianFamilyIncome, GroupQuartersFlag` (keyed by `CensusTract20`; never
   `CensusTract24`).
 - f2019 = `LILATracts_1And10, LA1and10, lapop1share, lapop10share, Urban`
-  (keyed by `GEOID10`). A null 2019 share means "not published" (every null
-  is on a tract that isn't low access), never 0%.
+  (keyed by `GEOID10`). A null 2019 share means "not published", never 0%.
+  The share for the tract's own 2019 limit (`lapop1share` urban,
+  `lapop10share` rural), the one the app shows, is null only on tracts that
+  aren't low access; the other share is often null (e.g. `lapop10share` on
+  24,006 urban low-access tracts).
 - `MedianFamilyIncome` 250001 is the ACS top-code: show "$250,000 or more".
 - No 2025 rows exist for Puerto Rico; 295 zero-population (mostly water)
   tracts have none either — those are `no_residents`, not `income_unavailable`.
@@ -116,8 +130,9 @@ Everywhere else blocks come live from TIGERweb (keyless, CORS) per tract.
 ## Modules
 
 ### Engine (pure, no fetch)
-`src/lib/geo.js` — `haversineMiles(aLat, aLng, bLat, bLng)` (moved from
-storeDistanceFetch), `pointInPolygon`.
+`src/lib/geo.js` — `haversineMiles(aLat, aLng, bLat, bLng)` (moved from the
+deleted `storeDistanceFetch.js`), `pointInPolygon`, `roundCoord` /
+`PIN_DECIMALS` (4, pin precision).
 
 `src/engine/lowAccess.js`
 - `nearestStore(lat, lng, stores)` → `{ miles, store }` (`Infinity`/`null` with no stores).
@@ -129,6 +144,10 @@ storeDistanceFetch), `pointInPolygon`.
   `(T, 1.1T]`, `(1.1T, 1.5T]`, `> 1.5T` (a block at exactly T is within).
 - `isBorderline(blocks, distances, T)` → low-access flag differs between 0.9T
   and 1.1T.
+- For scenario recompute: `nearestDistances(blocks, stores)` → per-block miles
+  (grid-indexed, fine for ~35k blocks × ~1k stores) and
+  `populationLowAccessFromDistances(blocks, distances, T)`; adding pins is
+  `min(before, distanceToPins)` per block.
 
 `src/engine/foodAccessVerdict.js`
 - `evaluateFoodAccess({ lowIncome, lowAccess, unknownReason })` →
@@ -137,10 +156,6 @@ storeDistanceFetch), `pointInPolygon`.
   `not_la_income_unknown`, `not_li_access_unknown`, `unknown`. `false` wins:
   not low income → NOT MET even when access is unknown, and not low access →
   NOT MET even when income is unknown.
-- For scenario recompute: `nearestDistances(blocks, stores)` → per-block miles
-  (grid-indexed, fine for ~35k blocks × ~1k stores) and
-  `populationLowAccessFromDistances(blocks, distances, T)`; adding pins is
-  `min(before, distanceToPins)` per block.
 
 `src/engine/scenarioEngine.js` (rewritten)
 - `evaluatePlacedStoreScenario(communityData, pins)` → `null` with no pins;
@@ -159,26 +174,30 @@ name, basename, pop, kind } | null }`.
 if present, else TIGERweb layer 10; completeness check; `{ status, blocks,
 source }`.
 `src/pipeline/storeLoader.js` — `loadStoresNear(bbox, radiusMi)` → tiles via
-manifest; `{ status, stores, dataset: { name, date } }`.
+manifest; `{ status, stores, dataset: { name, date, retrievedAt } }`.
 `src/pipeline/ersLoader.js` — `loadErsTract(geoid20)` → `{ status, e2025,
-e2019 }` (2019 matched by identical GEOID only; otherwise `e2019: null` with
-`reason: 'boundary_changed'`).
+e2019, e2019Reason, retrievedAt }` (2019 matched by identical GEOID only;
+otherwise `e2019: null` with `e2019Reason: 'boundary_changed'`).
 `src/pipeline/normalizer.js` (rewritten) — `buildCommunityData(lat, lng,
 options)` → payload below. CDC PLACES and `/api/acs` stay for the community
-profile and fail independently (`Promise.allSettled`). Cache prefix bumps to
-`fds:community:v3:`.
+profile and fail independently: each gets until 12 s after it started
+(`PROFILE_DEADLINE_MS`), or until the access inputs are in if that is later,
+and a call that hasn't answered by then shows the default profile with
+status `timeout`.
+Cache prefix bumps to `fds:community:v3:`.
 
 Payload:
 ```
 { meta: { fips, stateAbbr, stateFips, countyFips, tractName, lat, lng,
-          place: { geoid, name, kind } | null, retrievedAt },
+          place: { geoid, name, kind } | null, placeStatus, profileStatus,
+          retrievedAt, cache },
   access: { status, reason, threshold, urban, urbanSource,
             population, beyond, share, byShare, byCount, lowAccess,
             borderline, bands, lowIncome, verdict,
             references: { lram2019, sram2025, differNote },
-            point: { miles, store },        // nearest counted store to the exact spot
-            blocks, stores, storesDataset }, // blocks carry baseline `miles`;
-                                             // stores = area + 5 mi for the map
+            point: { miles, store, reason },  // nearest counted store to the exact spot
+            blocks, blocksSource, stores, storesDataset }, // blocks carry baseline `miles`;
+                                                           // stores = area + 5 mi for the map
   health, demographics, ers }
 ```
 
@@ -240,10 +259,11 @@ responds to them.
 ## Impact (computed only)
 
 Shown only with ≥ 1 counting pin and a known baseline. Rows, before → after:
-residents beyond T; residents brought within T; test result; if not flipped,
-the gap ("≈X residents still beyond 1 mi; needs under 500 and under 33%");
-urban: residents within ½ mi; "≈ no-vehicle households beyond ½ mi"
-(ERS `TractHUNV` apportioned by block housing units; hidden under 20). Footer:
+residents beyond T; residents brought within T; test result; while the tract
+is still low access, the gap ("≈X residents still beyond 1 mi; needs under
+500 and under 33%"); urban only: residents within ½ mi; any tract: "≈
+no-vehicle households beyond ½ mi" (ERS `TractHUNV` apportioned by block
+housing units; hidden when the before figure is under 20). Footer:
 "This tract's residents only; straight-line distance from 2020 Census block
 centers." Labels say "computed", never "measured".
 
@@ -279,7 +299,7 @@ income), Alviso 06085504602 with a village pin (37.42105, -121.9727) for the
 local flip, Cupertino 06085508101 as a served example. Chips re-verified live
 before the freeze; untagged chips make no claim.
 
-## Acceptance (tests first, offline, dated fixtures in tests/fixtures/access/)
+## Acceptance (tests first, offline: inline fixtures in `tests/*.test.js` plus the committed `public/data/` snapshot)
 
 - lowAccess: share 33% and count 499/500 edges; `d == T` counts within; pop 0
   → null; duplicate store → identical result; adding a store never raises
@@ -293,7 +313,10 @@ before the freeze; untagged chips make no claim.
 - Golden tracts (from the committed snapshot + fixtures): Alviso 06085504602
   low income + low access, village pin flips it; Greenville 28151000600 flips
   with one pin at its internal point; Los Altos Hills tract → NOT MET (not low
-  income); Cupertino 06085508101 not low access; Chinle 04001944202 low access
-  by count only (rural, T = 10 mi).
+  income); Cupertino 06085508101 not low access; Chinle 04001944202 rural
+  (T = 10 mi) and NOT MET, low income but not low access: 215 of 3,608
+  residents (6%) beyond 10 mi with Bashas' at its corrected point, shown as
+  "≈220 of 3,610" (with SNAP's coordinate it was low access by count only,
+  1,088 beyond, 30%).
 - Then: lint (GooeyNav's 2 pre-existing errors excepted), build + key check,
   browser checks at 1280 and 390 px on the demo tracts, preview deploy.
