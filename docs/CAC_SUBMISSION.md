@@ -61,13 +61,16 @@ Two related ones. First, the supermarket-distance provider (Overpass/OSM) return
 
 ## 3. AI disclosure (also summarized in README)
 
-Per the 2026 CAC rules, AI usage must be fully disclosed and must not constitute the entirety of technical development:
+Per the 2026 CAC rules, AI usage must be fully disclosed and must not constitute the entirety of technical development. The per-change record is `docs/AI_USE_LOG.md`.
 
-- **Used AI for:** one optional feature — the Community Narrative panel, which renders the already-computed metrics as two short paragraphs via OpenRouter at runtime, free tier only (`google/gemma-4-31b-it:free`, fallback `nvidia/nemotron-3-super-120b-a12b:free`); plus AI-assisted coding/debugging and documentation drafting during development.
-- **Did not use AI for:** the core intellectual work — system design, data-source and threshold choices, the designation evaluator, distance model, projection engine, evidence-trace UX, tests, and verification (tests + production build run green).
-- **Human contribution:** `[NAME(S)]` designed, implemented, debugged, and tested the app and can explain every module listed in README § Project structure. All classification and impact math is deterministic, reviewable code — not model output.
+- **No AI at runtime.** All verdicts and numbers are deterministic code over public data. The optional AI narrative panel (OpenRouter) was removed on 2026-10-02.
+- **Used AI for (Claude Code, Anthropic):**
+  - April 2026, Hack Cupertino: the first version was built with teammates Vihaan Narkhede and Siddharth Vijay; four commits carry a Claude co-author trailer (`179b22f`, `a5df48a`, `f622625`, `07164ba`).
+  - September 2026: the features in `DECISIONS.md` and `docs/01`–`docs/06` were developed with Claude Code (no co-author trailers on those commits).
+  - October 2026: Claude Code wrote, at the student's direction, the security fix and the entire access-test redesign (`docs/07`): method, data builders and datasets, engine, loaders, UI, tests and documentation, plus the research and adversarial reviews behind them. Every October commit carries a `Co-Authored-By: Claude` trailer.
+- **Human contribution:** `[NAME]` directed the work, made the product and method decisions recorded in `DECISIONS.md`, reviewed the results, and handled deployment and API-key management. Siddharth Vijay redesigned the landing page and visual style (commit `7361547`); that commit added three AI-generated images (Grok Imagine, per their C2PA metadata) that the app does not display.
 
-Open-source libraries/frameworks used (per rules, documented here): React, Vite, Tailwind CSS, Framer Motion, Leaflet, Streets GL, Chart.js, Radix Slot, Lucide icons, PapaParse, Workbox/vite-plugin-pwa. Data: USDA, CDC PLACES, Census ACS, OpenStreetMap (all public).
+Open-source libraries/frameworks used (per rules, documented here): React, Vite, Tailwind CSS, Framer Motion, GSAP, Leaflet, Lucide icons, PapaParse, Radix Slot, class-variance-authority, clsx, tailwind-merge, Workbox/vite-plugin-pwa. Data (all public): USDA ERS Food Access Research Atlas (2019 and 2025), the USDA FNS SNAP Retailer Locator, Census TIGERweb (2020 blocks, tracts, places), Census ACS, CDC PLACES; map tiles from OpenStreetMap and CARTO; place search via OpenStreetMap Nominatim.
 
 ---
 

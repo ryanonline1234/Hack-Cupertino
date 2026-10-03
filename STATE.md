@@ -6,7 +6,7 @@ Production (main @ e69da03) still runs the old 9-point verdict, minus the
 closed relays. Branch `redesign/access-test` holds the redesign from
 docs/07: USDA ERS's low-income & low-access test on 2020 Census blocks and a
 dated USDA SNAP store list, Point/Tract/City scope, store-format pins and a
-computed-only impact card. Committed locally; NOT pushed, NOT deployed.
+computed-only impact card. Pushed 2026-10-03 for a Vercel preview; NOT merged, NOT in production.
 
 ## Verified (2026-10-03)
 - `npm test`: 230/230. Lint: only the 2 pre-existing GooeyNav.jsx errors.
@@ -25,11 +25,12 @@ computed-only impact card. Committed locally; NOT pushed, NOT deployed.
   jobs/health context lines were rewritten against the PubMed abstracts.
 
 ## Pending (in order)
-1. Owner: rewrite the AI disclosure (README "AI disclosure",
-   docs/CAC_SUBMISSION.md §1–§3) from docs/AI_USE_LOG.md. It still describes
-   the removed narrative and claims the student wrote the code; the redesign
-   was written by Claude at the owner's direction. Merge blocker.
-2. Owner: approve pushing the branch for a Vercel preview; then review it.
+1. Owner: review the rewritten AI disclosure (README, docs/CAC_SUBMISSION.md
+   §3; written by Claude on request 2026-10-03), fill `[NAME]`, and confirm
+   the September 2026 line. The rest of the CAC packet's answer prose
+   (§1–§2, judges' steps) still describes the old method.
+2. Owner: review the Vercel preview of `redesign/access-test` (pushed
+   2026-10-03).
 3. Owner: decide product naming ("Food Desert AI — Impact Simulator" in the
    nav, title and PWA name; the impact projections it implied are gone).
 4. Merge to main (production) on the owner's OK; re-verify the demo chips live.

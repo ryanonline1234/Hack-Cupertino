@@ -144,11 +144,15 @@ PROJECT_HANDOFF.md         # implementation-level technical handoff
 
 ## AI disclosure (Congressional App Challenge)
 
-Per CAC rules, all AI usage is disclosed here and in [`docs/CAC_SUBMISSION.md`](docs/CAC_SUBMISSION.md):
+Per CAC rules, all AI usage is disclosed here and in [`docs/CAC_SUBMISSION.md`](docs/CAC_SUBMISSION.md). The per-change record is [`docs/AI_USE_LOG.md`](docs/AI_USE_LOG.md).
 
-- **What uses AI:** one optional feature — the Community Narrative panel, which turns the already-computed metrics into two short paragraphs via OpenRouter, free tier only (`google/gemma-4-31b-it:free`, fallback `nvidia/nemotron-3-super-120b-a12b:free`). All classification, distance modeling, and impact math is deterministic code in `src/engine/` and `src/pipeline/`, covered by unit tests.
-- **What AI did not do:** app architecture, data pipeline, engines, UI, tests, and docs reflect the student's own design and implementation; AI tools assisted with specific implementation and documentation tasks only.
-- **Human contribution:** the student(s) designed the system, wrote and debugged the code, chose data sources and thresholds, built the evidence-trace UX, and verified behavior with tests and builds.
+- **No AI at runtime.** Every number and verdict in the app comes from deterministic code over public data (USDA ERS, Census TIGERweb, the USDA SNAP retailer list, CDC PLACES, Census ACS). The earlier optional "Community Narrative" panel, which called a language model through OpenRouter, was removed on 2026-10-02. "AI" in the product name is a name only.
+- **AI used to build it: Claude Code (Anthropic's coding assistant).**
+  - *April 2026, Hack Cupertino:* the first version was built at the hackathon with teammates Vihaan Narkhede and Siddharth Vijay. Four commits from that period carry a Claude co-author trailer (`179b22f`, `a5df48a`, `f622625`, `07164ba`).
+  - *September 2026:* the features described in `DECISIONS.md` and `docs/01`–`docs/06` (place-a-store scenarios, share links, the mobile results page, reliability and UI polish batches) were developed with Claude Code. Those commits don't carry co-author trailers.
+  - *October 2026:* Claude Code wrote, at the student's direction, the security fix (closing the open API relays, moving the Census key server-side, the build-time key check) and the whole access-test redesign in `docs/07`: the method, the data builders and committed datasets, the engine and loaders, the UI, the tests and the documentation. Claude also did the research (USDA ERS methodology, data sources, the health and jobs studies) and the adversarial reviews behind those changes. Every October commit carries a `Co-Authored-By: Claude` trailer and every change is in `docs/AI_USE_LOG.md`.
+- **What the student did:** directed the work and made the product and method decisions recorded in `DECISIONS.md` (for example removing the runtime AI, counting USDA's SNAP supermarket list, rating tracts rather than cities, showing only computed impact, and which store formats count), reviewed the results, and handled deployment and API-key management.
+- **Teammates:** Siddharth Vijay redesigned the landing page and visual style (commit `7361547`). That commit also added three AI-generated images (`public/greens.jpg`, `public/market.jpg`, `public/produce.jpg`; their embedded C2PA metadata names Grok Imagine), which the app does not currently display.
 
 ## IDE setup
 
