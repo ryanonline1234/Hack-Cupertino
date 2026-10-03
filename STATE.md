@@ -1,15 +1,17 @@
 # State — Food Desert AI
-_Updated: 2026-10-02 (security batch: relays closed, keys out of the bundle)_
+_Updated: 2026-10-02 (security batch merged and live in production)_
 
 ## Now
 Branch `security/close-relays` (off main @ 7361547, which includes
 Siddharth's UI overhaul): runtime AI narrative removed, Census key behind
 `api/acs.js`, `api/overpass.js` limited to `{lat, lng}`, dev middleware runs
 the real handlers, build fails on a leaked key, OSM names escaped in tooltips,
-pass-through rewrites exact. Pushed 2026-10-02; Vercel preview
-hack-cupertino-87r72si74-ryanonline1234s-projects.vercel.app (2a65ae8) is
-READY. NOT merged: production still serves the old bundle with both leaked
-keys. Blocked on CENSUS_KEY in Vercel (preview /api/acs answers 503).
+pass-through rewrites exact. Merged to main (fast-forward, fb14c53) and live
+in production 2026-10-02 at the owner's call, before CENSUS_KEY was added:
+until it is set in Vercel and production is redeployed, /api/acs answers 503
+and every Census figure on screen is zero (income test, population-driven
+impact numbers). Older deployment URLs still serve the old key-bearing
+bundles and relays until the keys are revoked or protection is on.
 
 ## Verified (2026-10-02)
 - `npm test`: 75/75 pass (36 new: handler validation, client calls,
@@ -37,6 +39,10 @@ keys. Blocked on CENSUS_KEY in Vercel (preview /api/acs answers 503).
   on raw QL and malformed JSON, stays up, 200 for San Jose (532 KB, 8 s);
   rewrites: nominatim ui/status and other paths 404, geocoder/reverse/CDC
   200; /api/acs 503 (no CENSUS_KEY yet).
+- Production (food-desert-ai.vercel.app @ fb14c53, after deploy): 14 files,
+  no key value or key shape; /api/llmapi and /api/census 404; /api/overpass
+  400 on raw QL and malformed JSON, 200 for San Jose; nominatim ui 404;
+  geocoder, reverse and CDC 200; /api/acs 503 (no CENSUS_KEY).
 - Exposure audit: Census key and the LLMApi key (stored as
   VITE_ANTHROPIC_KEY) are in production and 33 of 34 deployments, all public;
   never committed to git (63 commits scanned); repo is public.
@@ -52,11 +58,9 @@ keys. Blocked on CENSUS_KEY in Vercel (preview /api/acs answers 503).
    landing headline "The AI workspace for food access" (LandingPage.tsx:293).
    Use docs/AI_USE_LOG.md.
 3. Owner: add `CENSUS_KEY` (Sensitive; Production + Preview) in Vercel, then
-   redeploy the preview.
-4. Re-check the preview (branch already pushed). Gate before merging:
-   `GET <preview>/api/acs?fips=06085504602` returns 200 with population > 0
-   (a 503 means CENSUS_KEY is missing for Preview), and an Alviso search
-   shows non-zero income. Then merge to main (= production).
+   redeploy production (env changes only apply to new deployments).
+4. After that redeploy: `GET https://food-desert-ai.vercel.app/api/acs?fips=06085504602`
+   returns 200 with population > 0, and an Alviso search shows non-zero income.
 5. After deploy: delete VITE_CENSUS_KEY, VITE_ANTHROPIC_KEY, LLMAPI_KEY and
    OPEN_ROUTER_API_KEY in Vercel; turn on Standard Deployment Protection.
 6. Then: the access-test / impact / store-format design (10 open decisions
