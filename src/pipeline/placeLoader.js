@@ -13,8 +13,7 @@ import { TIGER_BASE } from './tractLookup.js';
 import { BUNDLED_COUNTIES, loadTractBlocks } from './blockLoader.js';
 import { loadStoresNear } from './storeLoader.js';
 import { loadErsTract } from './ersLoader.js';
-import { RURAL_THRESHOLD_MI, STORE_RADIUS_MI, URBAN_THRESHOLD_MI } from './normalizer.js';
-import { pointInPolygon } from '../lib/geo.js';
+import { NON_SNAP_STATES, RURAL_THRESHOLD_MI, STORE_RADIUS_MI, URBAN_THRESHOLD_MI } from './normalizer.js';
 import { nearestDistances, populationLowAccessFromDistances } from '../engine/lowAccess.js';
 import { evaluateFoodAccess } from '../engine/foodAccessVerdict.js';
 
@@ -33,6 +32,9 @@ const TRACTS_PER_QUERY = 100;
 const BLOCK_FIELDS = 'GEOID,POP100,HU100,UR,INTPTLAT,INTPTLON';
 const TRACT_FIELDS = 'GEOID,NAME,BASENAME,POP100,INTPTLAT,INTPTLON';
 const PLACE_FIELDS = 'GEOID,NAME,BASENAME,POP100';
+// Membership tests run in chunks this size, yielding between chunks so the
+// progress bar can paint during a ~30k-block city.
+const PIP_CHUNK = 4000;
 
 // Steps in the order loadPlaceSummary reports them (for a progress bar).
 export const SUMMARY_STEPS = ['boundary', 'blocks', 'tracts', 'tract_blocks', 'ers', 'stores', 'compute'];
@@ -45,6 +47,10 @@ const isLat = (n) => Number.isFinite(n) && Math.abs(n) <= 90;
 const isLng = (n) => Number.isFinite(n) && Math.abs(n) <= 180;
 const bool = (v) => (typeof v === 'boolean' ? v : null);
 const sumPop = (blocks) => blocks.reduce((s, b) => s + b.pop, 0);
+const nonSnapState = (geoid) => NON_SNAP_STATES.has(String(geoid ?? '').slice(0, 2));
+
+// A macrotask turn, so React can render the progress update just sent.
+const yieldToEventLoop = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function timeoutSignal(signal) {
   const t = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
@@ -95,6 +101,108 @@ function parseBlock(a) {
   const lng = toNumber(a.INTPTLON);
   if (!isCount(pop) || !isCount(hu) || !isLat(lat) || !isLng(lng)) return null;
   return { id: a.GEOID, pop, hu, lat, lng, ur: a.UR ?? null };
+}
+
+// ------------------------------------------------------------- indexed point-in-polygon
+
+// A full-resolution city boundary has ~10k vertices and the city ~30k blocks:
+// the plain even-odd test (src/lib/geo.js pointInPolygon) would make ~300M
+// edge checks. The index keeps, per ring, its bounding box and its edges
+// bucketed by latitude band, so a test only looks at edges whose latitude
+// span covers the point. Each edge check is pointInPolygon's own expression
+// on the same operands in the same order, so the answer is identical (a test
+// compares the two on random and on-vertex points):
+//   - an edge can toggle only when min(yi, yj) <= lat < max(yi, yj), and
+//     band(y) is monotone in y, so every such edge sits in band(lat);
+//   - a ring whose latitude range excludes lat has no such edge;
+//   - east of a ring (by more than LNG_SLACK, far above the few-ulp error of
+//     the crossing x) no crossing lies east of the point; west of it every
+//     crossing does, and a closed ring has an even number of them.
+const LNG_SLACK = 1e-9;
+const EDGES_PER_BAND = 8;
+const MAX_BANDS = 4096;
+
+// rings: [[[lng, lat], ...], ...] as for pointInPolygon.
+export function indexPolygon(rings) {
+  const index = [];
+  for (const ring of rings || []) {
+    const n = Array.isArray(ring) ? ring.length : 0;
+    if (n === 0) continue;
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    let minLng = Infinity;
+    let maxLng = -Infinity;
+    for (const [x, y] of ring) {
+      if (y < minLat) minLat = y;
+      if (y > maxLat) maxLat = y;
+      if (x < minLng) minLng = x;
+      if (x > maxLng) maxLng = x;
+    }
+    // Edges (ring[i], ring[j]) with j the previous vertex, as pointInPolygon
+    // walks them; horizontal edges never toggle and are left out.
+    const edges = [];
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+      if (yi !== yj) edges.push(xi, yi, xj, yj);
+    }
+    const m = edges.length / 4;
+    const bands = Math.max(1, Math.min(MAX_BANDS, Math.ceil(m / EDGES_PER_BAND)));
+    const height = (maxLat - minLat) / bands;
+    const bandOf = (y) => (height > 0 ? Math.min(bands - 1, Math.max(0, Math.floor((y - minLat) / height))) : 0);
+    // Compressed rows: band b holds items[start[b] .. start[b + 1]).
+    const start = new Uint32Array(bands + 1);
+    for (let e = 0; e < m; e++) {
+      const lo = bandOf(Math.min(edges[4 * e + 1], edges[4 * e + 3]));
+      const hi = bandOf(Math.max(edges[4 * e + 1], edges[4 * e + 3]));
+      for (let b = lo; b <= hi; b++) start[b + 1] += 1;
+    }
+    for (let b = 0; b < bands; b++) start[b + 1] += start[b];
+    const items = new Uint32Array(start[bands]);
+    const fill = start.slice(0, bands);
+    for (let e = 0; e < m; e++) {
+      const lo = bandOf(Math.min(edges[4 * e + 1], edges[4 * e + 3]));
+      const hi = bandOf(Math.max(edges[4 * e + 1], edges[4 * e + 3]));
+      for (let b = lo; b <= hi; b++) items[fill[b]++] = e;
+    }
+    index.push({ minLat, maxLat, minLng, maxLng, edges: Float64Array.from(edges), bandOf, start, items });
+  }
+  return index;
+}
+
+export function pointInIndexedPolygon(lat, lng, index) {
+  let inside = false;
+  for (const r of index) {
+    if (!(lat >= r.minLat && lat < r.maxLat)) continue;
+    if (lng > r.maxLng + LNG_SLACK || lng < r.minLng - LNG_SLACK) continue;
+    const { edges, start, items } = r;
+    const b = r.bandOf(lat);
+    for (let k = start[b]; k < start[b + 1]; k++) {
+      const o = 4 * items[k];
+      const xi = edges[o];
+      const yi = edges[o + 1];
+      const xj = edges[o + 2];
+      const yj = edges[o + 3];
+      if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+        inside = !inside;
+      }
+    }
+  }
+  return inside;
+}
+
+// The blocks whose internal point lies inside `rings`, in input order.
+async function blocksInside(blocks, rings) {
+  const index = indexPolygon(rings);
+  const inside = [];
+  for (let i = 0; i < blocks.length; i += PIP_CHUNK) {
+    if (i > 0) await yieldToEventLoop();
+    const end = Math.min(blocks.length, i + PIP_CHUNK);
+    for (let k = i; k < end; k++) {
+      if (pointInIndexedPolygon(blocks[k].lat, blocks[k].lng, index)) inside.push(blocks[k]);
+    }
+  }
+  return inside;
 }
 
 // ------------------------------------------------------------- default lookups
@@ -337,7 +445,8 @@ async function liveCity(place, L, progress, signal) {
     onPage: (done, total) => progress('blocks', done, total),
   });
   if (res?.status !== 'ok') return { status: 'blocks_unavailable' };
-  const cityBlocks = res.blocks.filter((b) => pointInPolygon(b.lat, b.lng, geom.rings));
+  await yieldToEventLoop();
+  const cityBlocks = await blocksInside(res.blocks, geom.rings);
   return { status: 'ok', source: 'tigerweb', placePop: geom.pop, placeName: geom.name, cityBlocks, tractBlocks: null };
 }
 
@@ -403,6 +512,12 @@ export function assemblePlaceSummary({
     source,
   };
   if (!place || !/^\d{7}$/.test(String(place.geoid || ''))) return unknown('no_place', base);
+  // The SNAP store list has no stores in these territories (normalizer.js
+  // NON_SNAP_STATES); a place never crosses a state line, but check the
+  // tracts too.
+  if (nonSnapState(place.geoid) || tracts.some((t) => nonSnapState(t?.geoid))) {
+    return unknown('stores_not_covered', base);
+  }
   if (!isCount(placePop)) return unknown('place_unavailable', base);
   if (placePop === 0) return unknown('no_residents', base);
 
@@ -507,10 +622,23 @@ export function assemblePlaceSummary({
 
   const met = tally((r) => r.status === 'met');
   const unknownTracts = tally((r) => r.status === 'unknown');
-  const lram = tally((r) => r.lram2019 === true);
-  const lramMissing = tally((r) => r.lram2019 === null);
-  const sram = tally((r) => r.sram2025 === true);
-  const sramMissing = tally((r) => r.sram2025 === null);
+  // A map's flagged count covers only the tracts it has a row for (2019:
+  // identical GEOID only). Over all residents its share is a floor ("at
+  // least"); shareOfMatched is the share over the residents it covers.
+  const flaggedBy = (key) => {
+    const flagged = tally((r) => r[key] === true);
+    const missing = tally((r) => r[key] === null);
+    const matched = tally((r) => r[key] !== null);
+    return {
+      ...flagged,
+      share: shareOf(flagged.residents, population),
+      missingTracts: missing.tracts,
+      missingResidents: missing.residents,
+      matchedTracts: matched.tracts,
+      matchedPopulation: matched.residents,
+      shareOfMatched: shareOf(flagged.residents, matched.residents),
+    };
+  };
 
   return {
     status: 'ok',
@@ -527,18 +655,8 @@ export function assemblePlaceSummary({
       reasons: [...new Set(rows.filter((r) => r.status === 'unknown').map((r) => r.reason))],
     },
     flagged: {
-      lram2019: {
-        ...lram,
-        share: shareOf(lram.residents, population),
-        missingTracts: lramMissing.tracts,
-        missingResidents: lramMissing.residents,
-      },
-      sram2025: {
-        ...sram,
-        share: shareOf(sram.residents, population),
-        missingTracts: sramMissing.tracts,
-        missingResidents: sramMissing.residents,
-      },
+      lram2019: flaggedBy('lram2019'),
+      sram2025: flaggedBy('sram2025'),
     },
     tracts: rows,
     storesDataset: stores.dataset ?? null,
@@ -572,10 +690,12 @@ export async function loadPlaceSummary(place, lookups = {}) {
   const cancelled = () => unknown('cancelled', base);
 
   if (!place || !/^\d{7}$/.test(String(place.geoid || ''))) return unknown('no_place', base);
+  if (nonSnapState(place.geoid)) return unknown('stores_not_covered', base);
 
   // 1. In-city blocks: bundled county files when the place lies wholly in
   //    them, else TIGERweb live.
   progress('boundary');
+  await yieldToEventLoop();
   let city = null;
   try {
     city = await bundledCity(place, L);
@@ -598,6 +718,7 @@ export async function loadPlaceSummary(place, lookups = {}) {
   // 2. Tract details (name, POP100, internal point for the table's links).
   const geoids = [...new Set(city.cityBlocks.map((b) => b.id.slice(0, 11)))].sort();
   progress('tracts', 0, geoids.length);
+  await yieldToEventLoop();
   const tractsRes = await L.fetchTracts(geoids, signal);
   if (aborted()) return cancelled();
   if (tractsRes?.status !== 'ok') return unknown('tracts_unavailable', base);
@@ -612,6 +733,7 @@ export async function loadPlaceSummary(place, lookups = {}) {
   }
   let blocksDone = 0;
   progress('tract_blocks', 0, geoids.length);
+  await yieldToEventLoop();
   const tractBlocks = await mapLimit(geoids, MAX_CONCURRENT, async (g) => {
     const meta = tractsRes.tracts.get(g);
     let res;
@@ -637,6 +759,7 @@ export async function loadPlaceSummary(place, lookups = {}) {
 
   // 4. USDA ERS rows (one shard per county, cached by the loader).
   progress('ers', 0, geoids.length);
+  await yieldToEventLoop();
   const ers = await Promise.all(
     geoids.map((g) => L.loadErsTract(g).catch(() => ({ status: 'unavailable', e2025: null, e2019: null, e2019Reason: null }))),
   );
@@ -644,6 +767,7 @@ export async function loadPlaceSummary(place, lookups = {}) {
 
   // 5. Counted stores around everything the tracts cover.
   progress('stores');
+  await yieldToEventLoop();
   const everyBlock = tractBlocks.flatMap((r) => r.blocks);
   const bbox = boundsOf(everyBlock);
   const stores = bbox
@@ -653,6 +777,8 @@ export async function loadPlaceSummary(place, lookups = {}) {
 
   // 6. The same rule as the tract view, tract by tract.
   progress('compute', 0, everyBlock.length);
+  await yieldToEventLoop();
+  if (aborted()) return cancelled();
   const tracts = geoids.map((g, i) => ({ ...tractsRes.tracts.get(g), blocks: tractBlocks[i].blocks, ers: ers[i] }));
   return assemblePlaceSummary({
     place: { geoid: place.geoid, name: place.name ?? null, kind: place.kind ?? null },

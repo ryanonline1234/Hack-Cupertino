@@ -14,9 +14,11 @@
  * Demo chips. `verdict` is a claim about the tract at that exact point under
  * docs/07's rule (Greenville 28151000600, Alviso 06085504602, Cupertino
  * 06085508101 — the golden tracts); re-verify live before changing a point
- * or adding a tag. Untagged entries make no claim. `pins` are placed after
- * the analysis loads, like share-link pins; `placeKind: 'city'` makes the
- * search behave like a city search (the City notice).
+ * or adding a tag. Untagged entries make no claim. A tag is the result
+ * BEFORE any example pin: a chip with pins says what the pins change in its
+ * note. `pins` are placed after the analysis loads, like share-link pins;
+ * `placeKind: 'city'` makes the search behave like a city search (the City
+ * notice).
  */
 export const EXAMPLE_LOCATIONS = [
   // Tract 28151000600 internal point.
@@ -27,7 +29,7 @@ export const EXAMPLE_LOCATIONS = [
     lng: -121.97524,
     verdict: 'met',
     pins: [{ lat: 37.42105, lng: -121.9727, format: 's' }],
-    note: 'with a store placed in the village',
+    note: 'then a store in the village flips it',
   },
   // Tract 06085508101 internal point (TIGERweb Census2020 layer 6 INTPTLAT/INTPTLON).
   { label: 'Cupertino, CA', lat: 37.33028, lng: -122.0233, verdict: 'not_met' },
@@ -40,6 +42,8 @@ export const EXAMPLE_LOCATIONS = [
  * Verdict pill for example chips: red for "Meets test" (the tract meets
  * USDA's low-income & low-access test), neutral for "Doesn't meet".
  * Returns null for untagged locations — no pill, no claim.
+ * The red tint stays light (6%) so the 9px red text keeps >= 4.5:1 on a
+ * dark chip even over the light 2D map.
  */
 export function verdictTag(loc) {
   if (loc?.verdict === 'met') {
@@ -47,7 +51,7 @@ export function verdictTag(loc) {
       text: 'Meets test',
       color: 'var(--danger)',
       border: '1px solid color-mix(in srgb, var(--danger) 45%, transparent)',
-      background: 'color-mix(in srgb, var(--danger) 14%, transparent)',
+      background: 'color-mix(in srgb, var(--danger) 6%, transparent)',
     };
   }
   if (loc?.verdict === 'not_met') {

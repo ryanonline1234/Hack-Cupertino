@@ -15,8 +15,8 @@ const SENATE_URL =
   "https://www.gillibrand.senate.gov/wp-content/uploads/2026/05/Gillibrand-Cantwell-Wyden-Booker-Letter-to-FTC-on-Anti-Competitive-Restrictive-Covenants.pdf";
 
 const TREE = [
-  { code: "TRACT-44007", title: "Woonsocket, Rhode Island", depth: 0, mark: "epic" },
-  { code: "RATIO-1:45k", title: "One supermarket for about 45,000 people", depth: 1, mark: "bars" },
+  { code: "CASE-RI", title: "Woonsocket, Rhode Island", depth: 0, mark: "epic" },
+  { code: "SRC-NEWS", title: "Reported by The Guardian, August 2026", depth: 1, mark: "bars" },
   { code: "RISK-18", title: "18% of households have no vehicle", depth: 1, mark: "risk" },
   { code: "NOTE-37", title: "37% of residents are food insecure", depth: 1, mark: "dash" },
   { code: "DEED-75", title: "A 75-year covenant in a 128-page deed", depth: 1, mark: "risk" },
@@ -49,7 +49,7 @@ const FAQS = [
   },
   {
     q: "Where do the numbers come from?",
-    a: "Tracts and block populations come from the 2020 Census (TIGERweb); stores from USDA's SNAP Retailer Locator (supermarkets and super stores, dated); the income flag and the published 2019 and 2025 maps from the USDA ERS Food Access Research Atlas. The Woonsocket figures on this page — one supermarket for about 45,000 people, 37% food insecure, 18% with no vehicle, a 75-year covenant — are from reporting and a Senate letter, linked below.",
+    a: "Tracts and block populations come from the 2020 Census (TIGERweb); stores from USDA's SNAP Retailer Locator (supermarkets and super stores, dated); the income flag and the published 2019 and 2025 maps from the USDA ERS Food Access Research Atlas. The Woonsocket figures on this page — 37% food insecure, 18% with no vehicle, a 75-year covenant — are from reporting and a Senate letter, linked below.",
   },
   {
     q: "What changes if a store opens?",
@@ -57,7 +57,7 @@ const FAQS = [
   },
   {
     q: "Will a new store improve health?",
-    a: "This app does not project health outcomes. Studies of new supermarkets found no measurable change in BMI in Philadelphia (Cummins et al. 2014) or Pittsburgh (Dubowitz et al. 2015) and no change in children's diets in the Bronx (Elbel et al. 2015); food insecurity fell 11.8% relative to a comparison neighborhood in Pittsburgh (Richardson et al. 2017).",
+    a: "Philadelphia (Cummins et al. 2014): residents saw better food access, but fruit-and-vegetable intake and BMI didn't change. Pittsburgh (Dubowitz et al. 2015): overall diet quality improved and calories and added sugars fell compared with a similar neighborhood, though not because people used the new store; BMI and fruit-and-vegetable intake didn't change. Same Pittsburgh study (Richardson et al. 2017): food insecurity fell (−11.8% relative to the comparison neighborhood), with fewer new high-cholesterol and arthritis diagnoses. Bronx (Elbel et al. 2015): no appreciable change in household food availability or children's diets. This app does not project health outcomes.",
   },
   {
     q: "What does Launch simulation do?",
@@ -343,7 +343,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
                 </div>
                 <ul className="df-rows">
                   <li><span>Test</span><b>Low income, low access</b></li>
-                  <li><span>Rule</span><b>Most residents over 1 mile from a supermarket</b></li>
+                  <li><span>Rule</span><b>33% or 500 residents over 1 mile (urban)</b></li>
                   <li><span>Next</span><b>Place a store and run it again</b></li>
                 </ul>
               </div>
@@ -481,7 +481,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
             <article>
               <p className="df-card-kicker">The case</p>
               <h3>Woonsocket is on the record</h3>
-              <p>One supermarket for about 45,000 people. The constraint is written down, not remembered from a call.</p>
+              <p>Reported by The Guardian. The constraint is written down, not remembered from a call.</p>
               <ul>
                 <li>37% food insecure, 18% of households with no vehicle</li>
                 <li>A 75-year covenant in a 128-page deed</li>

@@ -1,77 +1,53 @@
 # State — Food Desert AI
-_Updated: 2026-10-02 (security batch merged and live in production)_
+_Updated: 2026-10-03 (access-test redesign built on branch redesign/access-test)_
 
 ## Now
-Branch `security/close-relays` (off main @ 7361547, which includes
-Siddharth's UI overhaul): runtime AI narrative removed, Census key behind
-`api/acs.js`, `api/overpass.js` limited to `{lat, lng}`, dev middleware runs
-the real handlers, build fails on a leaked key, OSM names escaped in tooltips,
-pass-through rewrites exact. Merged to main (fast-forward, fb14c53) and live
-in production 2026-10-02. CENSUS_KEY added in Vercel (Sensitive, Production +
-Preview; VITE_CENSUS_KEY deleted) and production redeployed at e69da03:
-/api/acs serves real ACS figures. Older deployment URLs still serve the old
-key-bearing bundles and relays until the keys are revoked or Deployment
-Protection is on (owner deferred rotation: spend $0, capped at $0.01).
+Production (main @ e69da03) still runs the old 9-point verdict, minus the
+closed relays. Branch `redesign/access-test` holds the redesign from
+docs/07: USDA ERS's low-income & low-access test on 2020 Census blocks and a
+dated USDA SNAP store list, Point/Tract/City scope, store-format pins and a
+computed-only impact card. Committed locally; NOT pushed, NOT deployed.
 
-## Verified (2026-10-02)
-- `npm test`: 75/75 pass (36 new: handler validation, client calls,
-  key-hygiene scan, bundle guard, review regressions, tooltip escaping,
-  exact rewrite coverage).
-- `npm run lint`: only the 2 pre-existing react-hooks/purity errors in
-  `src/ui/landing/GooeyNav.jsx` (unused React Bits copy from 7361547).
-- `npm run build`: green; key check passes even with the old VITE_ keys still
-  set at build time. Negative control: the same check on a build of 7361547
-  fails on both leaked keys (same chunk hash as production).
-- Dev server: `/api/acs` 200 with real ACS data; 400 on a bad FIPS; 405 on
-  POST. `/api/overpass` 400 on raw QL or non-US coords, 413 on an oversized
-  body, 200 with 968 elements for San Jose; no ACAO header.
-- Browser check (dev, Alviso deep link): tracker boots, Census and stores load
-  through the new endpoints, verdict unchanged (1.9 mi, DESIGNATED), no
-  console errors, narrative panel gone.
-- Adversarial review (3 lenses + refute-first verification): fixes folded in
-  (malformed-JSON crash, raw body cap, partial-ACS CDN caching, cache-busting
-  params, v2 cache prefix, stale docs). Re-checked under Vercel's Node runtime
-  (@vercel/node dev server): malformed JSON → 400 and the function stays up;
-  padded body → 413; valid → 200; /api/acs extra or duplicate params → 400.
-- Vercel preview (2a65ae8): build log shows `[key-guard] ok` with both old
-  VITE_ keys present in the build env; 15 deployed files (11 JS) contain no
-  key value or key shape; /api/llmapi and /api/census 404; /api/overpass 400
-  on raw QL and malformed JSON, stays up, 200 for San Jose (532 KB, 8 s);
-  rewrites: nominatim ui/status and other paths 404, geocoder/reverse/CDC
-  200; /api/acs 503 (no CENSUS_KEY yet).
-- Production (food-desert-ai.vercel.app @ fb14c53, after deploy): 14 files,
-  no key value or key shape; /api/llmapi and /api/census 404; /api/overpass
-  400 on raw QL and malformed JSON, 200 for San Jose; nominatim ui 404;
-  geocoder, reverse and CDC 200; /api/acs 503 (no CENSUS_KEY yet).
-- Production @ e69da03 (after CENSUS_KEY): /api/acs 200 for Alviso
-  (population 1,920, median income $107,438) and Greenville 28151000600;
-  400 on a bad FIPS; bundle still has no key value. Production Alviso search
-  fetched /api/acs 200 and stored the real figures (panel count-up not
-  visually confirmed: the browser pane was hidden).
-- Exposure audit: Census key and the LLMApi key (stored as
-  VITE_ANTHROPIC_KEY) are in production and 33 of 34 deployments, all public;
-  never committed to git (63 commits scanned); repo is public.
+## Verified (2026-10-03)
+- `npm test`: 230/230. Lint: only the 2 pre-existing GooeyNav.jsx errors.
+  `npm run build` + key check: ok.
+- Golden tracts on the committed data: Alviso 06085504602 MEETS (≈1,900 of
+  2,060 beyond 1 mi), a village pin flips it (→ 41); Greenville 28151000600
+  MEETS and flips with one pin; Los Altos Hills not low income; Cupertino
+  06085508101 0 beyond; Chinle 04001944202 low access by count (rural, 10 mi).
+- Headless smoke (13 cases, no page errors): the demo tracts, dollar-store pin
+  (no flip), San Juan PR (UNKNOWN, SNAP doesn't operate there), Hartford CT
+  (definite verdict), ERS file blocked (named Unknown + Try again), CDC hung
+  (verdict at ≈13 s), 390 px, Undo after Clear.
+- City summary: San Jose in-city 1,013,240 (exact), ≈79,730 beyond (8%), 7 of
+  235 tracts meet the test; Sacramento (live TIGERweb) 524,943, ≈3 s.
+- Adversarial review (4 lenses, refute-first): confirmed findings fixed; the
+  jobs/health context lines were rewritten against the PubMed abstracts.
 
 ## Pending (in order)
-1. Owner, when convenient (owner call 2026-10-02: spend is $0 and capped at
-   the 1-cent minimum, so rotation is not blocking): revoke the LLMApi key(s)
-   (VITE_ANTHROPIC_KEY, LLMAPI_KEY) and the OpenRouter key; request a new
-   Census key for local `.env` as `CENSUS_KEY` (the name is already renamed).
-2. Owner: write the AI-disclosure wording (README "AI disclosure",
-   docs/CAC_SUBMISSION.md §3 lines 66-67) — both still describe the removed
-   narrative — plus the video-script line (CAC_SUBMISSION.md:18) and the
-   landing headline "The AI workspace for food access" (LandingPage.tsx:293).
-   Use docs/AI_USE_LOG.md.
-3. Owner, whenever: delete VITE_ANTHROPIC_KEY, LLMAPI_KEY and
-   OPEN_ROUTER_API_KEY in Vercel (nothing reads them now); turn on Standard
-   Deployment Protection.
-4. Then: the access-test / impact / store-format design (10 open decisions
-   from the 2026-10-02 session); roadmap W1-W3 items still open.
+1. Owner: rewrite the AI disclosure (README "AI disclosure",
+   docs/CAC_SUBMISSION.md §1–§3) from docs/AI_USE_LOG.md. It still describes
+   the removed narrative and claims the student wrote the code; the redesign
+   was written by Claude at the owner's direction. Merge blocker.
+2. Owner: approve pushing the branch for a Vercel preview; then review it.
+3. Owner: decide product naming ("Food Desert AI — Impact Simulator" in the
+   nav, title and PWA name; the impact projections it implied are gone).
+4. Merge to main (production) on the owner's OK; re-verify the demo chips live.
+5. Owner, whenever: delete VITE_ANTHROPIC_KEY, LLMAPI_KEY and
+   OPEN_ROUTER_API_KEY in Vercel; Deployment Protection; key rotation.
+6. Before the Oct 11 freeze: rebuild the store snapshot once
+   (`node scripts/build-store-snapshot.mjs`) and re-run the golden tests;
+   never after the freeze.
+
+## Known, not fixed
+- Connecticut ACS profile: /api/acs returns 502 for 2020 CT tract ids
+  (ACS 2022 uses the new planning-region county codes); the verdict is
+  unaffected, the profile rows show "unavailable".
+- The City summary makes one live TIGERweb call even for bundled counties
+  (tract names/internal points); very large cities (LA, NYC) untested.
+- No rate limit on /api/acs (Vercel Firewall rule).
+- docs/CAC_SUBMISSION.md answer prose describes the old method (lines listed
+  in the 2026-10-03 session); the owner rewrites it.
 
 ## Pending spec patches
-- None. docs/01, 02, 03 and 06 carry superseded notes; PROJECT_HANDOFF §11 updated.
-
-## Known, not fixed in this batch (owner's call)
-- No rate limit on /api/overpass or /api/acs (Vercel Firewall rule).
-- Fixed in this batch after review: stored XSS via OSM store names in Leaflet
-  tooltips (roadmap SECCODE-P5) and the wildcard pass-through rewrites.
+- None. docs/07 matches the code (signatures, reasons, data formats, copy).

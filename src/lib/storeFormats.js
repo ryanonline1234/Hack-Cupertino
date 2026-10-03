@@ -35,3 +35,25 @@ export function placedPinLabel(code) {
   const f = storeFormatInfo(code);
   return `Your store · ${f.label} (${f.counts ? 'counts' : "doesn't count"})`;
 }
+
+/*
+ * What the map legend may say about the counted (SNAP) store layer.
+ * 'stores' when there are stores to draw; 'not_covered' when the tract is in
+ * a territory that doesn't run SNAP (access.reason 'stores_not_covered'), so
+ * an empty layer says nothing about real supermarkets; 'none' only when the
+ * SNAP list loaded (`loaded === true`, i.e. access.storesDataset is set) and
+ * has no counted store near the tract; otherwise 'unavailable' — a list that
+ * failed to load is never described as "no stores".
+ */
+export const STORE_LIST_UNAVAILABLE_TEXT = "SNAP store list didn't load";
+export const STORE_LIST_NOT_COVERED_TEXT = "No SNAP stores listed here: this territory doesn't run SNAP";
+
+export function noCountedStoresText(marginMi) {
+  return `No counted supermarkets within about ${marginMi} mi of this tract`;
+}
+
+export function storeLayerStatus(count, loaded, notCovered = false) {
+  if (Number.isFinite(count) && count > 0) return 'stores';
+  if (notCovered === true) return 'not_covered';
+  return loaded === true ? 'none' : 'unavailable';
+}

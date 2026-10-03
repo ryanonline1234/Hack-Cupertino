@@ -8,7 +8,15 @@ import {
   suggestionFromNominatim,
   verdictTag,
 } from '../src/lib/locationSearch.js';
-import { STORE_FORMATS, placedPinLabel, storeFormatInfo } from '../src/lib/storeFormats.js';
+import {
+  STORE_FORMATS,
+  STORE_LIST_NOT_COVERED_TEXT,
+  STORE_LIST_UNAVAILABLE_TEXT,
+  noCountedStoresText,
+  placedPinLabel,
+  storeFormatInfo,
+  storeLayerStatus,
+} from '../src/lib/storeFormats.js';
 import { MAX_SHARED_PINS, PIN_FORMATS } from '../src/lib/urlState.js';
 
 // Trimmed Nominatim jsonv2 + addressdetails=1 responses, captured live
@@ -198,6 +206,16 @@ test('the San Jose chip is a city search; tagged chips are not', () => {
   }
 });
 
+test('the Alviso chip tags the result before the store and says the store flips it', () => {
+  const alviso = EXAMPLE_LOCATIONS.find((l) => l.label === 'Alviso, San Jose');
+  // The tag is the tract as it is today; the placed village store is what
+  // changes it, so the note must not read as "meets the test with a store".
+  assert.equal(alviso.verdict, 'met');
+  assert.equal(alviso.note, 'then a store in the village flips it');
+  assert.doesNotMatch(alviso.note, /^with\b/i);
+  assert.ok(alviso.pins.every((p) => p.format === 's'), 'only a counting store can flip the test');
+});
+
 test('verdictTag labels and the no-claim default', () => {
   assert.equal(verdictTag({ verdict: 'met' }).text, 'Meets test');
   assert.equal(verdictTag({ verdict: 'not_met' }).text, "Doesn't meet");
@@ -212,4 +230,30 @@ test('store formats match the share-link tokens; only supermarkets count', () =>
   assert.equal(storeFormatInfo('x').code, 's');
   assert.equal(placedPinLabel('s'), 'Your store · Supermarket or supercenter (counts)');
   assert.equal(placedPinLabel('d'), "Your store · Dollar store (doesn't count)");
+});
+
+test('store layer status: an unloaded SNAP list is never described as "no stores"', () => {
+  assert.equal(storeLayerStatus(3, true), 'stores');
+  // Stores on hand mean the list loaded, whatever the flag says.
+  assert.equal(storeLayerStatus(3, false), 'stores');
+  assert.equal(storeLayerStatus(0, true), 'none');
+  assert.equal(storeLayerStatus(0, false), 'unavailable');
+  // A missing flag with an empty list makes no "no stores" claim either.
+  assert.equal(storeLayerStatus(0, undefined), 'unavailable');
+  assert.equal(storeLayerStatus(NaN, true), 'none');
+  assert.equal(noCountedStoresText(5), 'No counted supermarkets within about 5 mi of this tract');
+  assert.equal(STORE_LIST_UNAVAILABLE_TEXT, "SNAP store list didn't load");
+});
+
+test('store layer status: a territory without SNAP is not called "no counted supermarkets"', () => {
+  // stores_not_covered: the list loaded but SNAP doesn't operate there, so an
+  // empty layer says nothing about real supermarkets nearby.
+  assert.equal(storeLayerStatus(0, true, true), 'not_covered');
+  assert.equal(storeLayerStatus(0, false, true), 'not_covered');
+  assert.equal(storeLayerStatus(0, undefined, true), 'not_covered');
+  // Stores on hand are still drawn; the flag defaults to false.
+  assert.equal(storeLayerStatus(2, true, true), 'stores');
+  assert.equal(storeLayerStatus(0, true, false), 'none');
+  assert.equal(storeLayerStatus(0, true), 'none');
+  assert.equal(STORE_LIST_NOT_COVERED_TEXT, "No SNAP stores listed here: this territory doesn't run SNAP");
 });

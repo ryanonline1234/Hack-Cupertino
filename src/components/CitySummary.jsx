@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { SUMMARY_STEPS } from '../pipeline/placeLoader';
+import { approxCount, fmtShare as formatShare, roundedCount } from '../lib/format';
 
 /*
  * CitySummary: docs/07 "City summary". USDA rates census tracts, not cities,
@@ -14,31 +15,19 @@ import { SUMMARY_STEPS } from '../pipeline/placeLoader';
  *   onSelectTract(row): open that tract (row carries intptLat/intptLng)
  *   onClose(), onRetry()
  *
- * Numbers follow the tract view: counts to about the nearest 10 (exact
- * below 100) with "≈", shares to whole percent.
+ * Numbers follow the tract view (src/lib/format.js): counts to about the
+ * nearest 10 (exact below 100) with "≈", shares to whole percent; a tract
+ * share under the 33% limit never reads as 33%.
  */
 
-const roundCount = (n) => (n < 100 ? Math.round(n) : Math.round(n / 10) * 10);
+const fmtCount = (n) => approxCount(n) ?? '—';
+const fmtCountBare = (n) => roundedCount(n) ?? '—';
+// byShare only for a tract's own share (judged against 33%); city totals
+// have no limit and pass nothing.
+const fmtShare = (share, byShare) => formatShare(share, byShare) ?? '—';
 
-function fmtCount(n) {
-  if (!Number.isFinite(n)) return '—';
-  const s = roundCount(n).toLocaleString('en-US');
-  return n < 100 ? s : `≈${s}`;
-}
-
-function fmtCountBare(n) {
-  return Number.isFinite(n) ? roundCount(n).toLocaleString('en-US') : '—';
-}
-
-// Whole percent; never shows 33% for a tract share under the 33% limit.
-function fmtShare(share, meetsLimit = null) {
-  if (!Number.isFinite(share)) return '—';
-  if (share > 0 && share < 0.005) return 'under 1%';
-  if (share < 1 && share >= 0.995) return 'over 99%';
-  const pct = Math.round(share * 100);
-  if (meetsLimit === false && pct >= 33) return 'just under 33%';
-  return `${pct}%`;
-}
+// TrackerApp moves focus here after "Summarize {City}".
+const HEADING_ID = 'fds-city-summary-heading';
 
 const plural = (n, word) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
 
@@ -61,11 +50,16 @@ const REASON_TEXT = {
   blocks_incomplete: "The Census blocks for one of the city's tracts don't add up to that tract's 2020 population.",
   tracts_unavailable: "The census tract details (Census TIGERweb) didn't load.",
   stores_unavailable: "Part of the SNAP store list around the city didn't load, so distances can't be trusted.",
-  ers_unavailable: "A USDA ERS county file for the city's tracts didn't load.",
+  ers_unavailable: "A USDA ERS county file for the city's tracts didn't load, so their urban/rural limits and income flags are unknown.",
+  stores_not_covered:
+    "SNAP doesn't operate here (this territory uses a nutrition block grant instead), so the SNAP store list has no stores to measure from. The summary can't be estimated.",
   urban_unavailable:
     "Neither USDA ERS nor the Census blocks say whether one of the city's tracts is urban or rural, so its distance limit isn't known.",
   failed: 'The summary stopped on an unexpected error.',
 };
+
+// Facts about the place, not load failures: trying again gives the same answer.
+const NO_RETRY = new Set(['no_residents', 'stores_not_covered']);
 
 const TRACT_REASON_TEXT = {
   income_unavailable: 'no USDA ERS 2025 income row',
@@ -101,7 +95,7 @@ function progressFraction(progress) {
 
 const STATUS_ORDER = { met: 0, unknown: 1, not_met: 2 };
 const STATUS_LABEL = { met: 'Meets', not_met: "Doesn't meet", unknown: 'Unknown' };
-const STATUS_COLOR = { met: 'var(--danger)', not_met: 'rgba(255,255,255,0.6)', unknown: 'rgba(255,255,255,0.45)' };
+const STATUS_COLOR = { met: 'var(--danger)', not_met: 'rgba(255,255,255,0.78)', unknown: 'rgba(255,255,255,0.6)' };
 
 const COLUMNS = [
   { key: 'tract', label: 'Tract', align: 'left', first: 'asc' },
@@ -158,7 +152,7 @@ function TractTable({ rows, activeGeoid, onSelect }) {
                     type="button"
                     onClick={() => toggle(col)}
                     className="text-[10px] uppercase tracking-wider"
-                    style={{ color: active ? 'var(--cyan)' : 'rgba(255,255,255,0.4)' }}
+                    style={{ color: active ? 'var(--cyan)' : 'rgba(255,255,255,0.6)' }}
                   >
                     {col.label}
                     {active ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
@@ -195,7 +189,7 @@ function TractTable({ rows, activeGeoid, onSelect }) {
                     {r.basename}
                   </button>
                   {!r.wholeInCity && (
-                    <span className="ml-1 text-[10px] text-white/35" title="Only part of this tract is inside the city">
+                    <span className="ml-1 text-[10px] text-white/60" title="Only part of this tract is inside the city">
                       part
                     </span>
                   )}
@@ -203,7 +197,7 @@ function TractTable({ rows, activeGeoid, onSelect }) {
                 <td className="px-2 py-1 text-right text-white/75">{fmtCount(r.inCityPop)}</td>
                 <td className="px-2 py-1 text-right text-white/75" title={`Share of the whole tract's residents beyond ${r.threshold} mi`}>
                   {fmtShare(r.share, r.byShare)}
-                  <span className="text-white/35"> · {r.threshold} mi</span>
+                  <span className="text-white/60"> · {r.threshold} mi</span>
                 </td>
                 <td className="px-2 py-1 text-right whitespace-nowrap" style={{ color: STATUS_COLOR[r.status] }}>
                   {STATUS_LABEL[r.status] ?? 'Unknown'}
@@ -217,13 +211,31 @@ function TractTable({ rows, activeGeoid, onSelect }) {
   );
 }
 
-function flaggedPart(label, f) {
-  return `${label} ${fmtCount(f.residents)} (${fmtShare(f.share)})`;
+// The 2019 map is on 2010 tract boundaries: a 2020 tract with no 2019 row
+// can't be counted either way, so with any missing the figure is a floor
+// ("at least"). matchedPopulation (residents in tracts that do have a 2019
+// row, from placeLoader, with shareOfMatched) gives the share among those;
+// without it the floor stands alone.
+function lram2019Part(f) {
+  const label = '2019 supermarket map (2010 tracts)';
+  if (!(f.missingTracts > 0)) return `${label} ${fmtCount(f.residents)} (${fmtShare(f.share)})`;
+  const matched = Number.isFinite(f.matchedPopulation) && f.matchedPopulation > 0 ? f.matchedPopulation : null;
+  const shareOfMatched = Number.isFinite(f.shareOfMatched) ? f.shareOfMatched : matched ? f.residents / matched : null;
+  const within = matched
+    ? `; ${fmtShare(shareOfMatched)} of the ${fmtCountBare(matched)} residents in tracts with a 2019 row`
+    : '';
+  const missing = `${plural(f.missingTracts, 'tract')} ${f.missingTracts === 1 ? 'has' : 'have'} no 2019 row`;
+  return `${label} at least ${fmtCount(f.residents)} (${missing}${within})`;
+}
+
+function sram2025Part(f) {
+  return `2025 SNAP-store map (incl. convenience & dollar stores) ${fmtCount(f.residents)} (${fmtShare(f.share)})`;
 }
 
 function missingNote(label, f, why) {
   if (!(f.missingTracts > 0)) return null;
-  return `${label}: ${plural(f.missingTracts, 'tract')} (${fmtCount(f.missingResidents)} residents) ${why}, not counted.`;
+  const verb = f.missingTracts === 1 ? why.replace(/^have /, 'has ') : why;
+  return `${label}: ${plural(f.missingTracts, 'tract')} (${fmtCount(f.missingResidents)} residents) ${verb}, not counted.`;
 }
 
 function Totals({ result }) {
@@ -237,7 +249,7 @@ function Totals({ result }) {
     <ul className="space-y-1.5 text-xs leading-snug text-white/85">
       <li>
         Residents beyond the distance limit: {fmtCount(beyond)} of {fmtCountBare(population)} ({fmtShare(share)})
-        <span className="block text-[10px] text-white/40">
+        <span className="block text-[10px] text-white/60">
           Each resident is measured against their own tract&apos;s limit: 1 mile urban, 10 miles rural.
         </span>
       </li>
@@ -245,16 +257,16 @@ function Totals({ result }) {
         Residents in tracts meeting the test (estimate): {fmtCount(meeting.residents)} ({fmtShare(meeting.share)}) ·{' '}
         {meeting.tracts.toLocaleString('en-US')} of {plural(tractCount, 'tract')}
         {unknownTracts.tracts > 0 && (
-          <span className="block text-[10px] text-white/40">
+          <span className="block text-[10px] text-white/60">
             {plural(unknownTracts.tracts, 'tract')} unknown ({fmtCount(unknownTracts.residents)} residents): {unknownWhy}.
           </span>
         )}
       </li>
       <li>
-        Residents in USDA-flagged tracts: {flaggedPart('2019 map', flagged.lram2019)} ·{' '}
-        {flaggedPart('2025 map', flagged.sram2025)}
+        Residents in USDA-flagged tracts: {lram2019Part(flagged.lram2019)} ·{' '}
+        {sram2025Part(flagged.sram2025)}
         {notes.map((n) => (
-          <span key={n} className="block text-[10px] text-white/40">{n}</span>
+          <span key={n} className="block text-[10px] text-white/60">{n}</span>
         ))}
       </li>
     </ul>
@@ -302,21 +314,25 @@ export default function CitySummary({ summary, activeGeoid, onSelectTract, onClo
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="[font-family:inherit] text-[13px] font-semibold leading-snug text-white/90">
+          <h3
+            id={HEADING_ID}
+            tabIndex={-1}
+            className="[font-family:inherit] text-[13px] font-semibold leading-snug text-white/90"
+          >
             City summary: {city} · estimate
           </h3>
-          <p className="text-[11px] text-white/45">
+          <p className="text-[11px] text-white/60">
             USDA rates census tracts, not cities: these totals add up each tract&apos;s result for the residents inside
             the city boundary.
           </p>
         </div>
         <div className="flex shrink-0 gap-1.5">
           {status === 'ok' && (
-            <SmallButton onClick={() => setOpen((v) => !v)} label={open ? 'Hide the city summary table' : 'Show the city summary table'}>
+            <SmallButton onClick={() => setOpen((v) => !v)} label={open ? 'Hide: city summary table' : 'Show: city summary table'}>
               {open ? 'Hide' : 'Show'}
             </SmallButton>
           )}
-          <SmallButton onClick={() => onClose?.()} label="Close the city summary">Close</SmallButton>
+          <SmallButton onClick={() => onClose?.()} label="Close: city summary">Close</SmallButton>
         </div>
       </div>
 
@@ -335,10 +351,10 @@ export default function CitySummary({ summary, activeGeoid, onSelectTract, onClo
       {status === 'unknown' && (
         <div className="mt-2 text-xs leading-snug text-white/80" role="alert">
           <p>Unknown: {REASON_TEXT[result?.reason] || REASON_TEXT.failed}</p>
-          <p className="mt-1 text-[10px] text-white/40">No partial totals are shown.</p>
-          {typeof onRetry === 'function' && (
+          <p className="mt-1 text-[10px] text-white/60">No partial totals are shown.</p>
+          {typeof onRetry === 'function' && !NO_RETRY.has(result?.reason) && (
             <div className="mt-2">
-              <SmallButton onClick={() => onRetry()} label="Try the city summary again" tone="accent">Try again</SmallButton>
+              <SmallButton onClick={() => onRetry()} label="Try again: city summary" tone="accent">Try again</SmallButton>
             </div>
           )}
         </div>
@@ -352,7 +368,7 @@ export default function CitySummary({ summary, activeGeoid, onSelectTract, onClo
               <TractTable rows={result.tracts} activeGeoid={activeGeoid} onSelect={select} />
             </div>
           )}
-          <p className="mt-2 text-[10px] leading-snug text-white/40">
+          <p className="mt-2 text-[10px] leading-snug text-white/60">
             Estimated live with USDA ERS&apos;s rule; not an official USDA designation. A block counts as in the city when
             its Census internal point lies inside the city boundary. Tracts on the city line are tested on all their residents; totals
             count in-city residents only. Block populations include Census privacy noise; counts are rounded. Blocks:

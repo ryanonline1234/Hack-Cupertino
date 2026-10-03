@@ -131,7 +131,7 @@ export default function MobileResultsView({
             {scenario}
             {panels}
             {communityData && (
-              <p className="text-center text-[11px] leading-relaxed px-6 text-white/40">
+              <p className="text-center text-[11px] leading-relaxed px-6 text-white/60">
                 The map, the USDA 2019 atlas and placing new stores are
                 desktop-only. Use Share above to open this location on a
                 bigger screen.

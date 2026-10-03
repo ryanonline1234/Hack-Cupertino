@@ -3,6 +3,64 @@
 Append-only. New decisions go on top with today's date; old entries are never
 edited. Each entry names the rejected alternative.
 
+## 2026-10-03 — The verdict is USDA ERS's low-income & low-access test on 2020 Census blocks (docs/07)
+The old verdict averaged straight-line distance at 9 fixed points within 1.5 mi
+of one geocoded anchor and compared it to 1 mi / 5 mi, with no income test; a
+city search judged ~6 sq mi of downtown, and one placed store could never pull
+the average under 1.295 mi. Now, for the 2020 tract at the point: residents of
+each populated block are beyond the limit when the block's internal point is
+more than 1 mi (urban) / 10 mi (rural, ERS 2025 Urban flag) from a counted
+store; low access = 33% or 500 residents beyond; low income = ERS 2025
+LowIncomeTracts; three-valued AND. Rejected alternatives: keeping the mean-
+distance rule under an honest label (still click-dependent and not USDA's
+statistic), and block-group polygon sampling from the unmerged skyrmp branch
+(still a mean, still one tract). Owner chose to have Claude write all of it;
+each module is in docs/AI_USE_LOG.md.
+
+## 2026-10-03 — Counted stores = a bundled, dated USDA SNAP list; Overpass deleted
+Supermarket + Super Store from the SNAP retailer service (data 2026-09-17),
+minus warehouse clubs, military commissaries/exchanges and fuel stations
+(scripts/store-exclusions.json, counts in the manifest), in 2-degree tiles.
+Target and Dollar General Market count because SNAP's own type label is
+followed. Rejected: live OSM/Overpass (6 of 8 calls failed on 2026-10-02 and
+OSM misses in-town supermarkets in Delta towns, creating false rural deserts),
+a live SNAP query during judging (third-party runtime dependency; its errors
+come back as HTTP 200), and an OSM+SNAP union (adds mislabelled shops). Known
+gap, disclosed in the UI: supermarkets that don't take SNAP are missing. The
+list is frozen at the code freeze so the video and judges see the same numbers.
+
+## 2026-10-03 — Scope: a tract verdict, a no-verdict Point line, and a City summary with no city pill
+USDA rates tracts, not cities. A city search shows the tract at the point plus
+"USDA rates census tracts, not cities"; the City summary reports in-city
+residents beyond their own tract's limit and residents in tracts meeting the
+test, sum-checked against the place's 2020 population (San Jose 1,013,240), and
+never a single city verdict. Rejected: one city-level designation (no USDA
+basis; the numbers swing from 0.03% to 8% by method) and treating Nominatim's
+point as the city.
+
+## 2026-10-03 — Impact shows computed access counts only; projections deleted
+Before/after residents beyond the limit, residents brought within it, the test
+result, the gap to the limits, half-mile residents and a labelled no-vehicle
+estimate, all from the same block computation. The 58% baseline, jobs, dollars,
+diabetes/obesity and receipt numbers are gone; a collapsed context box cites
+what studies found (checked against the PubMed abstracts on 2026-10-03).
+Rejected: keeping the projections with better citations (their constants
+couldn't be traced, and the evidence doesn't support point estimates).
+
+## 2026-10-03 — Store customization is format only
+Supermarket/supercenter counts; small grocery, dollar store and farmers/mobile
+market don't, each with USDA's reason. Pins travel in a parallel pt= key so old
+links still parse as supermarkets. Rejected: size, SNAP/WIC, price tier and
+names — nothing the app measures responds to them.
+
+## 2026-10-03 — Client timeouts on the new loaders (30 s; 60 s for the City summary)
+TIGERweb, store-tile, ERS and CDC/ACS requests abort after 30 s and read as a
+named Unknown with a Try again path, never cached. This doesn't repeat the
+Overpass mistake recorded above: these are small point/attribute queries that
+answer in under a second, and a timeout can only make the result Unknown, never
+a wrong verdict. CDC/ACS no longer hold up the verdict. Rejected: no timeouts
+(a hung host would leave the spinner up forever).
+
 ## 2026-10-02 — Store names are escaped before Leaflet; pass-through rewrites are exact
 Leaflet writes string tooltip content with innerHTML, and store names come from
 OpenStreetMap, which anyone can edit, so a shop=supermarket node named with an

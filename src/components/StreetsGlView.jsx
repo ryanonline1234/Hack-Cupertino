@@ -10,7 +10,16 @@ import {
   geocodeAddress,
 } from '../lib/locationSearch';
 import { decodeAppState, MAX_SHARED_PINS } from '../lib/urlState';
-import { DEFAULT_STORE_FORMAT, STORE_FORMATS, placedPinLabel, storeFormatInfo } from '../lib/storeFormats';
+import {
+  DEFAULT_STORE_FORMAT,
+  STORE_FORMATS,
+  STORE_LIST_NOT_COVERED_TEXT,
+  STORE_LIST_UNAVAILABLE_TEXT,
+  noCountedStoresText,
+  placedPinLabel,
+  storeFormatInfo,
+  storeLayerStatus,
+} from '../lib/storeFormats';
 import { haversineMiles } from '../lib/geo';
 import { MAP_STORE_MARGIN_MI } from '../pipeline/normalizer';
 
@@ -43,6 +52,21 @@ const DEFAULT_YAW = 330;
 const DEFAULT_DISTANCE = 1800;
 const IFRAME_MAX_RETRIES = 2;
 const DOCK_BESIDE_CARD_MIN_WIDTH = 760;
+// Scenario card placement: below the toolbar's measured bottom, never over
+// it. TOOLBAR_SAFE_BOTTOM is used until the toolbar has been measured (three
+// wrapped rows at a narrow map).
+const TOOLBAR_TOP = 16;
+const TOOLBAR_SAFE_BOTTOM = 176;
+const CARD_GAP = 8;
+const CARD_MIN_HEIGHT = 120;
+
+// The 2D map's OSM tiles are light, so floating controls get an opaque dark
+// backing (as the dock banners have) under their tint; cyan/neon text then
+// keeps >= 4.5:1 even over a white tile.
+const CONTROL_BACKING = 'rgba(5,6,8,0.85)';
+function onDark(tint) {
+  return `linear-gradient(${tint}, ${tint}), ${CONTROL_BACKING}`;
+}
 // Bumped from 'fds:mapRendererMode' so any '2d' values cached from a previous
 // build (which had over-aggressive auto-fallback) don't stick after upgrade.
 // 3D Streets GL is the intended default for capable browsers.
@@ -150,6 +174,13 @@ function SuggestionIcon({ cls }) {
  *       in-map search, { forceRefresh: true } from Fresh Data, plus pins from
  *       the example pills; map-click re-analysis passes no options
  *   stores        counted SNAP stores (communityData.access.stores)
+ *   storesLoaded  true when the SNAP store list loaded
+ *                 (communityData.access.storesDataset != null); an empty
+ *                 list is called "no stores" only when this is true
+ *   storesNotCovered  true when access.reason is 'stores_not_covered' (a
+ *                 territory without SNAP): the legend says so instead
+ *   canUndo       Undo has an earlier pin set to restore (it can bring back
+ *                 a cleared set, so it doesn't follow the pin count)
  *   placedStores  the visitor's pins [{ id, lat, lng, format }] (`pins` is
  *                 accepted as an alias)
  *   onPlaceStore(lat, lng, format)  format is the sticky banner choice
@@ -166,6 +197,9 @@ export default function StreetsGlView({
   onShareScenario,
   scenarioCard,
   stores = [],
+  storesLoaded,
+  storesNotCovered = false,
+  canUndo,
   placedStores,
   pins,
   onPlaceStore,
@@ -198,6 +232,17 @@ export default function StreetsGlView({
   const [placeFormat, setPlaceFormat]     = useState(DEFAULT_STORE_FORMAT);
   const [viewport, setViewport]         = useState({ width: 0, height: 0 });
   const [hoveredStoreId, setHoveredStoreId] = useState(null);
+  // Measured toolbar bottom (px from the map's top) and dock height, so the
+  // scenario card sits under the toolbar and above a full-width dock.
+  const [toolbarBottom, setToolbarBottom] = useState(TOOLBAR_SAFE_BOTTOM);
+  const [dockHeight, setDockHeight]       = useState(0);
+  const toolbarRef  = useRef(null);
+  const dockRef     = useRef(null);
+  // Keyboard focus: arming moves focus to the selected store-type chip, Done
+  // returns it to the Place store button ('chip' | 'place' | null).
+  const placeButtonRef = useRef(null);
+  const activeChipRef  = useRef(null);
+  const pendingFocusRef = useRef(null);
   const inputRef    = useRef(null);
   const iframeRef   = useRef(null);
   const containerRef = useRef(null);
@@ -232,6 +277,34 @@ export default function StreetsGlView({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Toolbar bottom and dock height drive the scenario card's top and max
+  // height. The toolbar wraps to more rows on a narrow map and grows with an
+  // error line; the suggestions dropdown sits outside the measured block (it
+  // overlays the card instead of pushing it down).
+  useEffect(() => {
+    const container = containerRef.current;
+    const toolbar = toolbarRef.current;
+    const dock = dockRef.current;
+    if (!container || !toolbar || !dock || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => {
+      const top = container.getBoundingClientRect().top;
+      setToolbarBottom(Math.ceil(toolbar.getBoundingClientRect().bottom - top));
+      setDockHeight(Math.ceil(dock.getBoundingClientRect().height));
+    });
+    ro.observe(container);
+    ro.observe(toolbar);
+    ro.observe(dock);
+    return () => ro.disconnect();
+  }, []);
+
+  // Move focus only after the armed banner has mounted (or unmounted).
+  useEffect(() => {
+    const target = pendingFocusRef.current;
+    pendingFocusRef.current = null;
+    if (target === 'chip' && placeArmed) activeChipRef.current?.focus();
+    else if (target === 'place' && !placeArmed) placeButtonRef.current?.focus();
+  }, [placeArmed]);
 
   // No load timer: a slow Streets GL load just keeps its spinner instead of
   // flipping to a timed-out error. Real load failures still retry via the
@@ -427,6 +500,16 @@ export default function StreetsGlView({
     onPlaceStore?.(plat, plng, placeFormat);
   }
 
+  function togglePlaceArmed() {
+    pendingFocusRef.current = placeArmed ? null : 'chip';
+    setPlaceArmed((v) => !v);
+  }
+
+  function finishPlacing() {
+    pendingFocusRef.current = 'place';
+    setPlaceArmed(false);
+  }
+
   function handleForceRefresh() {
     if (busy || !hasData) return;
     setSearchError('');
@@ -442,6 +525,17 @@ export default function StreetsGlView({
   // The scenario card (left-4, 320px) shows whenever pins exist; on a wide
   // enough map the banner dock moves beside it instead of under it.
   const dockLeft = placedPins.length > 0 && viewport.width >= DOCK_BESIDE_CARD_MIN_WIDTH ? 352 : 8;
+  // Card: below the toolbar, and above the dock when the dock spans under it.
+  const cardTop = Math.max(toolbarBottom, TOOLBAR_TOP) + CARD_GAP;
+  const cardBottomReserve = 16 + (dockLeft === 8 && dockHeight > 0 ? dockHeight + CARD_GAP : 0);
+  const storeStatus = storeLayerStatus(stores.length, storesLoaded, storesNotCovered);
+  const storeStatusText = storeStatus === 'none'
+    ? noCountedStoresText(MAP_STORE_MARGIN_MI)
+    : storeStatus === 'not_covered'
+      ? STORE_LIST_NOT_COVERED_TEXT
+      : STORE_LIST_UNAVAILABLE_TEXT;
+  // Without the flag (older callers), Undo follows the pin count.
+  const undoEnabled = typeof canUndo === 'boolean' ? canUndo : placedPins.length > 0;
 
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden map-scanlines" style={{ background: '#050608' }}>
@@ -627,6 +721,7 @@ export default function StreetsGlView({
           one dock so none covers the search toolbar. The dock spans the map
           but only its banners take clicks. */}
       <div
+        ref={dockRef}
         className="absolute bottom-4 right-2 z-20 flex flex-col items-center gap-2 pointer-events-none"
         style={{ left: `${dockLeft}px` }}
       >
@@ -641,14 +736,16 @@ export default function StreetsGlView({
             backdropFilter: 'blur(12px)',
           }}
         >
-          <span
-            className="block w-1.5 h-1.5 rounded-full"
-            style={{ background: 'var(--neon)', boxShadow: '0 0 6px var(--neon)' }}
-          />
+          {(storeStatus === 'stores' || storeStatus === 'none') && (
+            <span
+              className="block w-1.5 h-1.5 rounded-full"
+              style={{ background: 'var(--neon)', boxShadow: '0 0 6px var(--neon)' }}
+            />
+          )}
           <span>
-            {stores.length > 0
+            {storeStatus === 'stores'
               ? `${stores.length} counted supermarket${stores.length === 1 ? '' : 's'} nearby · move freely, Recenter re-syncs markers`
-              : `No counted supermarkets within about ${MAP_STORE_MARGIN_MI} mi of this tract`}
+              : storeStatusText}
           </span>
           <button
             type="button"
@@ -680,10 +777,12 @@ export default function StreetsGlView({
           }}
         >
           <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className="block w-2.5 h-2.5 rounded-full" style={{ background: 'var(--neon)' }} />
-            {stores.length > 0
+            {(storeStatus === 'stores' || storeStatus === 'none') && (
+              <span aria-hidden="true" className="block w-2.5 h-2.5 rounded-full" style={{ background: 'var(--neon)' }} />
+            )}
+            {storeStatus === 'stores'
               ? `Counted supermarket (${stores.length} nearby, USDA SNAP data)`
-              : `No counted supermarkets within about ${MAP_STORE_MARGIN_MI} mi of this tract`}
+              : storeStatusText}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span aria-hidden="true" className="block w-2.5 h-2.5 rounded-full" style={{ background: 'var(--cyan)' }} />
@@ -716,6 +815,7 @@ export default function StreetsGlView({
               return (
                 <button
                   key={f.code}
+                  ref={active ? activeChipRef : undefined}
                   type="button"
                   aria-pressed={active}
                   onClick={() => setPlaceFormat(f.code)}
@@ -761,7 +861,7 @@ export default function StreetsGlView({
             {onUndoPin && (
               <button
                 type="button"
-                disabled={placedPins.length === 0}
+                disabled={!undoEnabled}
                 onClick={() => onUndoPin()}
                 className="rounded-full px-2.5 min-h-[32px] text-[11px] transition-colors btn-press disabled:opacity-40"
                 style={{ border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)' }}
@@ -795,7 +895,7 @@ export default function StreetsGlView({
             </button>
             <button
               type="button"
-              onClick={() => setPlaceArmed(false)}
+              onClick={finishPlacing}
               className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press"
               style={{
                 background: 'rgba(255,255,255,0.08)',
@@ -825,11 +925,14 @@ export default function StreetsGlView({
         <path d="M200 50 Q150 200 0 150" fill="none" stroke="var(--cyan)" strokeWidth="0.3" />
       </svg>
 
-      {/* ── Search bar + dropdown ── */}
+      {/* ── Search bar + dropdown ──
+          z-30 so the suggestions dropdown overlays the scenario card. The
+          measured block (form + error lines) sets the card's top. */}
       <div
-        className="absolute top-4 left-1/2 -translate-x-1/2 z-20"
+        className="absolute top-4 left-1/2 -translate-x-1/2 z-30"
         style={{ width: 'min(520px, calc(100% - 2.5rem))' }}
       >
+        <div ref={toolbarRef}>
         <form onSubmit={handleSubmit} className="flex flex-wrap items-center gap-2">
           {/* Input */}
           <div
@@ -855,9 +958,10 @@ export default function StreetsGlView({
               onKeyDown={handleKeyDown}
               onFocus={() => suggestions.length > 0 && setShowDrop(true)}
               placeholder="Search any US city, address, or ZIP…"
+              aria-label="Search a US city, address, or ZIP"
               disabled={busy}
               autoComplete="off"
-              className="flex-1 bg-transparent text-base text-white/90 placeholder-white/25 outline-none disabled:opacity-60"
+              className="flex-1 bg-transparent text-base text-white/90 placeholder-white/55 outline-none disabled:opacity-60"
             />
             {geocoding && (
               <svg className="w-4 h-4 shrink-0 animate-spin" style={{ color: 'var(--cyan)' }} fill="none" viewBox="0 0 24 24">
@@ -869,7 +973,8 @@ export default function StreetsGlView({
               <button
                 type="button"
                 onClick={() => { setQuery(''); setSuggestions([]); setShowDrop(false); inputRef.current?.focus(); }}
-                className="text-white/25 hover:text-white/60 transition-colors shrink-0"
+                aria-label="Clear search"
+                className="text-white/55 hover:text-white/80 transition-colors shrink-0"
               >
                 <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -883,7 +988,7 @@ export default function StreetsGlView({
             disabled={busy || !query.trim()}
             className="shrink-0 px-5 py-3 md:py-2.5 rounded-full text-sm font-semibold transition-all disabled:opacity-40"
             style={{
-              background: 'linear-gradient(135deg, rgba(0,255,153,0.15), rgba(34,211,238,0.15))',
+              background: `linear-gradient(135deg, rgba(0,255,153,0.15), rgba(34,211,238,0.15)), ${CONTROL_BACKING}`,
               border: '1px solid rgba(34,211,238,0.35)',
               color: 'var(--cyan)',
               backdropFilter: 'blur(20px)',
@@ -898,7 +1003,7 @@ export default function StreetsGlView({
             onClick={handleForceRefresh}
             className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40 btn-press"
             style={{
-              background: 'rgba(34,211,238,0.08)',
+              background: onDark('rgba(34,211,238,0.08)'),
               border: '1px solid rgba(34,211,238,0.24)',
               color: 'var(--cyan)',
               backdropFilter: 'blur(20px)',
@@ -918,7 +1023,7 @@ export default function StreetsGlView({
             onClick={() => setHighlight((v) => !v)}
             className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40 btn-press"
             style={{
-              background: highlight ? 'rgba(0,255,153,0.18)' : 'rgba(0,255,153,0.06)',
+              background: onDark(highlight ? 'rgba(0,255,153,0.18)' : 'rgba(0,255,153,0.06)'),
               border: `1px solid ${highlight ? 'rgba(0,255,153,0.55)' : 'rgba(0,255,153,0.22)'}`,
               color: 'var(--neon)',
               backdropFilter: 'blur(20px)',
@@ -936,12 +1041,13 @@ export default function StreetsGlView({
           {/* Place-a-store arming. Disabled without analysis data; placing
               needs a community to reason about. */}
           <button
+            ref={placeButtonRef}
             type="button"
             disabled={!hasData}
-            onClick={() => setPlaceArmed((v) => !v)}
+            onClick={togglePlaceArmed}
             className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40 btn-press"
             style={{
-              background: placeArmed ? 'rgba(34,211,238,0.18)' : 'rgba(34,211,238,0.06)',
+              background: onDark(placeArmed ? 'rgba(34,211,238,0.18)' : 'rgba(34,211,238,0.06)'),
               border: `1px solid ${placeArmed ? 'rgba(34,211,238,0.55)' : 'rgba(34,211,238,0.22)'}`,
               color: 'var(--cyan)',
               backdropFilter: 'blur(20px)',
@@ -959,7 +1065,7 @@ export default function StreetsGlView({
               onClick={() => updateRendererMode(useFallbackMap ? 'webgl' : '2d')}
               className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all"
               style={{
-                background: 'rgba(255,255,255,0.06)',
+                background: onDark('rgba(255,255,255,0.06)'),
                 border: '1px solid rgba(255,255,255,0.16)',
                 color: 'rgba(255,255,255,0.78)',
                 backdropFilter: 'blur(20px)',
@@ -971,55 +1077,12 @@ export default function StreetsGlView({
           )}
         </form>
 
-        {/* Suggestions dropdown */}
-        {showDrop && suggestions.length > 0 && (
-          <div
-            ref={dropRef}
-            className="overflow-hidden animate-fade-slide-up"
-            style={{
-              background: 'rgba(5, 6, 8, 0.96)',
-              border: '1px solid rgba(34,211,238,0.3)',
-              borderTop: 'none',
-              borderRadius: '0 0 16px 16px',
-              backdropFilter: 'blur(20px)',
-              zIndex: 30,
-            }}
-          >
-            {suggestions.map((s, i) => (
-              <button
-                key={i}
-                type="button"
-                onMouseDown={(e) => { e.preventDefault(); selectSuggestion(s); }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors"
-                style={{
-                  background: i === activeIdx ? 'rgba(34,211,238,0.08)' : 'transparent',
-                  color: i === activeIdx ? 'var(--cyan)' : 'rgba(255,255,255,0.7)',
-                  borderTop: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.05)',
-                }}
-              >
-                <span style={{ color: i === activeIdx ? 'var(--cyan)' : 'rgba(255,255,255,0.3)' }}>
-                  <SuggestionIcon cls={s.cls} />
-                </span>
-                <span className="truncate">{s.short}</span>
-                {(s.placeKind && s.placeKind !== 'other' ? s.placeKind : s.type) && (
-                  <span
-                    className="ml-auto shrink-0 text-[10px] px-1.5 py-0.5 rounded capitalize"
-                    style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.3)' }}
-                  >
-                    {s.placeKind && s.placeKind !== 'other' ? s.placeKind : s.type}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* Error */}
         {searchError && (
           <div
             className="mt-2 px-4 py-2 rounded-xl text-sm animate-fade-slide-up"
             style={{
-              background: 'rgba(239,68,68,0.12)',
+              background: onDark('rgba(239,68,68,0.12)'),
               border: '1px solid rgba(239,68,68,0.3)',
               color: 'rgba(252,165,165,0.9)',
             }}
@@ -1032,7 +1095,7 @@ export default function StreetsGlView({
           <div
             className="mt-2 px-4 py-2 rounded-xl text-sm animate-fade-slide-up flex items-center justify-between gap-3"
             style={{
-              background: 'rgba(34,211,238,0.12)',
+              background: onDark('rgba(34,211,238,0.12)'),
               border: '1px solid rgba(34,211,238,0.35)',
               color: 'rgba(186,230,253,0.95)',
             }}
@@ -1070,13 +1133,61 @@ export default function StreetsGlView({
             </div>
           </div>
         )}
+        </div>
+
+        {/* Suggestions dropdown */}
+        {showDrop && suggestions.length > 0 && (
+          <div
+            ref={dropRef}
+            className="overflow-hidden animate-fade-slide-up"
+            style={{
+              background: 'rgba(5, 6, 8, 0.96)',
+              border: '1px solid rgba(34,211,238,0.3)',
+              borderTop: 'none',
+              borderRadius: '0 0 16px 16px',
+              backdropFilter: 'blur(20px)',
+              zIndex: 30,
+            }}
+          >
+            {suggestions.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); selectSuggestion(s); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors"
+                style={{
+                  background: i === activeIdx ? 'rgba(34,211,238,0.08)' : 'transparent',
+                  color: i === activeIdx ? 'var(--cyan)' : 'rgba(255,255,255,0.7)',
+                  borderTop: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.05)',
+                }}
+              >
+                <span style={{ color: i === activeIdx ? 'var(--cyan)' : 'rgba(255,255,255,0.3)' }}>
+                  <SuggestionIcon cls={s.cls} />
+                </span>
+                <span className="truncate">{s.short}</span>
+                {(s.placeKind && s.placeKind !== 'other' ? s.placeKind : s.type) && (
+                  <span
+                    className="ml-auto shrink-0 text-[10px] px-1.5 py-0.5 rounded capitalize"
+                    style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)' }}
+                  >
+                    {s.placeKind && s.placeKind !== 'other' ? s.placeKind : s.type}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Experiment result card: verdict + recompute + setup breakdown,
           visible whenever pins are placed (including shared-link replays). */}
       {scenarioCard && (
         <div
-          className="absolute left-4 top-24 z-20 w-[320px] max-w-[calc(100%-2rem)] max-h-[55%] overflow-y-auto animate-fade-slide-up"
+          className="absolute left-4 z-20 w-[320px] max-w-[calc(100%-2rem)] overflow-y-auto animate-fade-slide-up"
+          style={{
+            top: `${cardTop}px`,
+            maxHeight: `max(${CARD_MIN_HEIGHT}px, calc(100% - ${cardTop + cardBottomReserve}px))`,
+          }}
         >
           {scenarioCard}
         </div>
@@ -1088,7 +1199,12 @@ export default function StreetsGlView({
           className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex gap-2 flex-wrap justify-center animate-fade-slide-up"
           style={{ width: 'min(600px, calc(100% - 2rem))' }}
         >
-          <span className="text-xs text-white/30 self-center mr-1">Try:</span>
+          <span
+            className="text-xs self-center mr-1 px-2 py-1 rounded-full"
+            style={{ background: CONTROL_BACKING, color: 'rgba(255,255,255,0.75)' }}
+          >
+            Try:
+          </span>
           {EXAMPLE_LOCATIONS.map((loc) => {
             const tag = verdictTag(loc);
             const title = [loc.label, tag && `computed for this tract: ${tag.text}`, loc.note]
@@ -1103,9 +1219,9 @@ export default function StreetsGlView({
                 aria-label={title}
                 className="px-3 py-2 min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-full text-xs transition-[border-color,color,background-color,transform] duration-150 hover:border-white/25 hover:text-white/85 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
                 style={{
-                  background: 'rgba(5,6,8,0.75)',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  color: 'rgba(255,255,255,0.55)',
+                  background: CONTROL_BACKING,
+                  border: '1px solid rgba(255,255,255,0.16)',
+                  color: 'rgba(255,255,255,0.8)',
                   backdropFilter: 'blur(12px)',
                 }}
               >
@@ -1118,7 +1234,7 @@ export default function StreetsGlView({
                   </span>
                 )}
                 {loc.label}
-                {loc.note && <span className="text-white/35">· {loc.note}</span>}
+                {loc.note && <span className="text-white/65">· {loc.note}</span>}
               </button>
             );
           })}

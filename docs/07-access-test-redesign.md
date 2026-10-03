@@ -53,6 +53,8 @@ Unknown, never a guess (each with a named reason):
 | `stores_unavailable` | any needed store tile failed to load |
 | `income_unavailable` | no ERS 2025 row (verdict can still be NOT MET if not low access) |
 | `urban_unavailable` | no ERS Urban flag and no U/R population majority among blocks (practically unreachable) |
+| `ers_unavailable` | the ERS county file failed to load: urban/rural limit and income flag unknown ("Try again"); never cached |
+| `stores_not_covered` | tract is in Puerto Rico (`72`), American Samoa (`60`) or the Northern Mariana Islands (`69`), which run nutrition block grants instead of SNAP, so the SNAP list has no stores there; never computes low access |
 
 ## Data (built by scripts, committed, dated)
 
@@ -199,7 +201,8 @@ present and non-empty (fixes reload → 0,0).
 - **References** (always both): "USDA 2019 supermarket map (LRAM, 2010 tract
   boundaries): low income & low access — yes/no (share beyond: 61%)" or "no
   2019 row for this 2020 tract"; "USDA 2025 SNAP-store map (SRAM): yes/no —
-  counts every SNAP store, including convenience and dollar stores". A
+  counts SNAP-authorized stores of every size, including convenience and
+  dollar stores (not farmers markets)". A
   computed line names which input differs.
 - **Point**: "From this exact spot: nearest counted supermarket is {name},
   {d} mi (straight line). One spot doesn't decide USDA's test; the tract's
@@ -244,15 +247,23 @@ urban: residents within ½ mi; "≈ no-vehicle households beyond ½ mi"
 "This tract's residents only; straight-line distance from 2020 Census block
 centers." Labels say "computed", never "measured".
 
-Context box (not projections):
+Context box (not projections; wording checked against the PubMed abstracts
+on 2026-10-03):
 - Jobs: "Grocery retailers (NAICS 445110: supermarkets and other grocers)
-  average about 45 employees per establishment (BLS QCEW 2025); new stores
-  partly shift jobs from existing ones (Neumark, Zhang & Ciccarella 2008)."
-- Health: "No measurable BMI change after new supermarkets in Philadelphia
-  (Cummins et al. 2014) or Pittsburgh (Dubowitz et al. 2015); no change in
-  children's diets in the Bronx (Elbel et al. 2015); food insecurity fell
-  11.8% relative to a comparison neighborhood in Pittsburgh (Richardson et al.
-  2017). This app does not project health outcomes."
+  average about 45 employees per establishment (BLS QCEW 2025). New stores
+  don't add those jobs one for one: a study of Walmart openings found county
+  retail employment fell on net, with each Walmart worker replacing about 1.4
+  others (Neumark, Zhang & Ciccarella 2008)."
+- Health: "Philadelphia (Cummins et al. 2014): residents saw better food
+  access, but fruit-and-vegetable intake and BMI didn't change. Pittsburgh
+  (Dubowitz et al. 2015): overall diet quality improved and calories and added
+  sugars fell compared with a similar neighborhood, though not because people
+  used the new store; BMI and fruit-and-vegetable intake didn't change. Same
+  Pittsburgh study (Richardson et al. 2017): food insecurity fell (−11.8%
+  relative to the comparison neighborhood), with fewer new high-cholesterol
+  and arthritis diagnoses. Bronx (Elbel et al. 2015): no appreciable change in
+  household food availability or children's diets. This app does not project
+  health outcomes."
 
 Deleted: the 0.58 baseline and every projection (residents/jobs/$/diabetes/
 obesity/commute/receipt), ScenarioCompare, "If 1 grocery store opened",

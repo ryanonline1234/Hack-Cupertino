@@ -7,9 +7,12 @@ import {
   assemblePlaceSummary,
   fetchPlaceBlocks,
   fetchTracts,
+  indexPolygon,
   loadPlaceSummary,
+  pointInIndexedPolygon,
   resetPlaceCache,
 } from '../src/pipeline/placeLoader.js';
+import { pointInPolygon } from '../src/lib/geo.js';
 import { TIGER_BASE } from '../src/pipeline/tractLookup.js';
 import { resetBlockCache } from '../src/pipeline/blockLoader.js';
 import { resetErsCache } from '../src/pipeline/ersLoader.js';
@@ -93,8 +96,28 @@ test('assemblePlaceSummary adds up in-city residents against each tract\'s own l
   assert.equal(r.tractCount, 3);
   assert.deepEqual(r.meeting, { residents: 500, tracts: 1, share: 500 / 650 });
   assert.deepEqual(r.unknownTracts, { residents: 0, tracts: 0, reasons: [] });
-  assert.deepEqual(r.flagged.lram2019, { residents: 500, tracts: 1, share: 500 / 650, missingTracts: 1, missingResidents: 100 });
-  assert.deepEqual(r.flagged.sram2025, { residents: 100, tracts: 1, share: 100 / 650, missingTracts: 0, missingResidents: 0 });
+  // Tract B has no same-GEOID 2019 row: the 2019 share over all residents is
+  // a floor; over the residents the 2019 map covers it is 500 / 550.
+  assert.deepEqual(r.flagged.lram2019, {
+    residents: 500,
+    tracts: 1,
+    share: 500 / 650,
+    missingTracts: 1,
+    missingResidents: 100,
+    matchedTracts: 2,
+    matchedPopulation: 550,
+    shareOfMatched: 500 / 550,
+  });
+  assert.deepEqual(r.flagged.sram2025, {
+    residents: 100,
+    tracts: 1,
+    share: 100 / 650,
+    missingTracts: 0,
+    missingResidents: 0,
+    matchedTracts: 3,
+    matchedPopulation: 650,
+    shareOfMatched: 100 / 650,
+  });
   assert.equal(r.place.pop, 650);
   assert.equal(r.storesDataset, DATASET);
 });
@@ -144,6 +167,41 @@ test('a tract with low access and no ERS 2025 row is Unknown, and the summary sa
   assert.equal(r.meeting.residents, 0);
   assert.equal(r.flagged.sram2025.missingTracts, 1);
   assert.equal(r.flagged.sram2025.missingResidents, 500);
+  assert.equal(r.flagged.sram2025.matchedPopulation, 150);
+  assert.equal(r.flagged.sram2025.matchedTracts, 2);
+  // Tract A's 2019 row is gone too: no 2019 row covers anyone flagged.
+  assert.equal(r.flagged.lram2019.matchedPopulation, 50);
+  assert.equal(r.flagged.lram2019.shareOfMatched, 0);
+});
+
+test('matched residents: no 2019 row anywhere gives a null share over matched, not 0%', () => {
+  const input = fixtureInput();
+  input.tracts = input.tracts.map((t) => ({ ...t, ers: { ...t.ers, e2019: null, e2019Reason: 'boundary_changed' } }));
+  const r = assemblePlaceSummary(input);
+  assert.equal(r.flagged.lram2019.matchedPopulation, 0);
+  assert.equal(r.flagged.lram2019.matchedTracts, 0);
+  assert.equal(r.flagged.lram2019.shareOfMatched, null);
+  assert.equal(r.flagged.lram2019.residents, 0);
+});
+
+test('a place in Puerto Rico, American Samoa or the Northern Marianas is Unknown (stores_not_covered)', async () => {
+  for (const state of ['72', '60', '69']) {
+    const geoid = `${state}76770`;
+    const r = assemblePlaceSummary(fixtureInput({ place: { ...PLACE, geoid } }));
+    assert.equal(r.status, 'unknown', state);
+    assert.equal(r.reason, 'stores_not_covered');
+    assert.ok(!('population' in r));
+
+    const { lookups, calls } = liveLookups();
+    const live = await loadPlaceSummary({ ...PLACE, geoid, countyFips: `${state}127` }, lookups);
+    assert.equal(live.reason, 'stores_not_covered');
+    assert.equal(calls.geometry, 0, 'nothing is fetched');
+    assert.deepEqual(calls.bundles, []);
+  }
+  // Tracts from a non-SNAP state make it Unknown even under a mislabelled place.
+  const input = fixtureInput();
+  input.tracts[2] = { ...input.tracts[2], geoid: '72127000300' };
+  assert.equal(assemblePlaceSummary(input).reason, 'stores_not_covered');
 });
 
 test('in-city blocks that miss the place POP100 make the summary Unknown with no totals', () => {
@@ -294,6 +352,26 @@ test('loadPlaceSummary (live): each failing input gives Unknown with its reason'
   }
 });
 
+test('loadPlaceSummary yields to the event loop between steps so progress can paint', async () => {
+  // Every injected lookup resolves in a microtask; without yields a timer set
+  // before the call could not run until the whole summary was done.
+  const { lookups } = liveLookups();
+  const stepsBeforeTick = [];
+  let ticked = false;
+  setTimeout(() => {
+    ticked = true;
+  }, 0);
+  const r = await loadPlaceSummary(LIVE_PLACE, {
+    ...lookups,
+    onProgress: (p) => {
+      if (!ticked) stepsBeforeTick.push(p.step);
+    },
+  });
+  assert.equal(r.status, 'ok');
+  assert.ok(ticked);
+  assert.ok(!stepsBeforeTick.includes('compute'), `steps before the first macrotask: ${stepsBeforeTick}`);
+});
+
 test('loadPlaceSummary stops when its signal aborts', async () => {
   const controller = new AbortController();
   const { lookups, calls } = liveLookups({
@@ -376,6 +454,73 @@ test('loadPlaceSummary (bundled): an unreadable bundle falls back to the live pa
   assert.deepEqual(calls.bundles, ['06085']);
   assert.equal(calls.geometry, 1);
   assert.equal(r.status, 'ok');
+});
+
+// ------------------------------------------------------------- indexed point-in-polygon
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Synthetic multi-part place: a jagged outer ring (closed), a hole inside it,
+// a detached island left open (no repeated first vertex), and a staircase
+// with horizontal edges and repeated vertices. Coordinates are rounded to
+// 6 decimals like TIGERweb's, so many points share a vertex's latitude.
+function syntheticRings(rand) {
+  const star = (lat0, lng0, n, rMin, rMax, close) => {
+    const ring = [];
+    for (let k = 0; k < n; k++) {
+      const a = (2 * Math.PI * k) / n;
+      const r = rMin + (rMax - rMin) * rand();
+      ring.push([Number((lng0 + r * Math.cos(a)).toFixed(6)), Number((lat0 + r * Math.sin(a)).toFixed(6))]);
+    }
+    if (close) ring.push([...ring[0]]);
+    return ring;
+  };
+  const stairs = [];
+  for (let k = 0; k <= 40; k++) {
+    stairs.push([-121.6 + k * 0.002, 37.5 + Math.floor(k / 2) * 0.002]);
+    stairs.push([-121.6 + k * 0.002, 37.5 + Math.floor(k / 2) * 0.002]); // repeated vertex
+  }
+  stairs.push([-121.52, 37.45], [-121.6, 37.45], [-121.6, 37.5]);
+  return [
+    star(37.3, -121.9, 3000, 0.08, 0.16, true),
+    star(37.3, -121.9, 600, 0.02, 0.05, true),
+    star(37.55, -121.75, 300, 0.01, 0.04, false),
+    stairs,
+  ];
+}
+
+test('indexed point-in-polygon gives exactly pointInPolygon\'s answer', () => {
+  const rand = mulberry32(20261003);
+  const rings = syntheticRings(rand);
+  const index = indexPolygon(rings);
+  const points = [];
+  for (let k = 0; k < 10000; k++) points.push([37.1 + 0.6 * rand(), -122.1 + 0.65 * rand()]);
+  for (const ring of rings) {
+    for (let i = 0; i < ring.length; i += 2) {
+      const [x, y] = ring[i];
+      const [x2, y2] = ring[(i + 1) % ring.length];
+      points.push([y, x], [(y + y2) / 2, (x + x2) / 2], [y, x - 1e-7], [y, x + 1e-7], [y, -122.5], [y, -121.0]);
+    }
+  }
+  let inside = 0;
+  for (const [lat, lng] of points) {
+    const plain = pointInPolygon(lat, lng, rings);
+    assert.equal(pointInIndexedPolygon(lat, lng, index), plain, `${lat},${lng}`);
+    if (plain) inside += 1;
+  }
+  assert.ok(inside > 1000 && inside < points.length - 1000, `a mix of inside (${inside}) and outside`);
+  // Degenerate input: no rings, empty ring.
+  assert.equal(pointInIndexedPolygon(37.3, -121.9, indexPolygon([])), false);
+  assert.equal(pointInIndexedPolygon(37.3, -121.9, indexPolygon([[]])), false);
 });
 
 // ------------------------------------------------------------- default TIGERweb lookups

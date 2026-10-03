@@ -5,6 +5,8 @@ import test from 'node:test';
 
 import {
   COMMUNITY_CACHE_PREFIX,
+  NON_SNAP_STATES,
+  PROFILE_DEADLINE_MS,
   assembleCommunityData,
   buildCommunityData,
   resetCommunityCache,
@@ -305,14 +307,116 @@ test('urban/rural falls back to the population majority of block UR when ERS has
   assert.equal(urban.urbanSource, 'block_ur');
   assert.equal(urban.threshold, 1);
 
-  // An ERS row without an Urban value, or an ERS outage, falls back too.
+  // An ERS row without an Urban value falls back too; an ERS outage does
+  // not (see the ers_unavailable test).
   assert.equal(assemble({ blockList, ers: ersOk({ urban: null }) }).access.urbanSource, 'block_ur');
-  assert.equal(assemble({ blockList, ers: ERS_DOWN }).access.urbanSource, 'block_ur');
+  assert.equal(assemble({ blockList, ers: ERS_DOWN }).access.urbanSource, null);
   // When ERS has the flag it wins over the blocks.
   const ers = assemble({ blockList: gridBlocks({ ur: 'U' }), ers: ersOk({ urban: false }) }).access;
   assert.equal(ers.urban, false);
   assert.equal(ers.urbanSource, 'ers_2025');
   assert.equal(ers.threshold, 10);
+});
+
+test('ERS outage: Unknown (ers_unavailable) with no block-UR guess and no income_unavailable label', () => {
+  // Tract 06085512100's pattern: ERS says urban, but most residents live in
+  // rural-coded blocks. Falling back to the blocks would pick T = 10 mi and
+  // turn a low-access tract into "not low access".
+  const blockList = gridBlocks({ ur: (i) => (i < 12 ? 'R' : 'U') });
+  const withErs = assemble({ blockList }).access;
+  assert.equal(withErs.urban, true);
+  assert.equal(withErs.threshold, 1);
+  assert.equal(withErs.status, 'met');
+
+  for (const ers of [ERS_DOWN, null]) {
+    const { access } = assemble({ blockList, ers });
+    assert.equal(access.reason, 'ers_unavailable');
+    assert.equal(access.status, 'unknown');
+    assert.deepEqual(access.verdict, { status: 'unknown', qualifier: 'unknown', reason: 'ers_unavailable' });
+    assert.equal(access.urban, null);
+    assert.equal(access.urbanSource, null);
+    assert.equal(access.threshold, null);
+    assert.equal(access.lowAccess, null);
+    assert.equal(access.lowIncome, null);
+    assert.equal(access.beyond, null);
+    assert.equal(access.share, null);
+    assert.equal(access.bands, null);
+    assert.equal(access.borderline, null);
+    assert.equal(access.population, 2000);
+    // The spot's nearest store doesn't depend on ERS.
+    assert.equal(access.point.store.name, 'Far Mart');
+    assert.equal(access.references.lram2019.reason, 'unavailable');
+    // No baseline verdict means no scenario.
+    const data = assemble({ blockList, ers });
+    assert.equal(evaluatePlacedStoreScenario(data, [{ lat: C.lat, lng: C.lng, format: 's' }]), null);
+  }
+
+  // A missing ERS row (not an outage) still uses the block majority.
+  const missing = assemble({ blockList, ers: ERS_MISSING }).access;
+  assert.equal(missing.urbanSource, 'block_ur');
+  assert.equal(missing.threshold, 10);
+  assert.equal(missing.reason, 'income_unavailable');
+});
+
+test('stores_not_covered: Puerto Rico, American Samoa and the Northern Marianas have no SNAP stores', () => {
+  assert.deepEqual([...NON_SNAP_STATES].sort(), ['60', '69', '72']);
+  for (const state of ['72', '60', '69']) {
+    const geoid = `${state}001000100`;
+    const blockList = gridBlocks().map((b) => ({ ...b, id: geoid + b.id.slice(11) }));
+    for (const ers of [ERS_MISSING, ersOk({ lowIncome: true }), ersOk({ lowIncome: false })]) {
+      const data = assemble({
+        blockList,
+        tract: tractOk(sum(blockList), { geoid, state, county: '001', tract: '000100' }),
+        ers,
+      });
+      const { access } = data;
+      assert.equal(access.reason, 'stores_not_covered', state);
+      assert.equal(access.status, 'unknown');
+      assert.deepEqual(access.verdict, { status: 'unknown', qualifier: 'unknown', reason: 'stores_not_covered' });
+      for (const key of ['beyond', 'share', 'byShare', 'byCount', 'lowAccess', 'bands', 'borderline']) {
+        assert.equal(access[key], null, `${state} ${key}`);
+      }
+      assert.deepEqual(access.point, { miles: null, store: null, reason: 'stores_not_covered' });
+      assert.equal(access.population, 2000);
+      assert.ok(access.blocks.every((b) => !('miles' in b)), 'no baseline distances');
+      assert.equal(evaluatePlacedStoreScenario(data, [{ lat: C.lat, lng: C.lng, format: 's' }]), null);
+    }
+  }
+  // Guam and the US Virgin Islands run SNAP: measured as usual.
+  const guam = gridBlocks().map((b) => ({ ...b, id: `66010950100${b.id.slice(11)}` }));
+  const { access } = assemble({ blockList: guam, tract: tractOk(2000, { geoid: '66010950100', state: '66' }) });
+  assert.equal(access.reason, null);
+  assert.equal(access.lowAccess, true);
+});
+
+test('stores_not_covered outranks a block or store failure; no_residents outranks it', () => {
+  const pr = tractOk(2000, { geoid: '72127000100', state: '72' });
+  const down = assemble({ tract: pr, blocks: { status: 'blocks_unavailable', blocks: [], population: null, source: null } });
+  assert.equal(down.access.reason, 'stores_not_covered');
+  const noStores = assemble({ tract: pr, stores: { status: 'stores_unavailable', stores: [], dataset: null } });
+  assert.equal(noStores.access.reason, 'stores_not_covered');
+  const empty = assembleCommunityData({
+    lat: C.lat,
+    lng: C.lng,
+    tract: tractOk(0, { geoid: '72127000100', state: '72' }),
+    blocks: { status: 'no_residents', blocks: [], population: 0, source: null },
+    stores: storesOk([]),
+    ers: ERS_MISSING,
+  });
+  assert.equal(empty.access.reason, 'no_residents');
+});
+
+test('meta.placeStatus follows the place lookup', () => {
+  assert.equal(assemble().meta.placeStatus, 'ok');
+  const none = assemble({ place: { status: 'no_place', place: null } }).meta;
+  assert.equal(none.placeStatus, 'no_place');
+  assert.equal(none.place, null);
+  const down = assemble({ place: { status: 'unavailable', place: null } }).meta;
+  assert.equal(down.placeStatus, 'unavailable');
+  assert.equal(down.place, null);
+  // Not attempted (no tract) is not a "no place" answer.
+  assert.equal(assemble({ place: null }).meta.placeStatus, 'unavailable');
+  assert.equal(assembleCommunityData({ lat: C.lat, lng: C.lng, tract: { status: 'unavailable' } }).meta.placeStatus, 'unavailable');
 });
 
 test('rural tracts keep exact baseline distances even though the map list stops at 5 miles', () => {
@@ -395,6 +499,10 @@ function memoryStorage() {
   const map = new Map();
   return {
     map,
+    get length() {
+      return map.size;
+    },
+    key: (i) => [...map.keys()][i] ?? null,
     getItem: (k) => (map.has(k) ? map.get(k) : null),
     setItem: (k, v) => map.set(k, String(v)),
     removeItem: (k) => map.delete(k),
@@ -402,10 +510,10 @@ function memoryStorage() {
   };
 }
 
-function withStorage(fn) {
+function withStorage(fn, makeStorage = memoryStorage) {
   return async (t) => {
     const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-    const storage = memoryStorage();
+    const storage = makeStorage();
     Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true });
     resetCommunityCache();
     resetBlockCache();
@@ -432,7 +540,7 @@ const F2019 = ['LILATracts_1And10', 'LA1and10', 'lapop1share', 'lapop10share', '
 
 // A small fake of every upstream the pipeline touches. `fail` names the
 // pieces that should error: tract, place, blocks, manifest, tile, ers, cdc, acs.
-function fakeWorld({ fail = new Set(), noTract = false, lowIncome = 1 } = {}) {
+function fakeWorld({ fail = new Set(), noTract = false, lowIncome = 1, hang = new Set() } = {}) {
   const blocks = gridBlocks();
   const bundle = {
     retrievedAt: '2026-10-03T05:47:33.229Z',
@@ -481,11 +589,14 @@ function fakeWorld({ fail = new Set(), noTract = false, lowIncome = 1 } = {}) {
     if (url === '/data/stores/36_-122.json') return fail.has('tile') ? err() : jsonResponse(tile);
     if (url === '/data/ers/06085.json') return fail.has('ers') ? err() : jsonResponse(ers);
     if (url.startsWith('/api/cdc/')) {
+      if (hang.has('cdc')) return new Promise(() => {});
       if (fail.has('cdc')) throw new TypeError('fetch failed');
       return jsonResponse([{ measureid: 'DIABETES', datavaluetypeid: 'CrdPrv', data_value: '11.5' }]);
     }
     if (url.startsWith('/api/acs?')) {
+      if (hang.has('acs')) return new Promise(() => {});
       if (fail.has('acs')) throw new TypeError('fetch failed');
+      if (fail.has('acs503')) return jsonResponse({ error: 'not configured' }, 503);
       return jsonResponse({ population: 2000, medianIncome: 61000, pctPoverty: 21, noVehicleHouseholds: 110, stateMedianFamilyIncome: 100000 });
     }
     throw new Error(`unexpected fetch ${url}`);
@@ -586,19 +697,156 @@ test('an ERS or place outage is not cached either (both would stick for 15 minut
       const data = await buildCommunityData(C.lat, C.lng);
       assert.ok(data, piece);
       assert.equal(cacheKeys(storage).length, 0, piece);
+      if (piece === 'ers') {
+        assert.equal(data.access.reason, 'ers_unavailable');
+        assert.equal(data.access.status, 'unknown');
+      } else {
+        assert.equal(data.meta.placeStatus, 'unavailable');
+        assert.equal(data.access.status, 'met');
+      }
     } finally {
       stub.restore();
     }
   }
 }));
 
-test('CDC and ACS failures do not affect the access test', withStorage(async () => {
+test('CDC and ACS failures do not affect the access test, and are not cached', withStorage(async (t, storage) => {
   const stub = stubFetch(fakeWorld({ fail: new Set(['cdc', 'acs']) }));
   try {
     const data = await buildCommunityData(C.lat, C.lng);
     assert.equal(data.access.status, 'met');
     assert.equal(data.demographics.population, 0);
     assert.equal(data.health.diabetes, 0);
+    assert.deepEqual(data.meta.profileStatus, { health: 'unavailable', demographics: 'unavailable' });
+    assert.equal(cacheKeys(storage).length, 0);
+  } finally {
+    stub.restore();
+  }
+}));
+
+test('a deployment without CENSUS_KEY (ACS 503) still caches: a retry cannot fix it', withStorage(async (t, storage) => {
+  const warn = console.warn;
+  console.warn = () => {};
+  const stub = stubFetch(fakeWorld({ fail: new Set(['acs503']) }));
+  try {
+    const data = await buildCommunityData(C.lat, C.lng);
+    assert.deepEqual(data.meta.profileStatus, { health: 'ok', demographics: 'not_configured' });
+    assert.equal(cacheKeys(storage).length, 1);
+  } finally {
+    stub.restore();
+    console.warn = warn;
+  }
+}));
+
+test('a CDC call that never answers cannot hold the verdict past the profile deadline', withStorage(async (t, storage) => {
+  assert.equal(PROFILE_DEADLINE_MS, 12_000);
+  const stub = stubFetch(fakeWorld({ hang: new Set(['cdc']) }));
+  try {
+    const started = Date.now();
+    const data = await buildCommunityData(C.lat, C.lng, { profileDeadlineMs: 50 });
+    assert.ok(Date.now() - started < 2000, 'resolved at the deadline, not at the 30 s fetch timeout');
+    assert.equal(data.access.status, 'met');
+    assert.equal(data.access.beyond, 2000);
+    // The loser becomes the default profile, flagged and never cached.
+    assert.deepEqual(data.health, { diabetes: 0, obesity: 0, bphigh: 0, mhlth: 0, checkup: 0 });
+    assert.equal(data.demographics.population, 2000);
+    assert.deepEqual(data.meta.profileStatus, { health: 'timeout', demographics: 'ok' });
+    assert.equal(cacheKeys(storage).length, 0);
+  } finally {
+    stub.restore();
+  }
+}));
+
+test('the profile deadline runs from when CDC/ACS start, not from when the access inputs land', withStorage(async () => {
+  // Access inputs take ~80 ms; the deadline is 40 ms: the hanging ACS call
+  // gets no extra wait once the verdict is ready.
+  const world = fakeWorld({ hang: new Set(['acs']) });
+  const stub = stubFetch(async (url, init) => {
+    if (url === '/data/blocks/06085.json') await new Promise((r) => setTimeout(r, 80));
+    return world(url, init);
+  });
+  try {
+    const started = Date.now();
+    const data = await buildCommunityData(C.lat, C.lng, { profileDeadlineMs: 40 });
+    const took = Date.now() - started;
+    assert.ok(took < 80 + 35, `took ${took} ms`);
+    assert.equal(data.access.status, 'met');
+    assert.deepEqual(data.meta.profileStatus, { health: 'ok', demographics: 'timeout' });
+    assert.equal(data.health.diabetes, 11.5);
+  } finally {
+    stub.restore();
+  }
+}));
+
+// ------------------------------------------------ localStorage eviction
+
+const HOUR = 60 * 60 * 1000;
+const entry = (ts) => JSON.stringify({ ts, data: { meta: {}, access: {} } });
+
+test('each cache write sweeps older-prefix, expired and unreadable community entries', withStorage(async (t, storage) => {
+  const now = Date.now();
+  storage.setItem('fds:community:v1:1,2', '{"old":true}');
+  storage.setItem('fds:community:v2:37.42000,-121.97000', entry(now));
+  storage.setItem(`${COMMUNITY_CACHE_PREFIX}1.00000,1.00000`, entry(now - HOUR)); // expired (15 min TTL)
+  storage.setItem(`${COMMUNITY_CACHE_PREFIX}2.00000,2.00000`, '{not json');
+  storage.setItem(`${COMMUNITY_CACHE_PREFIX}3.00000,3.00000`, entry(now - 60_000)); // still fresh
+  storage.setItem('fds:pins', 'keep me');
+  storage.setItem('other', 'keep me too');
+  const stub = stubFetch(fakeWorld());
+  try {
+    await buildCommunityData(C.lat, C.lng);
+  } finally {
+    stub.restore();
+  }
+  assert.deepEqual([...storage.map.keys()].sort(), [
+    `${COMMUNITY_CACHE_PREFIX}3.00000,3.00000`,
+    `${COMMUNITY_CACHE_PREFIX}37.42000,-121.97000`,
+    'fds:pins',
+    'other',
+  ]);
+}));
+
+function quotaStorage() {
+  // Full while any other community entry is present.
+  const storage = memoryStorage();
+  const setItem = storage.setItem;
+  storage.setItem = (k, v) => {
+    const others = [...storage.map.keys()].filter((x) => x.startsWith('fds:community:') && x !== k);
+    if (k.startsWith(COMMUNITY_CACHE_PREFIX) && others.length > 0) {
+      throw new DOMException('quota', 'QuotaExceededError');
+    }
+    return setItem(k, v);
+  };
+  storage.seed = (k, v) => setItem(k, v);
+  return storage;
+}
+
+test('a QuotaExceededError sweeps the other community entries and retries once', withStorage(async (t, storage) => {
+  const now = Date.now();
+  storage.seed(`${COMMUNITY_CACHE_PREFIX}3.00000,3.00000`, entry(now - 60_000));
+  storage.seed(`${COMMUNITY_CACHE_PREFIX}4.00000,4.00000`, entry(now - 30_000));
+  storage.seed('fds:pins', 'keep me');
+  const stub = stubFetch(fakeWorld());
+  try {
+    const data = await buildCommunityData(C.lat, C.lng);
+    assert.equal(data.access.status, 'met');
+  } finally {
+    stub.restore();
+  }
+  assert.deepEqual([...storage.map.keys()].sort(), [`${COMMUNITY_CACHE_PREFIX}37.42000,-121.97000`, 'fds:pins']);
+}, quotaStorage));
+
+test('a write that still fails after the retry is dropped quietly', withStorage(async (t, storage) => {
+  let attempts = 0;
+  storage.setItem = () => {
+    attempts += 1;
+    throw new DOMException('quota', 'QuotaExceededError');
+  };
+  const stub = stubFetch(fakeWorld());
+  try {
+    const data = await buildCommunityData(C.lat, C.lng);
+    assert.equal(data.access.status, 'met');
+    assert.equal(attempts, 2, 'one write, one retry');
   } finally {
     stub.restore();
   }
@@ -654,8 +902,9 @@ function goldenWorld(geoid) {
   };
 }
 
-async function golden(geoid, lat, lng) {
-  const stub = stubFetch(goldenWorld(geoid));
+async function golden(geoid, lat, lng, { failErs = false } = {}) {
+  const world = goldenWorld(geoid);
+  const stub = stubFetch((url, init) => (failErs && url.startsWith('/data/ers/') ? new Response('down', { status: 503 }) : world(url, init)));
   try {
     return await buildCommunityData(lat, lng, { forceRefresh: true });
   } finally {
@@ -697,6 +946,28 @@ test('golden: Cupertino 06085508101 is not low access', withStorage(async () => 
   const data = await golden('06085508101', 37.3229, -122.0323);
   assert.equal(data.access.lowAccess, false);
   assert.equal(data.access.status, 'not_met');
+}));
+
+test('golden: 06085512100 (ERS urban, rural-majority blocks) is never judged rural when ERS fails', withStorage(async (t, storage) => {
+  const ok = await golden('06085512100', 37.22876, -121.74775);
+  assert.equal(ok.access.urbanSource, 'ers_2025');
+  assert.equal(ok.access.urban, true);
+  assert.equal(ok.access.threshold, 1);
+  assert.equal(ok.access.lowIncome, true);
+  assert.equal(ok.access.lowAccess, true);
+  assert.equal(ok.access.status, 'met');
+
+  resetCommunityCache();
+  resetErsCache();
+  const down = await golden('06085512100', 37.22876, -121.74775, { failErs: true });
+  assert.equal(down.access.reason, 'ers_unavailable');
+  assert.equal(down.access.status, 'unknown');
+  assert.equal(down.access.threshold, null);
+  assert.equal(down.access.urbanSource, null);
+  // The outage never overwrites the good entry.
+  const cached = JSON.parse(storage.getItem(`${COMMUNITY_CACHE_PREFIX}37.22876,-121.74775`));
+  assert.equal(cached.data.access.status, 'met');
+  assert.equal(cached.data.access.reason, null);
 }));
 
 test('golden: Chinle AZ 04001944202 is rural and low access by count only', withStorage(async () => {

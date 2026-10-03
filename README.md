@@ -29,7 +29,7 @@ USDA rates census tracts, not cities, so the unit is the **2020 census tract** c
 
 Any point in the same tract gives the same result. The exact spot only adds one line, the distance to its nearest counted supermarket, and no verdict.
 
-**References.** Every estimate shows USDA's 2019 supermarket map (LRAM; 2010 tract boundaries, matched to the 2020 tract by identical GEOID only) and its 2025 SNAP-store map (SRAM, which counts every SNAP store, including convenience and dollar stores). When either disagrees with the estimate, the app names the input that differs.
+**References.** Every estimate shows USDA's 2019 supermarket map (LRAM; 2010 tract boundaries, matched to the 2020 tract by identical GEOID only) and its 2025 SNAP-store map (SRAM, which counts SNAP-authorized stores of every size, including convenience and dollar stores but not farmers markets). When either disagrees with the estimate, the app names the input that differs.
 
 **City searches.** A city search shows the tract at the searched point and says so. "Summarize {city}" adds up the tract test for the residents inside the Census place boundary: a block counts when its internal point lies inside the full-resolution place polygon; the in-city blocks must add up to the place's 2020 population exactly, or the summary is Unknown; tracts on the city line are tested on all their residents, and totals count in-city residents only. It reports residents beyond their own tract's limit, residents in tracts meeting the test, residents in tracts flagged on the 2019 and 2025 USDA maps, and a sortable tract table that opens each tract.
 

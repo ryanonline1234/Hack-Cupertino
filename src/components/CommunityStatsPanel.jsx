@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { MapPin } from 'lucide-react';
 import PanelHeader from './bits/PanelHeader';
 import CitySummary from './CitySummary';
+import { approxCount, cdcFigure, fmtBeyond, fmtMiles, fmtShare, roundedCount } from '../lib/format';
 
 /*
  * CommunityStatsPanel: the Tract view of docs/07. USDA ERS's low-income &
@@ -11,17 +12,18 @@ import CitySummary from './CitySummary';
  * profile (Census ACS, CDC PLACES).
  *
  * Numbers: counts to about the nearest 10 (exact below 100) with "≈", shares
- * to whole percent. Every Unknown names its reason in plain words.
+ * to whole percent (src/lib/format.js). Every Unknown names its reason in
+ * plain words.
  *
  * Props: communityData, loading, lastSearch ({ placeKind, placeName } | null),
  *        onSummarizeCity (optional; the button only renders when provided),
  *        citySummary (TrackerApp's City summary state, see CitySummary.jsx;
  *        null when none is open), onCitySummaryTract(row),
- *        onCloseCitySummary(), onRetryCitySummary().
+ *        onCloseCitySummary(), onRetryCitySummary(),
+ *        onRetry() (re-runs the search without the cache; the verdict card
+ *        offers it when a source failed to load).
  */
 
-const SHARE_LIMIT = 0.33;
-const COUNT_LIMIT = 500;
 const ACS_TOP_CODE = 250001;
 
 const PILL = {
@@ -55,43 +57,24 @@ const REASON_TEXT = {
   stores_unavailable: "Part of the SNAP store list near this tract didn't load, so distances can't be trusted.",
   income_unavailable: 'USDA ERS has no 2025 income row for this tract.',
   urban_unavailable: "Neither USDA ERS nor the Census blocks say whether this tract is urban or rural, so the distance limit (1 or 10 miles) isn't known.",
+  ers_unavailable: "The USDA ERS file for this county didn't load, so the urban/rural limit and the income flag are unknown. Try again.",
+  stores_not_covered: "SNAP doesn't operate here (this territory uses a nutrition block grant instead), so the SNAP store list has no stores to measure from. The test can't be estimated.",
 };
 const GENERIC_REASON = "An input the test needs wasn't available.";
 
 const reasonText = (reason) => REASON_TEXT[reason] || GENERIC_REASON;
 
+// Fetch failures a fresh request can fix: the verdict card offers Try again.
+const RETRY_REASONS = new Set(['tract_unavailable', 'blocks_unavailable', 'stores_unavailable', 'ers_unavailable']);
+
+// Why the income flag is missing: no ERS row, or the ERS file didn't load.
+const incomeMissingText = (access) =>
+  REASON_TEXT[access.reason === 'ers_unavailable' ? 'ers_unavailable' : 'income_unavailable'];
+
 // ------------------------------------------------------------- formatting
-
-const roundCount = (n) => (n < 100 ? Math.round(n) : Math.round(n / 10) * 10);
-
-// "≈2,060" (rounded) or "84" (exact below 100).
-function fmtCount(n) {
-  if (!Number.isFinite(n)) return null;
-  const s = roundCount(n).toLocaleString('en-US');
-  return n < 100 ? s : `≈${s}`;
-}
-
-// Same rounding without the sign, for a denominator next to a rounded count.
-function fmtCountBare(n) {
-  return Number.isFinite(n) ? roundCount(n).toLocaleString('en-US') : null;
-}
-
-// Residents beyond T. Rounding must not show 500 for 495-499, which are
-// under the count limit.
-function fmtBeyond(beyond, byCount) {
-  if (byCount === false && beyond >= 100 && roundCount(beyond) >= COUNT_LIMIT) return 'just under 500';
-  return fmtCount(beyond);
-}
-
-// Whole percent; never shows 33% for a share under the 33% limit.
-function fmtShare(share, meetsLimit = null) {
-  if (!Number.isFinite(share)) return null;
-  if (share > 0 && share < 0.005) return 'under 1%';
-  if (share < 1 && share >= 0.995) return 'over 99%';
-  const pct = Math.round(share * 100);
-  if (meetsLimit === false && pct >= SHARE_LIMIT * 100) return 'just under 33%';
-  return `${pct}%`;
-}
+// Counts, shares and miles come from src/lib/format.js (shared with the
+// scenario card and the log), which never shows a value under a limit as at
+// or over it.
 
 function fmtWholePct(value) {
   return Number.isFinite(value) ? `${Math.round(value)}%` : null;
@@ -101,12 +84,6 @@ function fmtDollars(value) {
   if (!Number.isFinite(value) || value <= 0) return null;
   if (value >= ACS_TOP_CODE) return '$250,000 or more';
   return `$${Math.round(value).toLocaleString('en-US')}`;
-}
-
-function fmtMiles(miles) {
-  if (!Number.isFinite(miles)) return null;
-  if (miles < 0.1) return 'under 0.1 mi';
-  return `${miles < 10 ? miles.toFixed(1) : Math.round(miles)} mi`;
 }
 
 const milesWord = (t) => (t === 1 ? '1 mile' : `${t} miles`);
@@ -147,7 +124,7 @@ function beyondClause(access) {
     return null;
   }
   const noun = population === 1 ? 'resident' : 'residents';
-  return `${fmtBeyond(beyond, byCount)} of ${fmtCountBare(population)} ${noun} (${fmtShare(share, byShare)}) live more than ${milesWord(threshold)} from a counted supermarket`;
+  return `${fmtBeyond(beyond, byCount)} of ${roundedCount(population)} ${noun} (${fmtShare(share, byShare)}) live more than ${milesWord(threshold)} from a counted supermarket`;
 }
 
 function qualifierSentence(access) {
@@ -168,11 +145,11 @@ function qualifierSentence(access) {
     case 'neither':
       return clause ? `Neither low income nor low access: ${clause}${lim}.` : 'Neither low income nor low access.';
     case 'not_la_income_unknown':
-      return `Not low access${clause ? `: ${clause}${lim}` : ''}. ${REASON_TEXT.income_unavailable} That can't change the result: both conditions are needed.`;
+      return `Not low access${clause ? `: ${clause}${lim}` : ''}. ${incomeMissingText(access)} That can't change the result: both conditions are needed.`;
     case 'not_li_access_unknown':
       return `Not low income (USDA ERS 2025), so the test isn't met whatever access is. Access wasn't computed: ${reasonText(access.reason)}`;
     case 'la_income_unknown':
-      return `Low access${clause ? `: ${clause}${lim}` : ''}. ${REASON_TEXT.income_unavailable} Without it the result is unknown.`;
+      return `Low access${clause ? `: ${clause}${lim}` : ''}. ${incomeMissingText(access)} Without it the result is unknown.`;
     default:
       return `Unknown: ${reasonText(verdict.reason || access.reason)}`;
   }
@@ -189,6 +166,9 @@ function pointSentence(point) {
   }
   if (point.reason === 'over_30_mi') {
     return `From this exact spot: no counted supermarket within 30 mi (straight line).${POINT_CAVEAT}`;
+  }
+  if (point.reason === 'stores_not_covered') {
+    return 'From this exact spot: no distance computed; the SNAP store list has no stores in this territory.';
   }
   if (point.reason === 'no_residents') {
     return "From this exact spot: no distance computed; stores aren't loaded for a tract without residents.";
@@ -215,7 +195,7 @@ function StatRow({ label, value, note, accent }) {
       className="flex justify-between items-baseline gap-3 py-1.5 border-b"
       style={{ borderColor: 'rgba(255,255,255,0.05)' }}
     >
-      <span className="text-xs text-white/45">{label}</span>
+      <span className="text-xs text-white/60">{label}</span>
       <span className="text-right">
         <span
           className="text-sm font-semibold tabular-nums"
@@ -223,7 +203,7 @@ function StatRow({ label, value, note, accent }) {
         >
           {value}
         </span>
-        {note && <span className="block text-[10px] text-white/35">{note}</span>}
+        {note && <span className="block text-[10px] text-white/60">{note}</span>}
       </span>
     </div>
   );
@@ -231,7 +211,7 @@ function StatRow({ label, value, note, accent }) {
 
 function SectionLabel({ children }) {
   return (
-    <h3 className="[font-family:inherit] text-[10px] font-semibold uppercase tracking-wider text-white/40 mb-1.5">
+    <h3 className="[font-family:inherit] text-[10px] font-semibold uppercase tracking-wider text-white/60 mb-1.5">
       {children}
     </h3>
   );
@@ -258,9 +238,13 @@ function cityConfirmed(lastSearch, place) {
   return Boolean(found) && (found === searched || found.startsWith(`${searched} `) || searched.startsWith(`${found} `));
 }
 
+// The notice also shows when the place lookup itself failed (meta.placeStatus
+// 'unavailable'): the city name can't be confirmed, so there is no Summarize.
 function CityNotice({ lastSearch, meta, onSummarizeCity }) {
-  if (!cityConfirmed(lastSearch, meta?.place)) return null;
-  const city = stripPlaceSuffix(meta.place.name) || lastSearch.placeName || 'this place';
+  const confirmed = cityConfirmed(lastSearch, meta?.place);
+  const lookupFailed = lastSearch?.placeKind === 'city' && meta?.placeStatus === 'unavailable';
+  if (!confirmed && !lookupFailed) return null;
+  const city = (confirmed && stripPlaceSuffix(meta.place.name)) || lastSearch.placeName || 'this place';
   const basename = tractBasename(meta);
   return (
     <div
@@ -275,7 +259,7 @@ function CityNotice({ lastSearch, meta, onSummarizeCity }) {
         USDA rates census tracts, not cities. Showing tract {basename || 'at this point'}, the one at the point you
         searched.
       </p>
-      {typeof onSummarizeCity === 'function' && (
+      {confirmed && typeof onSummarizeCity === 'function' && (
         <button
           type="button"
           onClick={() => onSummarizeCity()}
@@ -293,11 +277,16 @@ function CityNotice({ lastSearch, meta, onSummarizeCity }) {
   );
 }
 
-function VerdictCard({ meta, access }) {
+// TrackerApp moves focus here (Try again, opening a City-summary row,
+// clearing the placed stores) by this id.
+const VERDICT_HEADING_ID = 'fds-verdict-heading';
+
+function VerdictCard({ meta, access, onRetry }) {
   const status = PILL[access.status] ? access.status : 'unknown';
   const pill = PILL[status];
   const basename = tractBasename(meta);
   const T = access.threshold;
+  const canRetry = typeof onRetry === 'function' && RETRY_REASONS.has(access.reason);
   return (
     <section
       className="mb-3 rounded-lg px-3 py-2.5"
@@ -309,10 +298,14 @@ function VerdictCard({ meta, access }) {
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="[font-family:inherit] text-[13px] font-semibold leading-snug text-white/90">
+          <h2
+            id={VERDICT_HEADING_ID}
+            tabIndex={-1}
+            className="[font-family:inherit] text-[13px] font-semibold leading-snug text-white/90"
+          >
             Low-income &amp; low-access test (USDA rule, supermarket-based) · estimate
           </h2>
-          <p className="text-[11px] text-white/45">the measure often called a food desert</p>
+          <p className="text-[11px] text-white/60">the measure often called a food desert</p>
         </div>
         <span
           className="shrink-0 whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-bold tracking-wider"
@@ -325,7 +318,7 @@ function VerdictCard({ meta, access }) {
       {basename && (
         <p className="mt-2 text-[11px] text-white/60">
           Census tract {basename}
-          {Number.isFinite(access.population) ? ` · ${fmtCount(access.population)} ${access.population === 1 ? 'resident' : 'residents'}` : ''}
+          {Number.isFinite(access.population) ? ` · ${approxCount(access.population)} ${access.population === 1 ? 'resident' : 'residents'}` : ''}
         </p>
       )}
 
@@ -336,6 +329,21 @@ function VerdictCard({ meta, access }) {
           Borderline: moving the distance limit 10% either way ({bandMi(T * 0.9)}–{bandMi(T * 1.1)} mi) changes the
           low-access result.
         </p>
+      )}
+
+      {canRetry && (
+        <button
+          type="button"
+          onClick={() => onRetry()}
+          className="mt-2 min-h-[40px] rounded-md px-3 text-[11px] font-semibold btn-press"
+          style={{
+            color: 'var(--orange)',
+            border: '1px solid color-mix(in srgb, var(--orange) 45%, transparent)',
+            background: 'color-mix(in srgb, var(--orange) 10%, transparent)',
+          }}
+        >
+          Try again
+        </button>
       )}
     </section>
   );
@@ -355,14 +363,14 @@ function DistanceBands({ access }) {
           const width = Math.max(0, Math.min(100, (band.residents / population) * 100));
           return (
             <div key={label} className="grid grid-cols-[5.5rem_1fr_3.5rem] items-center gap-2 text-[11px]">
-              <span className="text-white/50">{label}</span>
+              <span className="text-white/60">{label}</span>
               <span className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
                 <span
                   className="block h-full rounded-full"
                   style={{ width: `${width}%`, background: 'var(--orange)', opacity: 0.75 }}
                 />
               </span>
-              <span className="text-right text-white/75 tabular-nums">{fmtCount(band.residents)}</span>
+              <span className="text-right text-white/75 tabular-nums">{approxCount(band.residents)}</span>
             </div>
           );
         })}
@@ -375,8 +383,13 @@ function lramLine(lram2019) {
   if (!lram2019 || lram2019.reason === 'unavailable') return "couldn't be loaded";
   if (lram2019.reason === 'boundary_changed') return 'no 2019 row for this 2020 tract (boundaries changed)';
   if (lram2019.reason) return 'no 2019 row for this tract';
-  const flag = lram2019.lila === null ? 'not published' : lram2019.lila ? 'yes' : 'no';
-  const share = lram2019.share === null ? 'share not published' : `share beyond: ${fmtShare(lram2019.share)}`;
+  if (lram2019.lila === null) return 'not published for this tract';
+  const flag = lram2019.lila ? 'yes' : 'no';
+  // ERS's 2019 low-access rule used the same 33% limit: a share under it
+  // never reads as 33%.
+  const share = lram2019.share === null
+    ? 'share not published'
+    : `share beyond: ${fmtShare(lram2019.share, lram2019.share >= 0.33)}`;
   return `low income & low access — ${flag} (${share})`;
 }
 
@@ -384,7 +397,7 @@ function sramLine(sram2025) {
   if (!sram2025 || sram2025.reason === 'unavailable') return "couldn't be loaded";
   if (sram2025.reason) return 'no 2025 row for this tract';
   const flag = sram2025.lila === null ? 'not published' : sram2025.lila ? 'yes' : 'no';
-  return `${flag} — counts every SNAP store, including convenience and dollar stores`;
+  return `${flag} — counts SNAP-authorized stores of every size, including convenience and dollar stores (not farmers markets)`;
 }
 
 function References({ references }) {
@@ -413,15 +426,15 @@ function References({ references }) {
 
 function TraceRow({ label, actual, rule, result }) {
   const shown = result === true ? 'yes' : result === false ? 'no' : result === null ? 'unknown' : '—';
-  const color = result === true ? 'var(--orange)' : result === null ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.7)';
+  const color = result === true ? 'var(--orange)' : result === null ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.75)';
   return (
     <div
       className="grid grid-cols-[1.1fr_1fr_1.2fr_auto] gap-2 items-start text-[11px] py-1.5 border-b"
       style={{ borderColor: 'rgba(255,255,255,0.06)' }}
     >
       <span className="text-white/65">{label}</span>
-      <span className="text-white/55">{actual}</span>
-      <span className="text-white/40">{rule}</span>
+      <span className="text-white/60">{actual}</span>
+      <span className="text-white/60">{rule}</span>
       <span style={{ color }}>{shown}</span>
     </div>
   );
@@ -460,14 +473,14 @@ function EvaluationTrace({ communityData }) {
         aria-expanded={open}
         className="w-full px-3 py-2 text-left flex items-center justify-between"
       >
-        <span className="text-[11px] uppercase tracking-wider text-white/55">Evaluation trace</span>
-        <span className="text-[10px] text-white/40">{open ? 'Hide' : 'Show'}</span>
+        <span className="text-[11px] uppercase tracking-wider text-white/60">Evaluation trace</span>
+        <span className="text-[10px] text-white/60">{open ? 'Hide' : 'Show'}</span>
       </button>
 
       {open && (
         <div className="px-3 pb-2">
           <div
-            className="grid grid-cols-[1.1fr_1fr_1.2fr_auto] gap-2 text-[10px] text-white/35 pb-1 border-b"
+            className="grid grid-cols-[1.1fr_1fr_1.2fr_auto] gap-2 text-[10px] text-white/60 pb-1 border-b"
             style={{ borderColor: 'rgba(255,255,255,0.1)' }}
           >
             <span>Criterion</span>
@@ -479,7 +492,7 @@ function EvaluationTrace({ communityData }) {
             label="Low income"
             actual={typeof access.lowIncome === 'boolean'
               ? `ERS 2025 flag: ${access.lowIncome ? '1' : '0'}${ersContext ? ` (${ersContext})` : ''}`
-              : 'no ERS 2025 row'}
+              : access.reason === 'ers_unavailable' ? "ERS county file didn't load" : 'no ERS 2025 row'}
             rule="ERS 2025 LowIncomeTracts, as published"
             result={typeof access.lowIncome === 'boolean' ? access.lowIncome : null}
           />
@@ -526,7 +539,7 @@ function EvaluationTrace({ communityData }) {
             result={access.status === 'met' ? true : access.status === 'not_met' ? false : null}
           />
           {cache?.status && (
-            <p className="pt-1.5 text-[10px] text-white/35">
+            <p className="pt-1.5 text-[10px] text-white/60">
               {cache.status === 'fresh' ? 'Fetched just now' : `Served from the ${cache.status} cache`}
               {cache.cachedAt ? ` · computed ${new Date(cache.cachedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
             </p>
@@ -545,7 +558,7 @@ function SourcesNote({ access }) {
       ? 'TIGERweb, live'
       : 'not loaded';
   return (
-    <div className="mb-3 space-y-1 text-[10px] leading-snug text-white/40">
+    <div className="mb-3 space-y-1 text-[10px] leading-snug text-white/60">
       <p>
         Estimated live with USDA ERS&apos;s rule; not an official USDA designation. Block populations include Census
         privacy noise; counts are rounded.
@@ -559,10 +572,18 @@ function SourcesNote({ access }) {
   );
 }
 
-function CommunityProfile({ demographics, health }) {
+const ACS_MISSING_NOTE = {
+  not_configured: 'Census ACS figures are off on this deployment (no Census API key).',
+  timeout: "The Census ACS figures for this tract didn't arrive in time.",
+  ok: 'Census ACS returned no figures for this tract.',
+};
+
+// healthStatus / acsStatus: meta.profileStatus.{health, demographics}; a
+// failed CDC call shows as unavailable, not as "not published".
+function CommunityProfile({ demographics, health, healthStatus, acsStatus }) {
   const acsMissing = !demographics || !(demographics.population > 0 || demographics.medianIncome > 0 || demographics.pctPoverty > 0);
-  const diabetes = health?.diabetes > 0 ? health.diabetes : null;
-  const obesity = health?.obesity > 0 ? health.obesity : null;
+  const diabetes = cdcFigure(health?.diabetes, healthStatus);
+  const obesity = cdcFigure(health?.obesity, healthStatus);
   const pop = demographics?.population;
   const income = demographics?.medianIncome;
 
@@ -570,12 +591,16 @@ function CommunityProfile({ demographics, health }) {
     <div className="mb-1">
       <PanelHeader icon={MapPin}>Community profile</PanelHeader>
       {acsMissing ? (
-        <StatRow label="Census ACS 5-year" value="unavailable" note="The Census ACS figures for this tract didn't load." />
+        <StatRow
+          label="Census ACS 5-year"
+          value="unavailable"
+          note={ACS_MISSING_NOTE[acsStatus] ?? "The Census ACS figures for this tract didn't load."}
+        />
       ) : (
         <>
           <StatRow
             label="Population (ACS 5-year)"
-            value={pop > 0 ? fmtCount(pop) : 'unavailable'}
+            value={pop > 0 ? approxCount(pop) : 'unavailable'}
           />
           <StatRow
             label="Poverty rate (ACS)"
@@ -591,13 +616,13 @@ function CommunityProfile({ demographics, health }) {
       )}
       <StatRow
         label="Diabetes (CDC PLACES)"
-        value={diabetes === null ? 'not published' : fmtWholePct(diabetes)}
-        note={diabetes === null ? 'CDC PLACES returned no figure for this tract.' : null}
+        value={diabetes.label ?? fmtWholePct(diabetes.value)}
+        note={diabetes.note}
       />
       <StatRow
         label="Obesity (CDC PLACES)"
-        value={obesity === null ? 'not published' : fmtWholePct(obesity)}
-        note={obesity === null ? 'CDC PLACES returned no figure for this tract.' : null}
+        value={obesity.label ?? fmtWholePct(obesity.value)}
+        note={obesity.note}
       />
     </div>
   );
@@ -614,6 +639,7 @@ export default function CommunityStatsPanel({
   onCitySummaryTract,
   onCloseCitySummary,
   onRetryCitySummary,
+  onRetry,
 }) {
   // With a City summary open, everything renders in one stable shell so the
   // summary (and its sort/fold state) survives the tract reloading below it
@@ -634,7 +660,7 @@ export default function CommunityStatsPanel({
             onRetry={onRetryCitySummary}
           />
           {ready ? (
-            <TractBody communityData={communityData} animate />
+            <TractBody communityData={communityData} onRetry={onRetry} animate />
           ) : loading ? (
             <div className="flex flex-col gap-1 animate-pulse">
               <div className="skeleton h-8 rounded-lg mb-2" />
@@ -653,7 +679,7 @@ export default function CommunityStatsPanel({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
             d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
         </svg>
-        <p className="text-xs text-white/30">The tract test will appear here</p>
+        <p className="text-xs text-white/60">The tract test will appear here</p>
       </div>
     );
   }
@@ -673,20 +699,20 @@ export default function CommunityStatsPanel({
 
       <div className="flex-1 overflow-y-auto min-h-0">
         <CityNotice lastSearch={lastSearch} meta={communityData.meta} onSummarizeCity={onSummarizeCity} />
-        <TractBody communityData={communityData} />
+        <TractBody communityData={communityData} onRetry={onRetry} />
       </div>
     </div>
   );
 }
 
 // Verdict, bands, the exact-spot line, references, sources, trace, profile.
-function TractBody({ communityData, animate = false }) {
+function TractBody({ communityData, onRetry, animate = false }) {
   const { meta, access, health, demographics } = communityData;
   const hasTract = Boolean(meta?.fips);
   const point = pointSentence(access.point);
   return (
     <div className={animate ? 'animate-fade-slide-up' : undefined}>
-      <VerdictCard meta={meta} access={access} />
+      <VerdictCard meta={meta} access={access} onRetry={onRetry} />
       <DistanceBands access={access} />
 
       {hasTract && point && (
@@ -698,7 +724,14 @@ function TractBody({ communityData, animate = false }) {
       {hasTract && <References references={access.references} />}
       <SourcesNote access={access} />
       {hasTract && <EvaluationTrace communityData={communityData} />}
-      {hasTract && <CommunityProfile demographics={demographics} health={health} />}
+      {hasTract && (
+        <CommunityProfile
+          demographics={demographics}
+          health={health}
+          healthStatus={meta?.profileStatus?.health}
+          acsStatus={meta?.profileStatus?.demographics}
+        />
+      )}
     </div>
   );
 }

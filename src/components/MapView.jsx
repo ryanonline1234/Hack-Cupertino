@@ -32,7 +32,17 @@ function tokenColor(name, fallback) {
 }
 
 const NON_COUNTING_GRAY = '#9ca3af';
+// Dark halo under the hollow gray ring: gray alone is ~2.5:1 on light OSM
+// tiles; the halo puts a >= 3:1 edge between the ring and any tile.
+const NON_COUNTING_HALO = '#050608';
+const NON_COUNTING_RADIUS = 8;
+const NON_COUNTING_RING_WEIGHT = 2.5;
+const NON_COUNTING_HALO_WIDTH = 1.5; // px of halo on each side of the ring
 const PINS_PANE = 'placedPins';
+// Above markerPane (600), so a pin dropped at the analyzed spot isn't hidden
+// under the location marker, and below tooltipPane (650), so tooltips stay
+// readable over the pins.
+const PINS_PANE_Z = 640;
 // The payload's map stores are the tract area + 5 mi, so this cap only
 // matters in the densest cities; nearest stores are kept first.
 const MAX_STORE_MARKERS = 2000;
@@ -42,7 +52,8 @@ const MAX_STORE_MARKERS = 2000;
  *   stores       counted SNAP stores (communityData.access.stores:
  *                [{ lat, lng, type, name }]), drawn when showStores is on
  *   placedPins   the visitor's stores [{ id, lat, lng, format }], always
- *                drawn: counting formats filled cyan, the others hollow gray
+ *                drawn: counting formats filled cyan, the others a hollow
+ *                gray ring with a dark halo
  *   placeArmed / onPlaceAt(lat, lng)   armed clicks place a store instead of
  *                analyzing the clicked spot
  */
@@ -88,9 +99,9 @@ export default function MapView({
     });
     // One canvas for the store dots: hundreds of SVG nodes get sluggish.
     rendererRef.current = L.canvas({ padding: 0.5 });
-    // Placed stores sit in their own pane above the store canvas, whichever
-    // layer happened to be added first.
-    map.createPane(PINS_PANE).style.zIndex = '450';
+    // Placed stores sit in their own pane above the store canvas and the
+    // location marker, whichever layer happened to be added first.
+    map.createPane(PINS_PANE).style.zIndex = String(PINS_PANE_Z);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -215,15 +226,37 @@ export default function MapView({
     const layer = L.layerGroup(
       placedPins
         .filter((p) => Number.isFinite(p?.lat) && Number.isFinite(p?.lng))
-        .map((p) => {
+        .flatMap((p) => {
           const counts = storeFormatInfo(p.format).counts;
-          const style = counts
-            ? { radius: 9, color: ink, weight: 2, fillColor: cyan, fillOpacity: 0.95 }
-            : { radius: 8, color: NON_COUNTING_GRAY, weight: 2.5, fillColor: NON_COUNTING_GRAY, fillOpacity: 0 };
-          return L.circleMarker([p.lat, p.lng], { ...style, pane: PINS_PANE }).bindTooltip(
-            escapeHtml(placedPinLabel(p.format)),
-            { direction: 'top', offset: [0, -8] },
-          );
+          const tooltip = [escapeHtml(placedPinLabel(p.format)), { direction: 'top', offset: [0, -8] }];
+          if (counts) {
+            return [L.circleMarker([p.lat, p.lng], {
+              radius: 9, color: ink, weight: 2, fillColor: cyan, fillOpacity: 0.95, pane: PINS_PANE,
+            }).bindTooltip(...tooltip)];
+          }
+          // Hollow gray ring over a wider dark ring: the dark shows as a thin
+          // outline inside and outside the gray. The halo takes no pointer
+          // events; the ring carries the tooltip.
+          return [
+            L.circleMarker([p.lat, p.lng], {
+              radius: NON_COUNTING_RADIUS,
+              color: NON_COUNTING_HALO,
+              weight: NON_COUNTING_RING_WEIGHT + 2 * NON_COUNTING_HALO_WIDTH,
+              opacity: 1,
+              fill: false,
+              interactive: false,
+              pane: PINS_PANE,
+            }),
+            L.circleMarker([p.lat, p.lng], {
+              radius: NON_COUNTING_RADIUS,
+              color: NON_COUNTING_GRAY,
+              weight: NON_COUNTING_RING_WEIGHT,
+              opacity: 1,
+              fillColor: NON_COUNTING_GRAY,
+              fillOpacity: 0,
+              pane: PINS_PANE,
+            }).bindTooltip(...tooltip),
+          ];
         }),
     );
     layer.addTo(map);
