@@ -26,9 +26,10 @@ export default defineConfig([
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
     },
   },
-  // Vercel serverless functions run on Node, not in the browser.
+  // Vercel serverless functions, the local dev middleware, build config and
+  // tests run on Node, not in the browser.
   {
-    files: ['api/**/*.js'],
+    files: ['api/**/*.js', 'tests/**/*.js', 'vite.config.js', 'vite-plugin-api-dev.js'],
     languageOptions: {
       globals: { ...globals.node },
     },

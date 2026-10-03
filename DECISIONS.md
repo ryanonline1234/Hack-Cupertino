@@ -3,6 +3,56 @@
 Append-only. New decisions go on top with today's date; old entries are never
 edited. Each entry names the rejected alternative.
 
+## 2026-10-02 — Runtime AI narrative removed end to end (closes the /api/llmapi relay)
+api/llmapi.js forwarded any caller's messages and any model id to OpenRouter on
+the project key, and the narrative it fed leaked model reasoning in 11 of 11
+audited runs. Deleted: api/llmapi.js, AICard (including its Executive Summary,
+which was all 58%-baseline projections), narrativeSanitize, citeNumbers, the
+dev proxy to openrouter.ai and tmp/prompt5_6_validation.mjs. This supersedes
+the narrative entries above, and the earlier claim that the key "never ships
+to the browser" was false in production: the bundle carried the LLMApi key
+stored as VITE_ANTHROPIC_KEY (verified 2026-10-02; revocation is the
+owner's step, pending). Rejected alternative: keep it behind a model
+allowlist, origin check and rate limit, which is more work to guard a feature
+that kept failing its own quality bar.
+
+## 2026-10-02 — Census key moves server-side behind /api/acs
+The client read VITE_CENSUS_KEY, so Vite inlined it into every production
+bundle since April. api/acs.js now holds CENSUS_KEY on the server, accepts only
+an 11-digit tract FIPS (GET, CDN-cacheable for a day) and requests a fixed
+variable list, returning the same five fields as before so no number on screen
+changes. The keyless /api/census pass-through rewrite is gone. Rejected
+alternatives: switching to the keyless ERS FARA 2025 tract row today (changes
+what users see: family vs household income, no state median), and keyless
+Census calls (api.census.gov now redirects them to missing_key).
+
+## 2026-10-02 — /api/overpass accepts {lat, lng} only and builds the query itself
+It used to forward any Overpass QL posted to it, with ACAO *. Now: POST JSON
+{lat, lng} inside US bounds (lat 17–72, lng −180 to −64), body ≤ 256 B, the
+server builds the same 50-mile shop=supermarket query, the mirror race and
+no-timeout policy are unchanged, and ACAO * is gone. The client's direct-mirror
+fallbacks are removed, so a function failure now reads Unknown instead of
+trying third-party mirrors from the browser. Rejected alternative: deleting
+Overpass now. That waits on the bundled SNAP store-list decision.
+
+## 2026-10-02 — The build fails if a private key reaches dist/
+`npm run build` runs scripts/check-bundle-for-keys.mjs: it compares every
+private env value (plain and URL-encoded) and known key shapes against the
+built files and prints only file, variable name and length. VITE_CARTO_KEY is
+allowlisted as public by design. Negative control: run against a build of
+7361547 (the production commit) it fails on both leaked keys. Local dev now
+runs the real api/ handlers through vite-plugin-api-dev.js instead of proxying
+around them. Rejected alternative: a key-prefix grep only, which misses the
+40-hex Census key and anything without a known prefix.
+
+## 2026-10-02 — Old deployments stay exposed until the keys are revoked
+Code changes don't reach old deployments: they keep their functions and the
+keys they were built with until the keys are revoked at the provider and
+Deployment Protection covers non-production URLs. Revocation is the owner's
+step (LLMApi, OpenRouter, Census), not a code change. Rejected alternative:
+deleting old deployments, which can't be undone and isn't needed once the
+keys are dead.
+
 ## 2026-09-12 — User-placed stores recompute distance/designation with no network
 `scenarioEngine.evaluatePlacedStoreScenario` regenerates the deterministic
 pipeline sample points and re-runs the evaluator over fetched stores + placed

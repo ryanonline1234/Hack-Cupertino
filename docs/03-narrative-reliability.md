@@ -1,5 +1,9 @@
 # 03 — Narrative reliability, no-timeout maps, labeled examples, dual renderers
 
+Superseded 2026-10-02: the runtime narrative (AICard, api/llmapi.js, the
+prompt-echo sanitizer) was removed; see DECISIONS.md. The no-timeout maps,
+labeled examples and dual renderers below still stand.
+
 Status: implemented + live in prod 2026-09-12. Gate: lint zero warnings,
 43/43 tests, build green; headless vs production: pipeline → Generate →
 "AI narrative ready" log line, narrative with zero instruction markers,

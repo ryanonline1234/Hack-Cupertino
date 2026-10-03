@@ -78,7 +78,7 @@ Open-source libraries/frameworks used (per rules, documented here): React, Vite,
 3. Read the designation + **evidence trace** + confidence badges.
 4. Open the **impact panel**, move the threshold slider, **save a scenario** and compare.
 5. Switch to **US map mode** and try **similar tracts**.
-6. AI narrative is on-demand (needs `OPEN_ROUTER_API_KEY` on the server); everything above works without it.
+6. Census demographics come from the server-side `api/acs.js` (needs `CENSUS_KEY` on the server); everything above works without it.
 
 Source: `https://github.com/ryanonline1234/Hack-Cupertino` (`food-desert-simulator/`). Created after October 30, 2025 (see git history).
 
@@ -91,7 +91,7 @@ Source: `https://github.com/ryanonline1234/Hack-Cupertino` (`food-desert-simulat
 - [ ] Demo video 1–3 min, **public** on YouTube/Vimeo, covers all six beats in §1
 - [ ] Q&A answers pasted (§2), personalized where marked
 - [ ] AI disclosure complete (§3 + README)
-- [ ] `.env` NOT committed (`git status` clean of secrets; `.env` is gitignored); `OPEN_ROUTER_API_KEY` set in the Vercel dashboard, not in code
+- [ ] `.env` NOT committed (`git status` clean of secrets; `.env` is gitignored); `CENSUS_KEY` set in the Vercel dashboard (no `VITE_` prefix), not in code; `npm run build` passes the bundle key check
 - [ ] `npm run lint`, `npm test`, `npm run build` all green on the submitted commit
 - [ ] Deployed URL loads keyless; sample search works (test in a fresh/incognito window)
 - [ ] Exit Questionnaire completed after the deadline (every team member, individually)

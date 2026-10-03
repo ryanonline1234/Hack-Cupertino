@@ -42,7 +42,6 @@ Top-level runtime files:
 - App shell and orchestration: src/App.jsx
 - Map/search experience: src/components/StreetsGlView.jsx
 - Profile, trace, confidence badges, compare UI: src/components/CommunityStatsPanel.jsx
-- Narrative generation: src/components/AICard.jsx
 
 Data pipeline modules:
 
@@ -205,12 +204,6 @@ Community payload cache:
 - Meta attached as payload.meta.cache.
 - Status values: fresh | memory | local.
 
-Narrative cache:
-
-- In-memory + localStorage.
-- TTL: 6 hours.
-- Scoped by FIPS key.
-
 Force refresh path:
 
 - UI can bypass community cache and force fresh retrieval.
@@ -239,22 +232,26 @@ Logs now explicitly call out:
 
 Current env vars used:
 
-1. OPEN_ROUTER_API_KEY (server-only, read by api/llmapi.js on Vercel)
-2. VITE_OPEN_ROUTER_API_KEY (local-dev Bearer [REDACTED] for the vite proxy only)
-3. VITE_CENSUS_KEY (optional; Census fetch falls back to defaults without it)
-4. Legacy aliases still honored: LLMAPI_KEY, VITE_ANTHROPIC_KEY
+1. CENSUS_KEY (server-only, read by api/acs.js on Vercel and by the local
+   dev middleware in vite-plugin-api-dev.js; never VITE_-prefixed)
+2. VITE_CARTO_KEY (optional; public-by-design raster tile key override)
 
-Vite proxy routes (local dev only):
+The runtime AI narrative (api/llmapi.js, AICard) was removed on 2026-10-02;
+see DECISIONS.md. `npm run build` runs scripts/check-bundle-for-keys.mjs,
+which fails the build if a private key value or key shape is in dist/.
+
+Local API routes (vite-plugin-api-dev.js runs the real handlers in dev and
+preview):
+
+1. /api/acs -> api/acs.js (GET ?fips=<11-digit tract>)
+2. /api/overpass -> api/overpass.js (POST JSON {lat, lng}; the server builds
+   the supermarket query and races three mirrors)
+
+Vite proxy routes (local dev only, plain pass-through, no keys):
 
 1. /api/census-geocoder
 2. /api/nominatim
 3. /api/cdc
-4. /api/census
-5. /api/llmapi -> https://openrouter.ai (rewrites /api/llmapi prefix to /)
-
-Production note: vercel.json intentionally has NO /api/llmapi rewrite —
-/api/llmapi is served by the serverless function in api/llmapi.js. Adding a
-rewrite would shadow the function and strip the Authorization header.
 
 ## 12. Testing and Build Commands
 

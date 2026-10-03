@@ -6,7 +6,6 @@ import MobileResultsView from './components/MobileResultsView';
 import ScenarioResultCard from './components/ScenarioResultCard';
 import DesignationAtlasView from './components/DesignationAtlasView';
 import CommunityStatsPanel from './components/CommunityStatsPanel';
-import AICard from './components/AICard';
 import AgentStatusFeed from './components/AgentStatusFeed';
 import ResizeHandle from './components/ResizeHandle';
 import { buildCommunityData } from './pipeline/normalizer';
@@ -52,11 +51,11 @@ function readStoredSize(key, fallback) {
 
 /*
  * Judge Notes: Top 10 Complexity Hotspots
- * 1) The app coordinates location search, scenario deltas, AI narrative, map, and charts in one flow.
+ * 1) The app coordinates location search, scenario deltas, map, and charts in one flow.
  * 2) Baseline vs projected states are maintained separately to support reversible what-if analysis.
  * 3) Geocoding and demographic fetches are asynchronous and must remain race-safe across rapid searches.
  * 4) Impact updates run through normalization + projection pipeline before UI cards consume outputs.
- * 5) Projection engine outputs are reused by both map layer and narrative panel for consistency.
+ * 5) Projection engine outputs are reused by both map layer and stats panels for consistency.
  * 6) Mode switch (`Tracker` vs `US Map`) preserves shared shell without route-level complexity.
  * 7) Error handling prevents one failed provider from collapsing the whole dashboard experience.
  * 8) Derived KPI cards aggregate multiple fields into concise values while preserving context.
@@ -69,14 +68,12 @@ function readStoredSize(key, fallback) {
 const INITIAL_LOGS = [
   { id: 0, text: 'System initialized. Connectors on standby — pick a location to begin.', type: 'system' },
   { id: 1, text: 'USDA / CDC / Census / OSM are queried per search, not preloaded.', type: 'info' },
-  { id: 2, text: 'AI narrative (OpenRouter, free tier) generates on demand.', type: 'info' },
   { id: 3, text: 'Awaiting location input…', type: 'info' },
 ];
 
 function Panels({
   communityData,
   impactData,
-  scenario,
   baselineImpact,
   savedScenario,
   onSaveScenario,
@@ -87,7 +84,6 @@ function Panels({
   loading,
   dataError,
   logs,
-  onLog,
 }) {
   return (
     <>
@@ -106,18 +102,16 @@ function Panels({
         />
       </div>
 
-      <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-[150px] md:min-h-0">
-        {dataError ? (
+      {dataError && (
+        <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-[150px] md:min-h-0">
           <div
             className="h-full flex items-center justify-center text-sm text-center px-4"
             style={{ color: 'rgba(252,165,165,0.8)' }}
           >
             {dataError}
           </div>
-        ) : (
-          <AICard communityData={communityData} impactData={impactData} scenario={scenario} onLog={onLog} />
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-[120px] md:min-h-0">
         <AgentStatusFeed logs={logs} loading={loading} />
@@ -174,7 +168,7 @@ export default function TrackerApp({ onHome }) {
 
   // Placed-store scenario state: grocery pins with real coordinates feed
   // the no-network recompute below; the newest pin set always wins.
-  // (Defined up here: Panels/AICard below consume scenarioResult.)
+  // (Defined up here: the scenario card below consumes scenarioResult.)
   const placedStores = useMemo(
     () => simPins
       .filter((p) => p.type === 'grocery' && Number.isFinite(p?.lat) && Number.isFinite(p?.lng))
@@ -267,8 +261,8 @@ export default function TrackerApp({ onHome }) {
     ]);
   }, []);
 
-  // Stable reference so child memoization (and `useEffect` deps in AICard
-  // via `impactData`) don't churn on every TrackerApp re-render.
+  // Stable reference so child memoization (via `impactData`) doesn't churn
+  // on every TrackerApp re-render.
   const buildImpact = useCallback(
     (data, pins, center) => projectImpact(data, { pins, center }),
     [],
@@ -639,7 +633,6 @@ export default function TrackerApp({ onHome }) {
   const panelProps = {
     communityData,
     impactData,
-    scenario: scenarioResult,
     baselineImpact,
     savedScenario,
     onSaveScenario: saveScenarioSnapshot,
@@ -650,7 +643,6 @@ export default function TrackerApp({ onHome }) {
     loading,
     dataError,
     logs,
-    onLog: addLog,
   };
 
   // Phones stack the three panels vertically in a capped scroll region;
@@ -693,7 +685,7 @@ export default function TrackerApp({ onHome }) {
 
   // Phones skip the map shell entirely: no Streets GL iframe, no 2D canvas.
   // A designated-area lookup on mobile is an info-only page (designation,
-  // stats, narrative, impact) with search + share. Desktop JSX below is
+  // stats, impact) with search + share. Desktop JSX below is
   // untouched by this branch.
   if (isMobile) {
     return (

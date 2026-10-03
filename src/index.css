@@ -211,7 +211,7 @@ h6 {
   mix-blend-mode: overlay;
 }
 
-/* Loading skeleton shimmer used by AICard / CommunityStatsPanel. */
+/* Loading skeleton shimmer used by CommunityStatsPanel. */
 .skeleton {
   position: relative;
   overflow: hidden;

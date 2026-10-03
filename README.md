@@ -31,8 +31,7 @@ Food Desert AI answers three questions for any US community: what is the current
 |---|---|
 | UI | React 19, Vite, Tailwind CSS, Framer Motion, Leaflet + Streets GL 3D map, Chart.js |
 | Data pipeline | JavaScript (ES modules) over USDA Food Access Research Atlas, CDC PLACES, Census ACS, Overpass/OSM |
-| AI narrative | OpenRouter (OpenAI-compatible `chat/completions`), on-demand two-paragraph community narrative |
-| APIs | Vercel serverless functions in `api/` (Overpass + LLM proxies) |
+| APIs | Vercel serverless functions in `api/` (Census ACS + Overpass), run locally by a Vite dev middleware |
 | Tests | Node built-in test runner (`node --test`) |
 | PWA | `vite-plugin-pwa` (Workbox) |
 
@@ -50,20 +49,19 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 | Variable | Required? | Used by |
 |---|---|---|
-| `OPEN_ROUTER_API_KEY` | No (production AI narrative) | `api/llmapi.js` on Vercel — set in the Vercel dashboard, never in the client bundle |
-| `VITE_OPEN_ROUTER_API_KEY` | No (local-dev AI narrative) | Vite dev proxy → OpenRouter; only for `npm run dev` |
-| `VITE_CENSUS_KEY` | No | Census ACS demographics; app falls back to built-in defaults without it |
+| `CENSUS_KEY` | No | Census ACS demographics, read server-side by `api/acs.js` (Vercel) and by the local dev middleware. Never prefix it with `VITE_`: Vite inlines `VITE_*` values into the client bundle. Without it, demographics fall back to built-in defaults. |
+| `VITE_CARTO_KEY` | No | Optional override for the US map's CARTO raster tiles; the built-in key is public by design |
 
-**Judges / reviewers without keys:** the app runs fully keyless. Maps, designation classification, evidence trace, impact projections, scenario compare, and sample tracts all work. Only the AI narrative panel shows an on-demand prompt instead of generated text.
+**Judges / reviewers without keys:** the app runs fully keyless. Maps, designation classification, evidence trace, impact projections, scenario compare, and sample tracts all work; only the Census demographic rows fall back to defaults.
 
-Get an OpenRouter key at <https://openrouter.ai/keys>.
+`npm run build` ends with `scripts/check-bundle-for-keys.mjs`, which fails the build if any private key value (or a known key shape) appears in `dist/`. It prints the variable name, never the value.
 
 ### Build / lint / test
 
 ```bash
 npm run lint     # eslint
 npm test         # unit tests (node --test tests/**/*.test.js)
-npm run build    # production build to dist/
+npm run build    # production build to dist/, then the bundle key check
 npm run preview  # serve the production build locally
 ```
 
@@ -77,12 +75,14 @@ src/
   TrackerApp.jsx           # analysis orchestration (location → pipeline → impact → UI)
   pipeline/                # geocoder, USDA, CDC, Census, OSM distance, normalizer
   engine/                  # designation evaluator, impact projection, simulation scoring
-  components/              # map, stats/trace panels, AI narrative, impact, atlas views
+  components/              # map, stats/trace panels, impact, atlas views
   ui/landing/              # Food Desert AI landing experience
-  lib/ / utils/ / hooks/   # citations, similar-tract search, URL state, formatting
+  lib/ / utils/ / hooks/   # similar-tract search, URL state, formatting
 api/
-  llmapi.js                # server-side OpenRouter proxy (OPEN_ROUTER_API_KEY stays server-only)
-  overpass.js              # server-side Overpass proxy with mirror failover
+  acs.js                   # Census ACS for one tract (CENSUS_KEY stays server-only)
+  overpass.js              # supermarket lookup: takes {lat, lng}, builds the query, races mirrors
+scripts/
+  check-bundle-for-keys.mjs  # post-build guard: no private key may ship in dist/
 tests/                     # designation behavior, USDA fixtures, projection economics, distance model
 public/data/               # bundled reference datasets
 docs/

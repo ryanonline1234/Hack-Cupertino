@@ -1,5 +1,9 @@
 # 06 — PWA globe composition, brand home, no-zoom inputs, narrative budget
 
+Partly superseded 2026-10-02: the narrative budget section no longer applies
+(runtime narrative removed; see DECISIONS.md). The Overpass mirror race
+survives, now behind a {lat, lng}-only endpoint.
+
 Status: implemented + verified headless 2026-09-12 (commit on main).
 
 ## Globe (the actual complaint was composition, not geometry)

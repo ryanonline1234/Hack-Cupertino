@@ -3,13 +3,13 @@ import LocationGate from './LocationGate';
 
 /*
  * MobileResultsView: the phone-sized tracker experience. A designated-area
- * lookup only needs the answer — designation, key stats, narrative, impact
+ * lookup only needs the answer — designation, key stats, impact
  * — so phones get an info-only page with no map surface at all: no Streets
  * GL iframe, no 2D canvas, no WebGL. The heavy renderers stay desktop-only.
  *
  * Pre-search reuses LocationGate (same fuzzy search + examples). Post-search
- * stacks the existing desktop panels (CommunityStatsPanel, AICard, pipeline
- * log) in a natural page scroll. Place-a-store needs a map to point at, so
+ * stacks the existing desktop panels (CommunityStatsPanel, pipeline log)
+ * in a natural page scroll. Place-a-store needs a map to point at, so
  * it stays desktop-only; Share still works — the copied link replays the
  * full simulation on a bigger screen.
  *

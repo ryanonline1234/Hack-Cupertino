@@ -5,8 +5,8 @@
  *
  * - Clear verdict: the AFTER designation rendered big, so a flip to
  *   NOT DESIGNATED is unmistakable, with the before→after trail beneath.
- * - Demand-side numbers come from the projection engine (same objects the
- *   narrative cites): residents gaining access, jobs, local spend.
+ * - Demand-side numbers come from the projection engine: residents gaining
+ *   access, jobs, local spend.
  * - "What it would take" lists planning factors triggered by the tract's
  *   own numbers (vehicle access, poverty, diet-related health, rurality).
  *   No invented build costs: the footer says plainly that capex needs a

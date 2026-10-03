@@ -200,7 +200,7 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
 
       {/* Right: data sources */}
       <div className="hidden md:flex items-center gap-1.5">
-        {['USDA', 'CDC', 'Census', 'AI Narrative'].map((src) => (
+        {['USDA', 'CDC', 'Census'].map((src) => (
           <span
             key={src}
             className="text-[10px] px-2 py-0.5 rounded"

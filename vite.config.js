@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import apiDev from './vite-plugin-api-dev.js'
 
 const srcPath = fileURLToPath(new URL('./src', import.meta.url))
 
@@ -9,6 +10,8 @@ const srcPath = fileURLToPath(new URL('./src', import.meta.url))
 export default defineConfig({
   plugins: [
     react(),
+    // Runs api/acs.js and api/overpass.js locally (dev + preview).
+    apiDev(),
     /*
      * Service worker via Workbox. Strategy:
      *   • App shell (HTML/CSS/JS) is precached on install — full offline
@@ -18,10 +21,10 @@ export default defineConfig({
      *   • Our /api/* serverless calls: NetworkOnly. Stale food-desert data
      *     would be misleading; we'd rather show an error than fake fresh.
      *
-     * Note: the LLMApi / Census / CDC calls happen during page load, so the
-     * tract data they returned still lives in localStorage (community cache,
-     * narrative cache). The service worker just makes the SHELL offline so
-     * the cached data has somewhere to render.
+     * Note: the Census / CDC / USDA calls happen during page load, so the
+     * tract data they returned still lives in localStorage (community
+     * cache). The service worker just makes the SHELL offline so the cached
+     * data has somewhere to render.
      */
     VitePWA({
       registerType: 'autoUpdate',
@@ -137,30 +140,8 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/cdc/, ''),
       },
-      '/api/census': {
-        target: 'https://api.census.gov',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/census/, ''),
-      },
-      // Local-dev proxy for the AI narrative API. The client posts to
-      // /api/llmapi/v1/chat/completions with its dev Bearer [REDACTED] (see
-      // VITE_OPEN_ROUTER_API_KEY in .env.example); the rewrite strips the
-      // /api/llmapi prefix so upstream receives /v1/chat/completions.
-      // Production does NOT proxy — Vercel routes /api/llmapi to the
-      // serverless function in api/llmapi.js (server-only OPEN_ROUTER_API_KEY).
-      '/api/llmapi': {
-        target: 'https://openrouter.ai',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/llmapi/, ''),
-      },
-      // Overpass needs a server-side proxy because overpass-api.de returns
-      // 406 with no CORS header to browser origins (e.g. *.vercel.app).
-      // Deployed to Vercel via /api/overpass.js; vite proxies in dev.
-      '/api/overpass': {
-        target: 'https://overpass-api.de',
-        changeOrigin: true,
-        rewrite: () => '/api/interpreter',
-      },
+      // /api/acs and /api/overpass are not proxied: vite-plugin-api-dev.js
+      // runs the real handlers from api/ so dev matches production.
     },
   },
 })

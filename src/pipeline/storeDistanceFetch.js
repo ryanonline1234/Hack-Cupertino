@@ -1,27 +1,17 @@
-// Production deployments must avoid direct browser→Overpass calls because
-// overpass-api.de returns 406 with no Access-Control-Allow-Origin header for
-// browser origins like vercel.app. We try (in order):
-//   1. Same-origin proxy (`/api/overpass`) — works in dev via vite.config.js
-//      proxy and in production if a serverless function is deployed.
-//   2. overpass.kumi.systems — community endpoint with permissive CORS.
-//   3. overpass.private.coffee — additional mirror with permissive CORS.
-//   4. overpass-api.de — last-ditch direct call (will fail in prod due to CORS,
-//      kept for local/dev environments with relaxed CORS).
-const OVERPASS_ENDPOINTS = [
-  '/api/overpass',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-  'https://overpass-api.de/api/interpreter',
-];
+// Store lookups go through the same-origin /api/overpass function only.
+// Browsers can't call overpass-api.de directly (406, no CORS header), and the
+// function now accepts just {lat, lng} and builds the supermarket query
+// itself (api/overpass.js), racing three mirrors server-side.
+const OVERPASS_ENDPOINT = '/api/overpass';
 
+// Must match the radius the server query uses (api/overpass.js).
 const SEARCH_RADIUS_MILES = 50;
-const SEARCH_RADIUS_METERS = Math.round(SEARCH_RADIUS_MILES * 1609.34);
 // Measured 2026-09: the 50-mile metro query takes 10-25s per mirror
 // (915 elements / ~520KB around San Jose). Client-side timeouts used to
 // abort every endpoint and force Unknown designations, so there is NO
 // client abort here: requests run until the server answers. Bounding still
-// exists upstream (server 12s per mirror, Vercel function limits), and
-// TrackerApp drops stale responses when a newer search starts.
+// exists upstream (Vercel function limits), and TrackerApp drops stale
+// responses when a newer search starts.
 // First success is cached for 15 minutes.
 const CACHE_TTL_MS = 1000 * 60 * 15;
 const COMMUNITY_SAMPLE_OFFSETS_MILES = [
@@ -66,12 +56,6 @@ export function buildCommunitySamplePoints(lat, lng) {
   return COMMUNITY_SAMPLE_OFFSETS_MILES.map(([eastMiles, northMiles]) =>
     offsetPointMiles(lat, lng, eastMiles, northMiles)
   );
-}
-
-function buildQuery(lat, lng) {
-  // Nodes + ways only: supermarkets are mapped as points or building areas;
-  // relations add response weight without changing nearest-store results.
-  return `[out:json][timeout:25];(node["shop"="supermarket"](around:${SEARCH_RADIUS_METERS},${lat},${lng});way["shop"="supermarket"](around:${SEARCH_RADIUS_METERS},${lat},${lng}););out center;`;
 }
 
 function cacheKey(lat, lng) {
@@ -159,11 +143,11 @@ function makeResult(metrics, source, stores = []) {
   };
 }
 
-async function fetchFromEndpoint(endpoint, query) {
-  const res = await fetch(endpoint, {
+async function fetchSupermarkets(lat, lng) {
+  const res = await fetch(OVERPASS_ENDPOINT, {
     method: 'POST',
-    body: query,
-    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ lat, lng }),
+    headers: { 'Content-Type': 'application/json' },
   });
 
   if (!res.ok) throw new Error(`Overpass failed: ${res.status}`);
@@ -179,19 +163,15 @@ export async function getNearestSupermarketDistance(lat, lng) {
   // Drop expired entries proactively so the Map doesn't grow unbounded.
   if (cached) cache.delete(key);
 
-  const query = buildQuery(lat, lng);
-
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      const json = await fetchFromEndpoint(endpoint, query);
-      const metrics = computeCommunityDistanceMetrics(json?.elements, lat, lng);
-      const stores = extractStorePoints(json?.elements, lat, lng);
-      const result = makeResult(metrics, `osm_overpass:${endpoint}`, stores);
-      cache.set(key, { result, cachedAt: Date.now() });
-      return result;
-    } catch {
-      // Try next endpoint.
-    }
+  try {
+    const json = await fetchSupermarkets(lat, lng);
+    const metrics = computeCommunityDistanceMetrics(json?.elements, lat, lng);
+    const stores = extractStorePoints(json?.elements, lat, lng);
+    const result = makeResult(metrics, `osm_overpass:${OVERPASS_ENDPOINT}`, stores);
+    cache.set(key, { result, cachedAt: Date.now() });
+    return result;
+  } catch {
+    // Fall through to the unavailable result below.
   }
 
   return {
