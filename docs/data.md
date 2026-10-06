@@ -23,7 +23,7 @@ Rules that apply to all of them:
 
 | Dataset | Path | Source | Data as of | Builder |
 |---|---|---|---|---|
-| Counted stores | `public/data/stores/` | USDA FNS SNAP Retailer Locator | USDA edit 2026-09-17, pulled 2026-10-03 | `scripts/build-store-snapshot.mjs` |
+| Counted stores | `public/data/stores/` | USDA FNS SNAP Retailer Locator | USDA edit 2026-09-17, pulled 2026-10-06 (pre-freeze rebuild; tiles identical to the 2026-10-03 pull) | `scripts/build-store-snapshot.mjs` |
 | ERS tract attributes | `public/data/ers/` | USDA ERS Food Access Research Atlas 2025 + 2019 | pulled 2026-10-03 | `scripts/build-ers-shards.mjs` |
 | Census blocks (4 counties) | `public/data/blocks/` | Census TIGERweb, 2020 Census | pulled 2026-10-03 | `scripts/build-block-bundles.mjs` |
 | Site candidates (4 counties) | `public/data/sites/` | OpenStreetMap via Overpass | OSM data 2026-10-03 | `scripts/build-site-candidates.mjs` |

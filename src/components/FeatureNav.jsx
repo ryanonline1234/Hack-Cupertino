@@ -126,7 +126,7 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
             FOOD DESERT
           </span>
           <span className="text-sm font-medium tracking-tight hidden min-[430px]:inline" style={{ color: 'var(--neon)' }}>
-            IMPACT SIMULATOR
+            AI
           </span>
         </div>
       </button>

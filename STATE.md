@@ -1,5 +1,5 @@
 # State — Food Desert AI
-_Updated: 2026-10-03 (redesign merged to main and live)_
+_Updated: 2026-10-06 (product name, pre-freeze snapshot, disclosure update, demo video)_
 
 ## Now
 Live in production (food-desert-ai.vercel.app, main @ 4f36d89, deployed
@@ -27,16 +27,27 @@ Alviso + village pin flips MEETS → DOES NOT MEET.
 - Adversarial review (4 lenses, refute-first): confirmed findings fixed; the
   jobs/health context lines were rewritten against the PubMed abstracts.
 
+## Demo video (built 2026-10-06, local only)
+`notes-local/video/` (git-excluded): 2:51 silent cut recorded from production,
+a teleprompter cut, captions, a TTS timing guide (not for upload) and
+`SCRIPT.md`, the voiceover script. That file replaces docs/CAC_SUBMISSION.md
+§1, which describes the old method. `pipeline/rebuild_cards.sh` puts the name
+on the cards; `pipeline/rerecord_all.sh` re-records after any on-screen change
+(header rename, snapshot rebuild). Before upload, see SCRIPT.md's "Before you
+upload" list: name, team, disclosure (Cursor, September, the video itself),
+header name, snapshot.
+
 ## Pending (in order)
-1. Owner: review the rewritten AI disclosure (README, docs/CAC_SUBMISSION.md
-   §3; written by Claude on request 2026-10-03), fill `[NAME]`, and confirm
-   the September 2026 line. The rest of the CAC packet's answer prose
-   (§1–§2, judges' steps) still describes the old method.
-2. Owner: decide product naming ("Food Desert AI — Impact Simulator" in the
-   nav, title and PWA name; the impact projections it implied are gone).
-3. Before the Oct 11 freeze: rebuild the store snapshot once
-   (`node scripts/build-store-snapshot.mjs`), re-run the tests and re-verify
-   the demo chips live; never rebuild after the freeze.
+1. Owner: review the AI disclosure (README, docs/CAC_SUBMISSION.md §3; drafted
+   by Claude 2026-10-03, updated 2026-10-06 with Cursor, the September record
+   gap and the demo video). The CAC packet's §2 answer prose and §4 judges'
+   steps still describe the old method; §1 now points to the video script.
+2. Owner: put the CAC registration name in
+   `notes-local/video/pipeline/config.json` (and `"team"` if it is a team
+   entry), run `rebuild_cards.sh`, record the voiceover (SCRIPT.md), upload
+   public. Fill `[NAME]` in docs/CAC_SUBMISSION.md §3.
+3. Code freeze Oct 11: no store-snapshot rebuild after it (done 2026-10-06:
+   USDA data unchanged since 2026-09-17, tiles identical, numbers unchanged).
 4. Owner, whenever: delete VITE_ANTHROPIC_KEY, LLMAPI_KEY and
    OPEN_ROUTER_API_KEY in Vercel; Deployment Protection; key rotation.
 5. Ask Siddharth to delete the unused React Bits copies (license + lint).

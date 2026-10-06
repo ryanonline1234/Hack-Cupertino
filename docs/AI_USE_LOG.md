@@ -2,12 +2,16 @@
 
 A factual, per-change record of AI-assisted work in this repo, kept so the
 CAC AI disclosure (README.md "AI disclosure", docs/CAC_SUBMISSION.md §3) can
-be written from evidence. This file is a log, not the disclosure: the
-disclosure wording is the student's own.
+be written from evidence. This file is a log, not the disclosure. The
+disclosure text was drafted by Claude Code from this log at the student's
+request (2026-10-03, updated 2026-10-06); the student reviews it before
+submission (pending as of 2026-10-06; record the review date here when done).
 
 One row per change, added the same day the change lands. "Claude" means
-Claude Code (Anthropic). Commits Claude authored carry a
-`Co-Authored-By: Claude` trailer.
+Claude Code (Anthropic). Commits Claude authored from 2026-10-02 on carry a
+`Co-Authored-By: Claude` trailer. Earlier Claude Code work mostly does not:
+only the four April 29 commits and the unmerged `claude/` branch carry
+trailers (see the backfill section).
 
 | Date | Change | Files | What Claude did | What Ryan did | Commit |
 |---|---|---|---|---|---|
@@ -20,15 +24,22 @@ Claude Code (Anthropic). Commits Claude authored carry a
 | 2026-10-03 | Rewrote the AI disclosure (README and docs/CAC_SUBMISSION.md §3) from this log and the git history: no runtime AI; April, September and October AI use; the student's and teammates' roles; open-source and data list | `README.md`, `docs/CAC_SUBMISSION.md` | Wrote the disclosure text at the student's request | Asked for it and reviews it | Commit on `redesign/access-test` |
 | 2026-10-03 | Suggest sites and action plan (docs/08): greedy site search, OpenStreetMap commercial-site candidates for the bundled counties (build-time, ODbL), rules-based action plan with verified program links, suggestions list and plan card | `src/engine/{suggestSites,actionPlan}.js`, `src/lib/{siteLabels,geo}.js`, `src/pipeline/siteLoader.js`, `src/components/{SuggestedSites,ActionPlan}.jsx`, `src/TrackerApp.jsx`, `src/components/{CommunityStatsPanel,MapView,StreetsGlView,MobileResultsView}.jsx`, `scripts/build-site-candidates.mjs`, `public/data/sites/`, tests, docs/08 | Proposed option A over an LLM planner, wrote the spec and all code and data tooling with subagents, ran a two-lens review and fixed its findings, smoke-tested 19 cases headless | Chose option A ('go with recs') | Commits on `redesign/access-test` |
 | 2026-10-03 | Repo documentation pass (README, docs index, data and licensing page, third-party notices, handoff), Chinle store-coordinate correction mechanism, Census API notice, disclosure fix (trailer sentence), removal of the unused vendored CountUp | `README.md`, `docs/README.md`, `docs/data.md`, `THIRD_PARTY_NOTICES.md`, `PROJECT_HANDOFF.md`, `public/data/sites/README.md`, `scripts/build-store-snapshot.mjs`, `scripts/store-exclusions.json`, `public/data/stores/{36_-110,manifest}.json`, `src/components/CommunityStatsPanel.jsx`, `api/acs.js`, `.env.example`, tests, docs/07–08 | Wrote the docs and fixes with subagents and verified every doc claim against the code and data | Asked for proper repo documentation | Commit on `redesign/access-test` |
+| 2026-10-06 | CAC demo video and voiceover script (not app code): researched the 2026 CAC video rules; mapped the live app's shots; drafted, judged and adversarially fact-checked the narration; recorded the live production app with Playwright (scripted cursor, callouts, zoom); rendered the title, code, diagram, build, tools and end cards; assembled the silent, teleprompter and caption files | `notes-local/video/` (local only, git-excluded): `SCRIPT.md`, the video files and `pipeline/` | Wrote the voiceover script and all recording, card and assembly code, and ran the fact-checks with subagents | Asked for the video and script; narrates it; decides the name, team and disclosure wording before upload | none (local files) |
+| 2026-10-06 | Disclosure update from a git audit (Claude Code use in the April hackathon commits; Vihaan's Cursor commits and the code from them still in the repo; Claude Code use across September's 26 commits; the unmerged `claude/` branch; the demo video; the submission text; the shipped-library list) and the product name: "Food Desert AI" in the tracker header, page title, og:title and PWA name (was "Impact Simulator"); pre-freeze store-snapshot rebuild (USDA data unchanged since 2026-09-17; tiles identical) | `README.md`, `docs/CAC_SUBMISSION.md`, `docs/AI_USE_LOG.md`, `src/components/FeatureNav.jsx`, `index.html`, `vite.config.js`, `public/data/stores/manifest.json`, `docs/data.md`, `DECISIONS.md`, `STATE.md` | Checked the git history (trailers, ancestry, imports, bundle), wrote the edits, ran the rebuild, tests, lint and build | Chose the recommendations ('go with all recs') and agreed to name Vihaan and Siddharth in the video | this branch |
 
-## Backfill still needed (from git, 2026-10-02)
+## Earlier AI-assisted work (before this log)
 
-Known AI-assisted work that predates this log. Fill in the "what" for each
-before writing the disclosure:
+Summarised in the disclosure; found from git on 2026-10-06.
 
-- April 29, 2026 — four commits on main carry a Claude co-author trailer:
-  `179b22f`, `a5df48a`, `f622625`, `07164ba`.
-- September 2026 — work done with Claude Code on main without trailers
-  (owner to list which commits).
-- Unmerged branch `claude/food-desert-ai-improvements-skyrmp` — 12 commits,
-  all authored by Claude; not on main.
+- April 11–12, 2026 — the student's hackathon commits `569a99d`–`106c319`,
+  made with Claude Code without trailers (`.claude/launch.json` is in
+  `569a99d`).
+- April 11–12, 2026 — Vihaan Narkhede's `fb6f754`, `7f3b248`, `c37021e`,
+  `4bf8034` (`Made-with: Cursor`, on `origin/landing`), merged into main by
+  `fb8ce1a`.
+- April 29, 2026 — `179b22f`, `a5df48a`, `f622625`, `07164ba` (Claude
+  co-author trailer).
+- September 3–4, 2026 — unmerged branch `claude/food-desert-ai-improvements-skyrmp`,
+  12 commits authored by Claude; none of its code is on main.
+- September 11–15, 2026 — `daa0830`–`6483fed` on main (26 commits), made with
+  Claude Code without trailers; which parts were AI-written was not recorded.

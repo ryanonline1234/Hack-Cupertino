@@ -17,7 +17,7 @@ spec and the code disagree, the code and the newer spec win.
 | [08-suggest-sites-and-plan.md](08-suggest-sites-and-plan.md) | Suggest sites (deterministic greedy search) and the rules-based action plan (no runtime AI) | Current (approved 2026-10-03); built on `redesign/access-test`, behind the Oct 8 go/no-go. |
 | [data.md](data.md) | Every committed dataset: source, selection, format, counts and dates, terms, rebuild command, self-checks, when to rebuild | Current (2026-10-03). |
 | [AI_USE_LOG.md](AI_USE_LOG.md) | Per-change record of AI-assisted work, the evidence behind the AI disclosure | Current; append-only, one row per change on the day it lands. |
-| [CAC_SUBMISSION.md](CAC_SUBMISSION.md) | Congressional App Challenge packet: video script, Q&A answers, AI disclosure, judges' steps, checklist | In progress: §3 AI disclosure is owner-approved; the answer prose in §1–§2 still describes the pre-07 method and is the owner's to rewrite; `[BRACKET]` placeholders unfilled. |
+| [CAC_SUBMISSION.md](CAC_SUBMISSION.md) | Congressional App Challenge packet: demo-video beat map, Q&A answers, AI disclosure, judges' steps, checklist | In progress: §3 AI disclosure updated 2026-10-06, awaiting owner review; the answer prose in §2 and the judges' steps in §4 still describe the pre-07 method and are the owner's to rewrite; `[BRACKET]` placeholders remain. |
 
 At the repository root: [`README.md`](../README.md) (overview, quick start,
 deployment), [`PROJECT_HANDOFF.md`](../PROJECT_HANDOFF.md) (implementation

@@ -30,7 +30,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'pwa-192x192.png', 'pwa-512x512.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Food Desert AI — Impact Simulator',
+        name: 'Food Desert AI',
         short_name: 'Food Desert AI',
         description: 'Tract-level food access: the USDA low-income & low-access rule on 2020 Census blocks and USDA\'s SNAP supermarket list.',
         id: '/',

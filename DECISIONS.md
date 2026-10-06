@@ -3,6 +3,17 @@
 Append-only. New decisions go on top with today's date; old entries are never
 edited. Each entry names the rejected alternative.
 
+## 2026-10-06 — Product name is "Food Desert AI" everywhere
+The tracker header read "FOOD DESERT IMPACT SIMULATOR" and the page title,
+og:title and PWA name "Food Desert AI — Impact Simulator"; "Impact Simulator"
+implied the projections deleted on 2026-10-03, and the demo video calls the
+app "Food Desert AI". Now the header reads "FOOD DESERT AI" and the title,
+og:title and PWA name are "Food Desert AI"; the video says once that no AI
+runs inside the app. Rejected: keeping "Impact Simulator" (implies the deleted
+projections) and dropping "AI" (the landing page, CAC packet and repo already
+use the name; a late rename costs more than one plain sentence). Owner chose
+this ("go with all recs").
+
 ## 2026-10-03 — The verdict is USDA ERS's low-income & low-access test on 2020 Census blocks (docs/07)
 The old verdict averaged straight-line distance at 9 fixed points within 1.5 mi
 of one geocoded anchor and compared it to 1 mi / 5 mi, with no income test; a
