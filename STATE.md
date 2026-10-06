@@ -2,12 +2,22 @@
 _Updated: 2026-10-06 (product name, pre-freeze snapshot, disclosure update, demo video)_
 
 ## Now
-Live in production (food-desert-ai.vercel.app, main @ 4f36d89, deployed
-2026-10-03): the docs/07 access-test redesign, docs/08 Suggest sites and
-action plan, the security fixes, the rewritten AI disclosure and the repo
-docs. Production check after deploy: data files and /api/acs serve,
+Live in production (food-desert-ai.vercel.app, main @ 2b6f0a8, deployed
+2026-10-06): the docs/07 access-test redesign, docs/08 Suggest sites and
+action plan, the security fixes, the repo docs, the product name "Food Desert
+AI" (header, title, PWA) and the git-audited AI disclosure. 2026-10-06
+production check: title and header say Food Desert AI, /api/acs 200 with
+data, /api/llmapi 404, Alviso village pin flips, no page errors.
+Earlier (2026-10-03) post-deploy check: Production check after deploy: data files and /api/acs serve,
 /api/overpass and /api/llmapi are 404, no key values in the 14 bundle files,
 Alviso + village pin flips MEETS → DOES NOT MEET.
+
+## Verified (2026-10-06)
+- `npm test` 358/358; lint: only the 2 pre-existing GooeyNav.jsx errors;
+  `npm run build` + key check ok. Store snapshot rebuilt: only
+  `public/data/stores/manifest.json` `retrievedAt` changed.
+- Disclosure facts re-checked against git by two refute-first reviewers and by
+  hand (trailers, ancestry, blob matches, import trace, bundle).
 
 ## Verified (2026-10-03)
 - `npm test`: 230/230. Lint: only the 2 pre-existing GooeyNav.jsx errors.
@@ -30,27 +40,32 @@ Alviso + village pin flips MEETS → DOES NOT MEET.
 ## Demo video (built 2026-10-06, local only)
 `notes-local/video/` (git-excluded): 2:51 silent cut recorded from production,
 a teleprompter cut, captions, a TTS timing guide (not for upload) and
-`SCRIPT.md`, the voiceover script. That file replaces docs/CAC_SUBMISSION.md
-§1, which describes the old method. `pipeline/rebuild_cards.sh` puts the name
-on the cards; `pipeline/rerecord_all.sh` re-records after any on-screen change
-(header rename, snapshot rebuild). Before upload, see SCRIPT.md's "Before you
-upload" list: name, team, disclosure (Cursor, September, the video itself),
-header name, snapshot.
+`SCRIPT.md`, the voiceover script with timecodes; docs/CAC_SUBMISSION.md §1
+maps the six required beats to those timecodes. Re-recorded 2026-10-06 from
+main @ 2b6f0a8 (new header; focus-ring highlights, crossfades).
+`pipeline/rebuild_cards.sh` puts the name on the cards; `pipeline/rerecord_all.sh`
+re-records after any on-screen change (deploy first, reload once).
 
 ## Pending (in order)
 1. Owner: review the AI disclosure (README, docs/CAC_SUBMISSION.md §3; drafted
-   by Claude 2026-10-03, updated 2026-10-06 with Cursor, the September record
-   gap and the demo video). The CAC packet's §2 answer prose and §4 judges'
-   steps still describe the old method; §1 now points to the video script.
+   by Claude, rewritten 2026-10-06 from a git audit) and confirm three facts:
+   Claude Code use in the April hackathon commits (inferred from
+   `.claude/launch.json` in 569a99d), whether Siddharth used AI tools in
+   7361547, and record the review date in docs/AI_USE_LOG.md. The §2 answer
+   prose and §4 judges' steps still describe the old method; §2's "I moved the
+   call…" is Claude co-authored work (179b22f), so reword it when rewriting.
 2. Owner: put the CAC registration name in
    `notes-local/video/pipeline/config.json` (and `"team"` if it is a team
    entry), run `rebuild_cards.sh`, record the voiceover (SCRIPT.md), upload
    public. Fill `[NAME]` in docs/CAC_SUBMISSION.md §3.
 3. Code freeze Oct 11: no store-snapshot rebuild after it (done 2026-10-06:
    USDA data unchanged since 2026-09-17, tiles identical, numbers unchanged).
-4. Owner, whenever: delete VITE_ANTHROPIC_KEY, LLMAPI_KEY and
+4. Owner: the public repo has an unrelated branch
+   `claude/robotic-chessboard-feasibility-3ittpi` (chessboard project pushed
+   here by mistake); delete it on GitHub if wanted.
+5. Owner, whenever: delete VITE_ANTHROPIC_KEY, LLMAPI_KEY and
    OPEN_ROUTER_API_KEY in Vercel; Deployment Protection; key rotation.
-5. Ask Siddharth to delete the unused React Bits copies (license + lint).
+6. Ask Siddharth to delete the unused React Bits copies (license + lint).
 
 ## Known, not fixed
 - A browser that visited before a deploy can show the previous build once (the
