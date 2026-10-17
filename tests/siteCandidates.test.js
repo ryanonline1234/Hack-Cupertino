@@ -63,7 +63,7 @@ test('endpoints are tried in the documented order and the User-Agent carries no 
     'https://overpass.private.coffee/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
   ]);
-  assert.match(USER_AGENT, /food-desert-simulator/);
+  assert.match(USER_AGENT, /miles-to-market/);
   assert.doesNotMatch(USER_AGENT, /@|github\.com\/|ryan/i);
 });
 

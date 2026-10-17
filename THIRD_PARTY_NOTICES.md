@@ -1,6 +1,6 @@
 # Third-party notices
 
-Food Desert AI's own code is MIT-licensed (`LICENSE`). This file lists the
+Miles to Market's own code is MIT-licensed (`LICENSE`). This file lists the
 third-party software, vendored code, fonts, data and map services the project
 uses and the license or terms each comes under. License names for npm
 packages are the `license` field of the installed `node_modules/<pkg>/package.json`

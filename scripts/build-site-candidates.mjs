@@ -78,7 +78,7 @@ export const ENDPOINTS = [
   'https://overpass.kumi.systems/api/interpreter',
 ];
 export const USER_AGENT =
-  'food-desert-simulator/1.0 (build-time extract of commercial site candidates for a student food-access project; one query per county per data refresh)';
+  'miles-to-market/1.0 (build-time extract of commercial site candidates for a student food-access project; one query per county per data refresh)';
 export const SOURCE = 'OpenStreetMap via Overpass';
 export const LICENSE = 'ODbL (© OpenStreetMap contributors)';
 

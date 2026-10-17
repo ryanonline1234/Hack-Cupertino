@@ -97,7 +97,7 @@ function middleware(root) {
 export default function apiDev() {
   let root = process.cwd();
   return {
-    name: 'food-desert-api-dev',
+    name: 'miles-to-market-api-dev',
     configResolved(config) {
       root = config.root;
       const env = loadEnv(config.mode, config.envDir || config.root, '');

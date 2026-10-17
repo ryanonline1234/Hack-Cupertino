@@ -1,7 +1,22 @@
-# Decisions — Food Desert AI
+# Decisions — Miles to Market
 
 Append-only. New decisions go on top with today's date; old entries are never
 edited. Each entry names the rejected alternative.
+
+## 2026-10-17 — Product renamed to "Miles to Market"
+The team renamed the app from "Food Desert AI" to "Miles to Market" (slug
+`miles-to-market`): the new name states the core mechanic (miles to a
+supermarket), drops the deficit-framed "desert", and drops "AI" (no model runs
+at runtime — verdicts are deterministic code over public data). UI strings
+(tracker header + MM badge, mobile header, landing page, page title, og:title,
+PWA manifest), `package.json`, the Overpass `USER_AGENT` and its test, and the
+in-repo docs were updated; the descriptive phrase "often called a food desert"
+stays where it explains USDA's measure, and git history, local video assets,
+`dist/` and deployed URLs were left untouched. The landing footer and README
+keep the "USDA low-income & low-access test estimate" subtitle so judges and
+search still find the measure. Rejected: keeping "Food Desert AI" (memorable
+but deficit-framed and misleading about AI) and "Miles to Market AI" (keeps the
+misleading suffix). Owner chose this ("go with recs").
 
 ## 2026-10-06 — Product name is "Food Desert AI" everywhere
 The tracker header read "FOOD DESERT IMPACT SIMULATOR" and the page title,

@@ -1,7 +1,11 @@
-# State — Food Desert AI
-_Updated: 2026-10-06 (product name, pre-freeze snapshot, disclosure update, demo video)_
+# State — Miles to Market
+_Updated: 2026-10-17 (renamed from "Food Desert AI" to "Miles to Market")_
 
 ## Now
+Renamed to "Miles to Market" (slug `miles-to-market`) in code, PWA manifest
+and docs; not yet redeployed — production (food-desert-ai.vercel.app,
+main @ 2b6f0a8, deployed 2026-10-06) still serves the old brand until the next
+deploy, and the Vercel URL is unchanged.
 Live in production (food-desert-ai.vercel.app, main @ 2b6f0a8, deployed
 2026-10-06): the docs/07 access-test redesign, docs/08 Suggest sites and
 action plan, the security fixes, the repo docs, the product name "Food Desert
@@ -38,7 +42,7 @@ Alviso + village pin flips MEETS → DOES NOT MEET.
   jobs/health context lines were rewritten against the PubMed abstracts.
 
 ## Demo video (built 2026-10-06, local only)
-`notes-local/video/` (git-excluded): 2:51 silent cut recorded from production,
+`notes-local/video/` (git-excluded): 2:52 silent cut (S13 = "How it works" flowchart, S12 = framing, since 2026-10-12) recorded from production,
 a teleprompter cut, captions, a TTS timing guide (not for upload) and
 `SCRIPT.md`, the voiceover script with timecodes; docs/CAC_SUBMISSION.md §1
 maps the six required beats to those timecodes. Re-recorded 2026-10-06 from
@@ -58,6 +62,11 @@ re-records after any on-screen change (deploy first, reload once).
    `notes-local/video/pipeline/config.json` (and `"team"` if it is a team
    entry), run `rebuild_cards.sh`, record the voiceover (SCRIPT.md), upload
    public. Fill `[NAME]` in docs/CAC_SUBMISSION.md §3.
+   2026-10-12: config now has "Ryan Tseng" + team Vihaan Narkhede, Siddharth
+   Vijay (confirm exact registration names); `notes-local/video/TRANSCRIPT.md`
+   splits the read into 3 parts (Part 3 must be Ryan); captions, teleprompter
+   and cards rebuilt to match. For a solo entry set `"team": []` and run
+   `rebuild_cards.sh`.
 3. Code freeze Oct 11: no store-snapshot rebuild after it (done 2026-10-06:
    USDA data unchanged since 2026-09-17, tiles identical, numbers unchanged).
 4. Owner: the public repo has an unrelated branch

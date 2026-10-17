@@ -58,8 +58,7 @@ export default function MobileResultsView({
           aria-label="Back to home"
           className="text-sm font-bold tracking-wide whitespace-nowrap btn-press rounded-lg"
         >
-          <span style={{ color: 'var(--cyan)' }}>FOOD DESERT</span>
-          <span className="text-white/85"> AI</span>
+          <span style={{ color: 'var(--cyan)' }}>MILES TO MARKET</span>
         </button>
         <span className="flex-1" />
         {!showGate && (

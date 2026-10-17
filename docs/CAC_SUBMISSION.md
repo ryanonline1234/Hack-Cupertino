@@ -1,13 +1,13 @@
 # Congressional App Challenge — Submission Packet
 
-App: **Food Desert AI**
+App: **Miles to Market** (named "Food Desert AI" until 2026-10-17)
 Submission deadline: **October 26, 2026, 12:00 PM ET** · Demo video: **1–3 minutes**, public on YouTube or Vimeo.
 
 Fill every `[BRACKET]` placeholder before submitting, then check the boxes in §5.
 
 ---
 
-## 1. Demo video (2:51, covers all six required beats)
+## 1. Demo video (2:52, covers all six required beats)
 
 The video is a screen recording of the live production app, with title, code-explanation, diagram and closing-credits cards between the app scenes, narrated by the student. The voiceover script, the recording pipeline and the output files are kept locally in `notes-local/video/` (not in this repo); `notes-local/video/SCRIPT.md` is the script with timecodes. How the video was made is disclosed in §3.
 
@@ -17,7 +17,7 @@ The video is a screen recording of the live production app, with title, code-exp
 | App name | 0:17 spoken, title card, end card |
 | Purpose in one clear sentence | 0:23 |
 | Target audience | 0:34 |
-| Tools and coding languages | 2:31 "Built with" card; AI coding tools at 2:18 and on the cards |
+| Tools and coding languages | 2:32 "Built with" card; AI coding tools at 2:22 and on the end card |
 | Functionality showcase | 0:00–0:17 and 0:34–2:02, bookend at 2:42 |
 
 Timecodes are the planned line starts in SCRIPT.md; re-check them against the final narrated cut.
@@ -31,11 +31,11 @@ Timecodes are the planned line starts in SCRIPT.md; re-check them against the fi
 
 ### What is the title of your app?
 
-Food Desert AI
+Miles to Market
 
 ### Explain the app's purpose.
 
-Food Desert AI answers three questions for any US community: what is the current food-access designation, why did the system make that designation, and what is likely to change if a grocery store opens. Users search any address; the app resolves the census tract, merges USDA, CDC PLACES, Census ACS, and OpenStreetMap supermarket data, classifies the tract with a transparent distance-first rule (1 mile urban / 5 miles rural over community-average distance), shows the full evidence trace with source-confidence badges, and projects intervention impact across access, health, economics, and trip true-cost — including save/compare scenarios for planning.
+Miles to Market answers three questions for any US community: what is the current food-access designation, why did the system make that designation, and what is likely to change if a grocery store opens. Users search any address; the app resolves the census tract, merges USDA, CDC PLACES, Census ACS, and OpenStreetMap supermarket data, classifies the tract with a transparent distance-first rule (1 mile urban / 5 miles rural over community-average distance), shows the full evidence trace with source-confidence badges, and projects intervention impact across access, health, economics, and trip true-cost — including save/compare scenarios for planning.
 
 ### What inspired you to create this app?
 
@@ -63,7 +63,7 @@ Two related ones. First, the supermarket-distance provider (Overpass/OSM) return
 
 Per the 2026 CAC rules, AI usage must be fully disclosed and must not constitute the entirety of technical development. The per-change record is `docs/AI_USE_LOG.md`.
 
-- **No AI at runtime.** All verdicts and numbers are deterministic code over public data. The optional AI narrative panel (OpenRouter) was removed on 2026-10-02. "AI" in the product name is a name only.
+- **No AI at runtime.** All verdicts and numbers are deterministic code over public data. The optional AI narrative panel (OpenRouter) was removed on 2026-10-02. The app was named "Food Desert AI" until 2026-10-17, when the team renamed it "Miles to Market" (no model runs at runtime under either name).
 - **Used AI for (Claude Code, Anthropic; plus Cursor for some hackathon commits and Grok Imagine for three unused images):**
   - April 2026, Hack Cupertino (April 11–12) and follow-up: the first version was built at the hackathon with teammates Vihaan Narkhede and Siddharth Vijay. Claude Code was in use from the start: the student's hackathon commits (`569a99d` through `106c319`) carry no trailers, but the first one already contains Claude Code's `.claude/launch.json`; which parts were AI-written was not recorded. Vihaan's four hackathon commits (`fb6f754`, `7f3b248`, `c37021e`, `4bf8034`, on the `landing` branch) carry a `Made-with: Cursor` trailer (Cursor, an AI code editor), and their code reached main through the student's integration commit `fb8ce1a`. Four of their files are unchanged: the six-line `cn()` helper in `src/lib/utils.ts`, which the landing page uses, and `src/components/ui/{badge,button,card}.tsx`, which nothing shipped imports. `tailwind.config.js`, which the build uses, is their file with 5 of its 51 lines since changed. Five more of their components remain, lightly edited and unused (`src/components/ui/{globe,horizontal-menu-bar,particle-text-effect,radial-orbital-timeline,ruler-carousel}.tsx`), and the landing page began as theirs and has since been rewritten. Four follow-up commits on April 29 carry a Claude co-author trailer (`179b22f`, `a5df48a`, `f622625`, `07164ba`).
   - September 2026: Claude Code was used throughout. None of the 26 commits on main from September 11–15 (`daa0830` through `6483fed`) carry trailers; they include the features described in `DECISIONS.md` and `docs/01`–`docs/06` (place-a-store scenarios, share links, the mobile results page, reliability and UI polish batches), the rebrand, the US map, the landing-page crisis section and the first draft of the CAC packet. Which parts were AI-written was not recorded commit by commit. Separately, the unmerged branch `claude/food-desert-ai-improvements-skyrmp` holds 12 commits authored by Claude Code (September 3–4); none of its code is on main.

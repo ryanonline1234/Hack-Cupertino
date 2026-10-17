@@ -119,14 +119,11 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
           className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
           style={{ background: 'linear-gradient(135deg, var(--neon), var(--cyan))' }}
         >
-          <span style={{ color: '#050608' }}>FD</span>
+          <span style={{ color: '#050608' }}>MM</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold tracking-tight text-white/92 hidden sm:inline">
-            FOOD DESERT
-          </span>
-          <span className="text-sm font-medium tracking-tight hidden min-[430px]:inline" style={{ color: 'var(--neon)' }}>
-            AI
+            MILES TO MARKET
           </span>
         </div>
       </button>

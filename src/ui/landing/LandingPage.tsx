@@ -44,7 +44,7 @@ const STATEMENT = [
 
 const FAQS = [
   {
-    q: "What does Food Desert AI actually check?",
+    q: "What does Miles to Market actually check?",
     a: "You give it a US place. It finds the 2020 census tract at that point and applies USDA ERS's low-income and low-access rule: low income is USDA ERS's 2025 flag; low access means at least 33% or 500 of the tract's residents live more than 1 mile (urban) or 10 miles (rural), in a straight line from their 2020 Census block, from a SNAP-authorized supermarket. The answer is an estimate (meets the test, doesn't, or unknown with the reason), not an official USDA designation.",
   },
   {
@@ -271,7 +271,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
       <header className="df-nav">
         <button type="button" className="df-brand" onClick={() => scrollToId("top")}>
           <Mark />
-          <span>Food Desert</span>
+          <span>Miles to Market</span>
         </button>
         <nav className="df-links" aria-label="Main">
           <button type="button" onClick={() => scrollToId("top")}>Home</button>
@@ -292,7 +292,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
       <section className="df-wrap df-hero">
         <h1>Food access, tested tract by tract</h1>
         <p>
-          Food Desert AI turns a US address into USDA’s low-income and low-access test for its
+          Miles to Market turns a US address into USDA’s low-income and low-access test for its
           census tract, computed live on 2020 Census blocks and USDA’s SNAP supermarket list, with
           the reason beside the result and a test of what one new supermarket changes. An estimate,
           not an official designation.
@@ -307,7 +307,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
         </div>
       </section>
 
-      <section className="df-wrap df-stage-wrap" aria-label="Food Desert AI product demo">
+      <section className="df-wrap df-stage-wrap" aria-label="Miles to Market product demo">
         <div className="df-stage">
           <div className="df-stage-glow" aria-hidden="true" />
           <div className="df-window" ref={winRef}>
@@ -388,7 +388,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
 
       <section className="df-gaps" id="how" ref={gapsRef}>
         <div className="df-wrap">
-          <h2>Access fails in the gaps. Food Desert AI shows the rule behind each one.</h2>
+          <h2>Access fails in the gaps. Miles to Market shows the rule behind each one.</h2>
           <div className="df-board">
             <div className="df-panel df-panel-blue">
               <ul className="df-tree">
@@ -541,7 +541,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
       <footer className="df-foot">
         <div className="df-brand df-foot-brand">
           <Mark />
-          <span>Food Desert</span>
+          <span>Miles to Market</span>
         </div>
         <p>An estimate of USDA’s low-income and low-access test, and of what a new supermarket would change.</p>
         <div className="df-foot-cols">
@@ -558,7 +558,7 @@ export function LandingPage({ onLaunchSimulation, className }: LandingPageProps)
             <a href={SENATE_URL} target="_blank" rel="noreferrer">Senate letter</a>
           </div>
         </div>
-        <p className="df-copy">Food Desert AI · access-test estimate</p>
+        <p className="df-copy">Miles to Market · access-test estimate</p>
       </footer>
     </div>
   );

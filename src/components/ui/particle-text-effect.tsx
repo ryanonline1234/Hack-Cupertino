@@ -157,7 +157,7 @@ export interface ParticleTextEffectProps {
   className?: string;
   /** Show footer hint (standalone only) */
   showHint?: boolean;
-  /** Fires once when the hero title (“Food Desert AI”) snaps to the top (≥3-word hero only) */
+  /** Fires once when the hero title (“Miles to Market”) snaps to the top (≥3-word hero only) */
   onTitlePhase?: () => void;
 }
 
@@ -172,7 +172,7 @@ export const LEGACY_PARTICLE_WORDS = [
 ];
 
 /** Landing hero: story beats → persistent title at top (needs ≥3 strings for title beat) */
-export const HERO_PARTICLE_WORDS = ["Million Lives.", "One Decision.", "Food Desert AI"];
+export const HERO_PARTICLE_WORDS = ["Million Lives.", "One Decision.", "Miles to Market"];
 
 /** First hero line hold: long enough to read once (~2.8s), then move on — the
     skip control exists, but pacing shouldn't need it */
@@ -600,7 +600,7 @@ export function ParticleTextEffect({
       />
       {!isBg && showHint && (
         <div className="mt-4 max-w-md text-center text-sm text-white">
-          <p className="mb-2">Food Desert AI particle field</p>
+          <p className="mb-2">Miles to Market particle field</p>
           <p className="text-xs text-gray-400">
             Right-click and hold while moving the mouse to disperse particles • Phrases rotate
             automatically every ~4s

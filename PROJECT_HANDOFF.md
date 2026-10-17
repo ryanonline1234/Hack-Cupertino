@@ -1,4 +1,4 @@
-# Food Desert AI - Technical Project Handoff
+# Miles to Market - Technical Project Handoff
 
 Last updated: 2026-10-03 (access-test redesign, docs/07; Suggest sites and the
 action plan, docs/08)

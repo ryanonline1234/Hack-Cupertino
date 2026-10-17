@@ -22,7 +22,7 @@ export type HorizontalMenuBarProps = {
 };
 
 export function HorizontalMenuBar({
-  siteName = "Food Desert AI",
+  siteName = "Miles to Market",
   items,
   ctaLabel = "Launch simulation",
   onCtaClick,

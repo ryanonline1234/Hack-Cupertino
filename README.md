@@ -1,4 +1,4 @@
-# Food Desert AI
+# Miles to Market
 
 > Type a US place and see whether its 2020 census tract meets USDA's low-income and low-access test (the measure often called a food desert), the counts behind the answer, and what new supermarkets would change. It is an estimate computed live with USDA ERS's rule, not an official USDA designation.
 
