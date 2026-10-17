@@ -16,6 +16,12 @@ Earlier (2026-10-03) post-deploy check: Production check after deploy: data file
 /api/overpass and /api/llmapi are 404, no key values in the 14 bundle files,
 Alviso + village pin flips MEETS → DOES NOT MEET.
 
+## Verified (2026-10-17)
+- React Bits copies deleted. Build output is identical apart from one unused
+  utility rule (`.shrink`, which sets the browser default) and the file hashes
+  that follow from it. Lint is clean, and `npm test` passes 358/358.
+- The stray chessboard branch is no longer on GitHub (`git ls-remote`).
+
 ## Verified (2026-10-06)
 - `npm test` 358/358; lint: only the 2 pre-existing GooeyNav.jsx errors;
   `npm run build` + key check ok. Store snapshot rebuilt: only
@@ -57,7 +63,7 @@ https://food-desert-ai.vercel.app still serves it.
    by Claude, rewritten 2026-10-06 from a git audit) and confirm three facts:
    Claude Code use in the April hackathon commits (inferred from
    `.claude/launch.json` in 569a99d), whether Siddharth used AI tools in
-   7361547, and record the review date in docs/AI_USE_LOG.md. The §2 answer
+   7361547 (yes, confirmed 2026-10-17; which tools is still to ask), and record the review date in docs/AI_USE_LOG.md. The §2 answer
    prose and §4 judges' steps still describe the old method; §2's "I moved the
    call…" is Claude co-authored work (179b22f), so reword it when rewriting.
 2. Owner: put the CAC registration name in
@@ -71,21 +77,16 @@ https://food-desert-ai.vercel.app still serves it.
    `rebuild_cards.sh`.
 3. Code freeze Oct 11: no store-snapshot rebuild after it (done 2026-10-06:
    USDA data unchanged since 2026-09-17, tiles identical, numbers unchanged).
-4. Owner: the public repo has an unrelated branch
-   `claude/robotic-chessboard-feasibility-3ittpi` (chessboard project pushed
-   here by mistake); delete it on GitHub if wanted.
+4. Done 2026-10-17: the stray chessboard branch is no longer on GitHub.
 5. Owner, whenever: delete VITE_ANTHROPIC_KEY, LLMAPI_KEY and
    OPEN_ROUTER_API_KEY in Vercel; Deployment Protection; key rotation.
-6. Ask Siddharth to delete the unused React Bits copies (license + lint).
+6. Done 2026-10-17: React Bits copies deleted (no visual change; lint clean).
 
 ## Known, not fixed
 - A browser that visited before a deploy can show the previous build once (the
   old service worker serves the cached shell; seen on 2026-10-03, fixed by one
   reload). Before recording the video, load the site and reload once. Roadmap
   item GAP-P6 (service-worker update handling) would remove the window.
-- Unused React Bits copies in the public repo (src/ui/landing/GooeyNav.jsx,
-  FlexCarousel.jsx; MIT + Commons Clause forbids redistributing the
-  components) and their 2 lint errors: Siddharth's files; ask him to delete.
 - package.json still lists unshipped deps (three, @react-three/*, chart.js,
   react-chartjs-2, ogl); the PWA precaches two unused PNGs (~800 KB).
 - Location search hits Nominatim as you type (300 ms debounce); Nominatim's

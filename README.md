@@ -141,7 +141,7 @@ The `@` import alias maps to `src/` (`vite.config.js`).
 |---|---|
 | `npm run dev` | Vite dev server with `/api/acs` and the dev proxies |
 | `npm test` | Unit tests: `node --test tests/**/*.test.js` (offline; the golden tracts read the committed `public/data/`) |
-| `npm run lint` | `eslint .` (two pre-existing errors in the unused `src/ui/landing/GooeyNav.jsx`) |
+| `npm run lint` | `eslint .` |
 | `npm run build` | `vite build`, then `node scripts/check-bundle-for-keys.mjs` (fails if a private key is in `dist/`) |
 | `npm run preview` | Serves the production build locally, with `/api/acs` |
 
@@ -193,7 +193,7 @@ vite.config.js, vite-plugin-api-dev.js, vercel.json
 DECISIONS.md, STATE.md, PROJECT_HANDOFF.md, THIRD_PARTY_NOTICES.md
 ```
 
-Unused and not in the bundle: `src/components/ui/*.tsx`, `src/ui/landing/GooeyNav.jsx`, `src/ui/landing/FlexCarousel.jsx` and `src/utils/formatters.js`.
+Unused and not in the bundle: `src/components/ui/*.tsx` and `src/utils/formatters.js`.
 
 ## Deployment
 
@@ -241,7 +241,7 @@ Per CAC rules, all AI usage is disclosed here and in [`docs/CAC_SUBMISSION.md`](
   - *Demo video (October 2026):* Claude Code researched the 2026 CAC video rules and drafted and fact-checked the voiceover script, which the student narrates. It wrote the Playwright scripts that recorded the live app (including the scripted cursor, on-screen highlights and zooms), generated the title, code, diagram, "How the rebuild was made", "Built with" and end cards, and wrote the code that cut and assembled the video and made its caption file (logged in `docs/AI_USE_LOG.md`, 2026-10-06).
   - *Submission text:* this disclosure was drafted by Claude Code from `docs/AI_USE_LOG.md` and the git history (2026-10-03, updated 2026-10-06) and is reviewed by the student; the draft answers in `docs/CAC_SUBMISSION.md` §2 were first written with Claude Code in September (`daa0830`).
 - **What the student did:** directed the work and chose among the options Claude Code researched and proposed, recorded in `DECISIONS.md` (for example removing the runtime AI, counting USDA's SNAP supermarket list, rating tracts rather than cities, showing only computed impact, and which store formats count), reviewed the results, handled deployment and API-key management, and narrates the demo video.
-- **Teammates:** Siddharth Vijay redesigned the landing page and visual style (commit `7361547`, which carries no AI trailer). That commit also added three AI-generated images (`public/greens.jpg`, `public/market.jpg`, `public/produce.jpg`; their embedded C2PA metadata names Grok Imagine), which the app does not currently display.
+- **Teammates:** Siddharth Vijay redesigned the landing page and visual style (commit `7361547`) with AI tools: the commit carries no AI trailer, and he confirmed the AI use on 2026-10-17. That commit also added three AI-generated images (`public/greens.jpg`, `public/market.jpg`, `public/produce.jpg`; their embedded C2PA metadata names Grok Imagine), which the app does not currently display.
 
 ## License and attribution
 

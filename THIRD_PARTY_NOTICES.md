@@ -61,24 +61,20 @@ by nothing), so none of their code is in the bundle:
 | three | 0.183.2 | MIT | `src/components/ui/globe.tsx` (unused) |
 | @react-three/fiber | 9.5.0 | MIT | `src/components/ui/globe.tsx` (unused) |
 | @react-three/drei | 10.7.7 | MIT | `src/components/ui/globe.tsx` (unused) |
-| ogl | 1.0.11 | Unlicense (per `package-lock.json`; not installed in the local `node_modules`) | `src/ui/landing/FlexCarousel.jsx` (unused) |
-| chart.js | 4.5.1 | MIT | nothing |
+| ogl | 1.0.11 | Unlicense (per `package-lock.json`; not installed in the local `node_modules`) | chart.js | 4.5.1 | MIT | nothing |
 | react-chartjs-2 | 5.3.1 | MIT | nothing |
 
 ## 4. Vendored and copied code
 
 | File | Origin | License | Status |
 |---|---|---|---|
-| `src/ui/landing/GooeyNav.jsx`, `GooeyNav.css` | React Bits | MIT + Commons Clause License Condition v1.0 (React Bits' current license) | Unused: not imported, not in the bundle. |
-| `src/ui/landing/FlexCarousel.jsx`, `FlexCarousel.css` | React Bits | MIT + Commons Clause License Condition v1.0 | Unused: not imported, not in the bundle. Its default items point at Unsplash image URLs. |
 | `src/components/ui/badge.tsx`, `button.tsx`, `card.tsx` | Follow the shadcn/ui component pattern; origin not recorded in the files | see upstream | Unused. |
 | `src/components/ui/globe.tsx`, `horizontal-menu-bar.tsx`, `particle-text-effect.tsx`, `radial-orbital-timeline.tsx`, `ruler-carousel.tsx` | Origin not recorded in the files | see upstream | Unused. |
 
 The Commons Clause condition says you may use the software, including
 commercially, "so long as you do not sell, sublicense, or redistribute the
-components themselves". The three React Bits copies are unused and are kept in
-the public repository only as source; whether to keep them is the owner's
-call.
+components themselves". The React Bits copies (GooeyNav and FlexCarousel) were never imported or
+shipped, and were deleted from the repository on 2026-10-17.
 
 Assets in `public/` that the app doesn't display: `greens.jpg`, `market.jpg`
 and `produce.jpg` (AI-generated; their C2PA metadata names Grok Imagine; see
