@@ -41,14 +41,16 @@ Alviso + village pin flips MEETS → DOES NOT MEET.
 - Adversarial review (4 lenses, refute-first): confirmed findings fixed; the
   jobs/health context lines were rewritten against the PubMed abstracts.
 
-## Demo video (built 2026-10-06, local only)
-`notes-local/video/` (git-excluded): 2:52 silent cut (S13 = "How it works" flowchart, S12 = framing, since 2026-10-12) recorded from production,
-a teleprompter cut, captions, a TTS timing guide (not for upload) and
-`SCRIPT.md`, the voiceover script with timecodes; docs/CAC_SUBMISSION.md §1
-maps the six required beats to those timecodes. Re-recorded 2026-10-06 from
-main @ 2b6f0a8 (new header; focus-ring highlights, crossfades).
-`pipeline/rebuild_cards.sh` puts the name on the cards; `pipeline/rerecord_all.sh`
-re-records after any on-screen change (deploy first, reload once).
+## Demo video (re-recorded 2026-10-17 from the renamed production site)
+`notes-local/video/` (git-excluded) holds the 2:50 cut as
+`miles-to-market_cac_demo_{silent,teleprompter,tts-guide_NOT-FOR-UPLOAD}.mp4`
+plus `_captions.srt`. `TRANSCRIPT.md` is the team read: Vihaan 0:00–1:02,
+Siddharth 1:02–2:10, Ryan 2:10–2:50. The old Food Desert AI cuts are in
+`notes-local/video/old-food-desert-ai/`. `pipeline/rerecord_all.sh`
+re-records after any on-screen change, about 10 min. The cover photo is
+`notes-local/cover/miles-to-market_cover_600x800.jpg`, with a 1200×1600 copy.
+Production is live at https://miles-to-market.vercel.app, and the old
+https://food-desert-ai.vercel.app still serves it.
 
 ## Pending (in order)
 1. Owner: review the AI disclosure (README, docs/CAC_SUBMISSION.md §3; drafted

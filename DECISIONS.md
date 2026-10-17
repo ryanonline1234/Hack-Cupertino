@@ -3,6 +3,15 @@
 Append-only. New decisions go on top with today's date; old entries are never
 edited. Each entry names the rejected alternative.
 
+## 2026-10-17 — Production URL: miles-to-market.vercel.app, with the old URL kept live
+After the rename, `miles-to-market.vercel.app` was added as a second production
+domain of the `hack-cupertino` Vercel project. `food-desert-ai.vercel.app`
+stays as a production domain with no redirect, so links already shared keep
+working. The video cards, CAC packet and form use the new URL. Rejected:
+renaming the project only (changes no public URL), and redirecting the old URL
+(nothing breaks either way, and a redirect adds a hop for no gain this close
+to the deadline).
+
 ## 2026-10-17 — Product renamed to "Miles to Market"
 The team renamed the app from "Food Desert AI" to "Miles to Market" (slug
 `miles-to-market`): the new name states the core mechanic (miles to a

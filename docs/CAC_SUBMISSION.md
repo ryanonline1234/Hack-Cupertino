@@ -23,7 +23,7 @@ The video is a screen recording of the live production app, with title, code-exp
 Timecodes are the planned line starts in SCRIPT.md; re-check them against the final narrated cut.
 
 - Video URL (public): `[YOUTUBE/VIMEO URL]`
-- Deployed app URL: https://food-desert-ai.vercel.app
+- Deployed app URL: https://miles-to-market.vercel.app (the old https://food-desert-ai.vercel.app still serves the same app)
 
 ---
 
@@ -78,7 +78,7 @@ Open-source libraries in the shipped app (per rules, documented here): React, Vi
 
 ## 4. For judges: run it in 2 minutes (no keys needed)
 
-1. Open https://food-desert-ai.vercel.app (or `npm install && npm run dev -- --host 127.0.0.1 --port 5173` locally).
+1. Open https://miles-to-market.vercel.app (or `npm install && npm run dev -- --host 127.0.0.1 --port 5173` locally).
 2. Click **Launch simulation**, search **Chicago South Side, IL** (or pick a sample tract).
 3. Read the designation + **evidence trace** + confidence badges.
 4. Open the **impact panel**, move the threshold slider, **save a scenario** and compare.
