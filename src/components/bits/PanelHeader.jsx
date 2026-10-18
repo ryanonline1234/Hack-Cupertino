@@ -4,9 +4,9 @@
  * slot. One component so the three panels read as a family instead of
  * three one-off header treatments.
  */
-export default function PanelHeader({ icon: Icon, tint, children, right }) {
+export default function PanelHeader({ icon: Icon, tint, children, right, compact = false }) {
   return (
-    <div className="flex items-center gap-2 mb-2 shrink-0">
+    <div className={`flex items-center gap-2 shrink-0 ${compact ? '' : 'mb-2'}`}>
       <span
         className="inline-flex items-center justify-center w-5 h-5 rounded-md shrink-0"
         style={{

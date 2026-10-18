@@ -3,6 +3,26 @@
 Append-only. New decisions go on top with today's date; old entries are never
 edited. Each entry names the rejected alternative.
 
+## 2026-10-18 — Placing by hand is separated from suggestions; guide zones; log toggle; no Highlight Food
+The owner found that after "Suggest sites", "Drop here" read as "place the
+suggestion", but it placed at the searched point.
+- **Placing.** The armed banner now has a "By hand" row ("Drop at searched
+  spot") and a separate "Suggested sites" box ("Add site N (+gain)" and "Add
+  all"). Clicking a suggestion circle while placing adds it.
+- **Guide zones.** While placing, the tract's real shops and commercial
+  buildings are shaded by single-store gain, as guidance toward realistic
+  spots. Clicks still go anywhere. The zones are the Suggest-sites candidates
+  scored alone (`scoreSiteZones`), not a new data source.
+- **Crosshair.** The 2D centre crosshair was removed because it drifted off
+  the searched point when the map panned.
+- **Supermarkets and the log.** Supermarkets are always drawn, so the
+  Highlight Food toggle went. The pipeline log can shrink to one line, and
+  the choice is remembered per browser.
+
+Rejected: blocking clicks outside zones (the owner wants full freedom); block
+points as zones where commercial data is missing (they are homes, not store
+sites).
+
 ## 2026-10-17 — Production URL: miles-to-market.vercel.app, with the old URL kept live
 After the rename, `miles-to-market.vercel.app` was added as a second production
 domain of the `hack-cupertino` Vercel project. `food-desert-ai.vercel.app`

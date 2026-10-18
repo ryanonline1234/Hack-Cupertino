@@ -16,6 +16,14 @@ Earlier (2026-10-03) post-deploy check: Production check after deploy: data file
 /api/overpass and /api/llmapi are 404, no key values in the 14 bundle files,
 Alviso + village pin flips MEETS → DOES NOT MEET.
 
+## In progress (2026-10-18, branch `ui/placing-and-us-map`, not deployed)
+The placing redesign, guide zones, collapsible log, no Highlight Food, and a
+tract-level US map (DECISIONS 2026-10-18, docs/08 §3a, docs/data.md). `npm
+test` passes 376/376, lint is clean, and build and the key check are ok.
+Checked headless on a local dev server. Deploy = merge to `main` and push.
+After that, the demo video needs `rerecord_all.sh`: takeC no longer clicks
+Highlight Food, and the placing scene now shows guide zones.
+
 ## Verified (2026-10-17)
 - React Bits copies deleted. Build output is identical apart from one unused
   utility rule (`.shrink`, which sets the browser default) and the file hashes

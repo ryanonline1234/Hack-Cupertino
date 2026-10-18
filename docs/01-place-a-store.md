@@ -26,6 +26,8 @@ center only, through UI that is currently unreachable — see §A.5.)
    but coarse. **Exact placement lives in 2D** (switching is one tap);
    the banner says so. Banner: "3D drops at analysis center · switch to 2D
    for an exact spot · Drop here · Cancel".
+   *(Superseded 2026-10-18: the banner now has a "By hand" row with "Drop at
+   searched spot", a separate "Suggested sites" box, and Done; see docs/08 §3a.)*
 4. Placed pins reuse the `simPins` array (`type: 'grocery'` + real coords);
    `addSimulationPin` gains optional `(type, lat, lng)` (defaults: map
    center, preserving old behavior). 10-pin cap, undo, clear: exposed in the

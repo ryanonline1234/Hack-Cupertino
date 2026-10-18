@@ -17,7 +17,6 @@ Determined from a source-map build of this branch on 2026-10-03 (the
 | react, react-dom, scheduler | 19.2.5, 19.2.5, 0.27.0 | MIT | UI |
 | leaflet | 1.9.4 | BSD-2-Clause | 2D maps (tract map, US map), including its CSS and marker images |
 | lucide-react | 1.8.0 | ISC (some icons derived from Feather, MIT; both texts in its LICENSE) | icons |
-| papaparse | 5.5.3 | MIT | parsing `food_atlas.csv` for the US map |
 | gsap | 3.15.0 | GreenSock "Standard 'no charge' license", https://gsap.com/standard-license (see upstream) | landing-page and search-gate animation |
 | clsx | 2.1.1 | MIT | class names |
 | tailwind-merge | 3.5.0 | MIT | class names |
@@ -92,7 +91,8 @@ upstream).
 | Data | Terms |
 |---|---|
 | USDA FNS SNAP Retailer Locator (`public/data/stores/`) | US federal government work, not subject to US copyright (17 U.S.C. § 105); see FNS for terms of use. |
-| USDA ERS Food Access Research Atlas, 2025 and 2019 (`public/data/ers/`, `public/data/food_atlas.csv`) | US federal government work (17 U.S.C. § 105); see ERS for citation and use terms. |
+| USDA ERS Food Access Research Atlas, 2025 and 2019 (`public/data/ers/`, `public/data/us/usda2019-lila-tracts.json`, source extract `scripts/data/food_atlas_2019.csv`) | US federal government work (17 U.S.C. § 105); see ERS for citation and use terms. |
+| U.S. Census Bureau 2010 Gazetteer, census tracts (internal points for the US map, `public/data/us/`) | US federal government work (17 U.S.C. § 105). |
 | US Census Bureau TIGERweb, 2020 Census (`public/data/blocks/`, live lookups) | US federal government work (17 U.S.C. § 105). |
 | Census ACS 5-year 2022, via the Census Data API (`api/acs.js`) | Census Data API terms of service, which require this notice: "This product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau." |
 | CDC PLACES: Local Data for Better Health, Census Tract Data (data.cdc.gov `cwsq-ngmh`, live) | Listed as "Public Domain" in the dataset's data.cdc.gov metadata (read 2026-10-03). |

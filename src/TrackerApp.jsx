@@ -11,7 +11,7 @@ import ResizeHandle from './components/ResizeHandle';
 import SuggestedSites from './components/SuggestedSites';
 import { buildCommunityData } from './pipeline/normalizer';
 import { evaluatePlacedStoreScenario } from './engine/scenarioEngine';
-import { suggestSites } from './engine/suggestSites';
+import { scoreSiteZones, suggestSites } from './engine/suggestSites';
 import { buildActionPlan } from './engine/actionPlan';
 import { candidateFallback, loadSiteCandidates, tractCandidates } from './pipeline/siteLoader';
 import { loadPlaceSummary } from './pipeline/placeLoader';
@@ -22,6 +22,8 @@ import { approxCount, fmtBeyond, fmtMiles, fmtShare } from './lib/format';
 
 const PANEL_HEIGHT_KEY = 'fds:layout:bottomHeight';
 const PANEL_WIDTH_KEY = 'fds:layout:splitWidth';
+// Pipeline log shown in full or as one line ('1' = collapsed).
+const LOG_COLLAPSED_KEY = 'fds:layout:logCollapsed';
 const MIN_PANEL_HEIGHT = 140;
 const MIN_PANEL_WIDTH = 320;
 const DEFAULT_BOTTOM_VH = 0.30;
@@ -32,6 +34,9 @@ const MAX_PINS = MAX_SHARED_PINS;
 const PIN_HISTORY_CAP = 20;
 // Stable empty list, so the map's suggestion layer isn't redrawn every render.
 const NO_PICKS = [];
+const NO_ZONES = [];
+// Guide zones drawn while placing by hand: the best few are enough to guide.
+const MAX_GUIDE_ZONES = 60;
 // Headings TrackerApp moves focus to (ids set in CommunityStatsPanel and
 // CitySummary). A request waits this long for its heading to render.
 const VERDICT_HEADING_ID = 'fds-verdict-heading';
@@ -214,6 +219,9 @@ function Panels({
   actionPlan,
   dataError,
   logs,
+  logCollapsed = false,
+  onToggleLog,
+  logRow = false,
 }) {
   return (
     <>
@@ -245,9 +253,15 @@ function Panels({
         </div>
       )}
 
-      <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-[120px] md:min-h-0">
-        <AgentStatusFeed logs={logs} loading={loading} />
-      </div>
+      {logCollapsed ? (
+        <div className={`glass-panel rounded-xl px-3 py-2 min-w-0 overflow-hidden shrink-0 ${logRow ? 'md:w-[240px] md:self-start' : ''}`}>
+          <AgentStatusFeed logs={logs} loading={loading} collapsed onToggle={onToggleLog} />
+        </div>
+      ) : (
+        <div className="glass-panel rounded-xl p-3 min-w-0 overflow-hidden flex-1 min-h-[120px] md:min-h-0">
+          <AgentStatusFeed logs={logs} loading={loading} onToggle={onToggleLog} />
+        </div>
+      )}
     </>
   );
 }
@@ -369,6 +383,13 @@ export default function TrackerApp({ onHome }) {
           typeof window !== 'undefined' ? Math.round(window.innerWidth * DEFAULT_SPLIT_VW) : 480,
         ),
   );
+
+  const [logCollapsed, setLogCollapsed] = useState(() => {
+    try { return window.localStorage.getItem(LOG_COLLAPSED_KEY) === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(LOG_COLLAPSED_KEY, logCollapsed ? '1' : '0'); } catch { /* noop */ }
+  }, [logCollapsed]);
 
   // Persist resize state. Quiet about quota errors so private-mode browsers
   // don't break the UI.
@@ -836,6 +857,7 @@ export default function TrackerApp({ onHome }) {
       sqft: p.candidate.sqft ?? null,
       name: p.candidate.name ?? null,
       gainText: `+${approx(p.gain)} residents within ${threshold} mi`,
+      gainShort: `+${approx(p.gain)}`,
     })),
     [suggestedPicks, threshold],
   );
@@ -846,11 +868,48 @@ export default function TrackerApp({ onHome }) {
   else if (siteSuggestion?.status === 'ready') {
     const n = suggestedPicks.length;
     suggestStatus = n > 0
-      ? `${plural(n, 'suggested site')} on the map (numbered, dashed); details and Add as store in the Tract view.`
+      ? `${plural(n, 'suggested site')} on the map: add one here, click its numbered circle, or see details in the Tract view.`
       : siteSuggestion.result.reason === 'not_low_access'
         ? 'Suggested sites: with your placed stores the tract is no longer low access.'
         : 'Suggested sites: none found.';
   }
+
+  // ------------------------------------------------------------ guide zones
+  // While the map's Place store is armed: the tract's existing shops and
+  // commercial buildings (the Suggest-sites candidates), each scored alone on
+  // the current pins by scoreSiteZones. Visual guidance only; a click anywhere
+  // still places a store. The county file is cached by siteLoader.
+  const [mapPlaceArmed, setMapPlaceArmed] = useState(false);
+  const [zoneLoad, setZoneLoad] = useState(null); // { data, loaded }
+  useEffect(() => {
+    if (!mapPlaceArmed || !communityData?.access || zoneLoad?.data === communityData) return undefined;
+    let cancelled = false;
+    const data = communityData;
+    loadSiteCandidates(data.meta?.countyFips).then(
+      (loaded) => { if (!cancelled) setZoneLoad({ data, loaded }); },
+      () => { if (!cancelled) setZoneLoad({ data, loaded: { status: 'unavailable', candidates: [], dataset: null } }); },
+    );
+    return () => { cancelled = true; };
+  }, [mapPlaceArmed, communityData, zoneLoad]);
+
+  const guideZones = useMemo(() => {
+    const a = communityData?.access;
+    if (!mapPlaceArmed || !a || !Array.isArray(a.blocks) || !Number.isFinite(a.threshold)) return { zones: NO_ZONES, note: null };
+    if (!zoneLoad || zoneLoad.data !== communityData) return { zones: NO_ZONES, note: 'Loading guide zones…' };
+    const prepared = tractCandidates(zoneLoad.loaded, a.blocks, a.threshold);
+    if (prepared.from !== 'commercial') {
+      return { zones: NO_ZONES, note: 'No shop or commercial-building data near this tract, so no guide zones. Click anywhere to place.' };
+    }
+    const zones = scoreSiteZones({ blocks: a.blocks, threshold: a.threshold, candidates: prepared.candidates, existingPins: pins })
+      .slice(0, MAX_GUIDE_ZONES);
+    if (zones.length === 0) {
+      return { zones: NO_ZONES, note: `No guide zones: no existing shop or commercial building here would bring anyone new within ${a.threshold} mi.` };
+    }
+    return {
+      zones,
+      note: `Orange zones are existing shops and commercial buildings; deeper orange brings more residents within ${a.threshold} mi. A guide only: click anywhere.`,
+    };
+  }, [mapPlaceArmed, communityData, zoneLoad, pins]);
 
   // The rules-based plan (docs/08 §2), recomputed when the pins or the
   // suggestions change; empty unless the verdict is MET or NOT MET.
@@ -1071,7 +1130,12 @@ export default function TrackerApp({ onHome }) {
           onHome={onHome}
         />
         <div className="flex-1 min-h-0 relative">
-          <DesignationAtlasView />
+          <DesignationAtlasView
+            onOpenTract={({ lat, lng, label }) => {
+              setMode('atlas');
+              handleGateSelect(lat, lng, { placeKind: 'other', placeName: label });
+            }}
+          />
         </div>
       </div>
     );
@@ -1112,6 +1176,8 @@ export default function TrackerApp({ onHome }) {
     actionPlan,
     dataError,
     logs,
+    logCollapsed,
+    onToggleLog: () => setLogCollapsed((v) => !v),
   };
 
   // Phones stack the three panels vertically in a capped scroll region;
@@ -1124,7 +1190,7 @@ export default function TrackerApp({ onHome }) {
         background: 'rgba(12, 22, 18, 0.55)',
       }}
     >
-      <Panels {...panelProps} />
+      <Panels {...panelProps} logRow />
     </div>
   );
 
@@ -1212,6 +1278,11 @@ export default function TrackerApp({ onHome }) {
       onSuggestSites={canSuggest ? () => handleSuggestSites('banner') : undefined}
       suggestedSites={mapSuggestedSites}
       suggestStatus={suggestStatus}
+      onAddSuggested={handleAddSuggested}
+      onAddAllSuggested={handleAddAllSuggested}
+      onPlaceArmedChange={setMapPlaceArmed}
+      zones={guideZones.zones}
+      zonesNote={guideZones.note}
     />
   );
 

@@ -27,7 +27,7 @@ Rules that apply to all of them:
 | ERS tract attributes | `public/data/ers/` | USDA ERS Food Access Research Atlas 2025 + 2019 | pulled 2026-10-03 | `scripts/build-ers-shards.mjs` |
 | Census blocks (4 counties) | `public/data/blocks/` | Census TIGERweb, 2020 Census | pulled 2026-10-03 | `scripts/build-block-bundles.mjs` |
 | Site candidates (4 counties) | `public/data/sites/` | OpenStreetMap via Overpass | OSM data 2026-10-03 | `scripts/build-site-candidates.mjs` |
-| US map atlas (legacy) | `public/data/food_atlas.csv` | USDA ERS Food Access Research Atlas 2019 | committed 2026-04-11 | none |
+| US map tracts | `public/data/us/usda2019-lila-tracts.json` | USDA ERS Food Access Research Atlas 2019 + Census 2010 Gazetteer tract points | built 2026-10-18 | `scripts/build-us-lila-tracts.mjs` |
 
 Not committed (fetched live at runtime, each failing on its own with a named
 Unknown or an "unavailable" row): Census TIGERweb (tract and place at the
@@ -337,29 +337,35 @@ refresh; if you do rebuild, do it before the freeze and run `npm test`.
 
 ---
 
-## US map atlas (legacy) — `public/data/food_atlas.csv`
+## US map tracts — `public/data/us/usda2019-lila-tracts.json` (since 2026-10-18)
 
-**Source.** USDA ERS Food Access Research Atlas, 2019 release (2010 tracts):
-<https://www.ers.usda.gov/data-products/food-access-research-atlas>. An
-extract committed at Hack Cupertino on 2026-04-11 (commits `569a99d`,
-`29c56bf`); there is no builder and how the columns were extracted isn't
-recorded.
+**What it is.** One row for each census tract that USDA's 2019 Food Access
+Research Atlas flagged `LILATracts_1And10 = 1`: low income and low access,
+supermarkets, 1 mile urban / 10 miles rural. Each row sits at the tract's Census
+2010 internal point. There are 9,293 tracts and none is missing. Four tracts
+renumbered after 2010 are placed through `GEOID_2010_CODE_CHANGES` in
+`src/lib/usLilaTracts.js` and listed under `counts.recoded`. The file is
+783 KB raw, about 225 KB gzipped.
 
-**Used by.** Only the US map mode (`src/components/DesignationAtlasView.jsx`,
-parsed with PapaParse), which counts tracts with `LILATracts_1And10 = 1` per
-state. The tract test does not read it; it uses the ERS shards above.
+**Sources.**
+- The 2019 atlas extract committed at Hack Cupertino on 2026-04-11, now at
+  `scripts/data/food_atlas_2019.csv`. It is no longer deployed. It has 13
+  columns and 72,531 rows. On 2026-10-03, every tract id in it matched the
+  ERS 2019 layer with the same flag.
+- The Census 2010 Gazetteer national tracts file,
+  <https://www2.census.gov/geo/docs/maps-data/data/gazetteer/Gaz_tracts_national.zip>.
 
-**Format.** CSV, 13 columns: `CensusTract, State, County, Urban,
-LILATracts_1And10, lapop1share, lapop10share, laseniors1share, lahunv1share,
-LAPOP1_10, PovertyRate, MedianFamilyIncome, LALOWI1_10`. Unpublished values
-are the string `NULL`. 72,531 rows (50 states + DC), about 5.8 MB.
+**Builder.** `node scripts/build-us-lila-tracts.mjs`. It uses Node built-ins
+only, and the join logic in `src/lib/usLilaTracts.js` is unit-tested.
 
-**Check (2026-10-03).** Every one of the 72,531 tract ids is in the ERS 2019
-layer (via the committed shards) with the same `LILATracts_1And10` value.
+**Used by.** Only the US map (`src/components/DesignationAtlasView.jsx`). Its
+"Analyze this tract" button opens the tracker at the tract's 2010 point, and
+the tracker then tests the 2020 tract there. The tract test itself reads the
+ERS shards above, never this file.
 
-**Terms.** USDA ERS data, a US federal government work (not subject to US
-copyright, 17 U.S.C. § 105).
+**Terms.** Both sources are US federal government works (17 U.S.C. § 105).
 
-**When to rebuild.** Don't edit it. If the US map ever needs new data, derive
-it from the ERS shards (`f2019` carries `LILATracts_1And10`) with a script
-rather than replacing the CSV by hand.
+**When to rebuild.** Only if the atlas extract changes. To show the 2025 map
+instead, derive from the ERS shards (`t2025`, 2020 tracts) with the 2020
+Gazetteer, and label it as the SNAP-store (SRAM) map, which counts
+convenience and dollar stores.

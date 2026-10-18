@@ -221,6 +221,34 @@ function greedy({ blocks, threshold, start, startStats, candidates, maxSites, lo
   return { picks, flippedAt, reason: picks.length ? null : 'no_gain' };
 }
 
+// Guide zones for placing a store by hand (2026-10-18): every candidate's
+// single-store gain on the current scenario, i.e. the residents a supermarket
+// there would newly bring within T on its own (existing counting pins applied
+// first). Same haversine and `<= T` test as the picks, so a zone's gain equals
+// the first pick's gain at the same spot. Guidance only: the visitor can still
+// place anywhere. -> [{ id, lat, lng, kind, label, name, gain }] with gain > 0,
+// best first (ties: smaller id); [] when the baseline can't be measured.
+export function scoreSiteZones({ blocks, threshold, candidates, existingPins = [] } = {}) {
+  const pool = Array.isArray(candidates) ? candidates.filter((c) => validPoint(c) && validId(c?.id)) : [];
+  if (pool.length === 0) return [];
+  const start = startingDistances(blocks, threshold, existingPins);
+  if (!start) return [];
+  const far = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b.pop > 0 && validPoint(b) && !(start[i] <= threshold)) far.push(b);
+  }
+  if (far.length === 0) return [];
+  const out = [];
+  for (const c of pool) {
+    let gain = 0;
+    for (const b of far) if (haversineMiles(b.lat, b.lng, c.lat, c.lng) <= threshold) gain += b.pop;
+    if (gain > 0) out.push({ id: c.id, lat: c.lat, lng: c.lng, kind: c.kind, label: c.label ?? null, name: c.name ?? null, gain });
+  }
+  out.sort((a, b) => b.gain - a.gain || compareIds(a.id, b.id));
+  return out;
+}
+
 // blocks: access.blocks ({ pop, hu, lat, lng, miles }, baseline miles).
 // threshold: access.threshold (T miles). lowIncome: access.lowIncome.
 // candidates: [{ id, lat, lng, label, kind, sqft?, name? }]; omitted or

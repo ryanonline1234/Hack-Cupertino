@@ -95,7 +95,7 @@ Both are deterministic code; no model runs at runtime.
 | Urban, low-income, SRAM flags, no-vehicle units; 2019 LRAM flags | USDA ERS Food Access Research Atlas, 2025 straight-line release and 2019 release | pulled 2026-10-03 | `public/data/ers/` |
 | Tracts, blocks (population, housing units, urban/rural, internal points), places | US Census Bureau TIGERweb, 2020 Census | 4 counties bundled 2026-10-03; others live | `public/data/blocks/`, live |
 | Commercial site candidates | OpenStreetMap via Overpass | OSM data 2026-10-03 | `public/data/sites/` (4 counties) |
-| US map flags | USDA ERS Food Access Research Atlas 2019 | committed 2026-04-11 | `public/data/food_atlas.csv` |
+| US map flags | USDA ERS Food Access Research Atlas 2019 + Census 2010 tract internal points | built 2026-10-18 | `public/data/us/usda2019-lila-tracts.json` (`scripts/build-us-lila-tracts.mjs`) |
 | Community profile | Census ACS 5-year 2022 (via `api/acs.js`); CDC PLACES census-tract data (2025 release) | live | — |
 | Search | OpenStreetMap Nominatim; Census geocoder | live | — |
 | Map tiles | OpenStreetMap (tract map); CARTO Voyager (US map) | live | — |
@@ -158,7 +158,7 @@ Rebuild the store snapshot once before the Oct 11 code freeze and never after; r
 
 ## Project structure
 
-Built with React 19, Vite 8, Tailwind CSS 3, Leaflet (maps), GSAP (landing and search-gate animation), PapaParse and vite-plugin-pwa (Workbox); tests use Node's built-in runner.
+Built with React 19, Vite 8, Tailwind CSS 3, Leaflet (maps), GSAP (landing and search-gate animation) and vite-plugin-pwa (Workbox); tests use Node's built-in runner.
 
 ```text
 src/
@@ -187,7 +187,7 @@ src/
 api/acs.js                    # Census ACS for one tract (CENSUS_KEY stays server-side)
 scripts/                      # data builders, store-exclusions.json, check-bundle-for-keys.mjs
 tests/                        # node --test suites (engine, loaders, payload, scenario, City summary, suggestions, plan, URL codec, key guards)
-public/data/                  # committed, dated data: stores/, ers/, blocks/, sites/, food_atlas.csv
+public/data/                  # committed, dated data: stores/, ers/, blocks/, sites/, us/
 docs/                         # specs 01–08, data.md, AI_USE_LOG.md, CAC_SUBMISSION.md (index: docs/README.md)
 vite.config.js, vite-plugin-api-dev.js, vercel.json
 DECISIONS.md, STATE.md, PROJECT_HANDOFF.md, THIRD_PARTY_NOTICES.md

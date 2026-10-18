@@ -51,6 +51,15 @@ const PINS_PANE_Z = 640;
 const SUGGEST_PANE = 'suggestedSites';
 const SUGGEST_PANE_Z = 630;
 const SUGGEST_SIZE = 26;
+// Guide zones (2026-10-18): while placing by hand, the tract's commercial
+// candidates shaded by how many residents a supermarket there would bring
+// within the limit. Visual only, in a pane that takes no pointer events, so a
+// click anywhere still places a store exactly where it lands. Above the tiles
+// and the store canvas, under the markers.
+const ZONES_PANE = 'guideZones';
+const ZONES_PANE_Z = 450;
+const ZONE_FILL = '#f59e0b';
+const ZONE_EDGE = '#b45309';
 
 // The marker's HTML is fixed markup plus the pick's number (an integer), so
 // nothing third-party reaches innerHTML here. Tokens resolve in the DOM, and
@@ -74,6 +83,9 @@ function suggestTooltip(site) {
   return `Suggested site${n} · ${label}${gain}`;
 }
 
+// Armed: the tooltip says what a click on the marker does.
+const ADD_HINT = '<br><strong>Click to add it as a supermarket</strong>';
+
 // The payload's map stores are the tract area + 5 mi, so this cap only
 // matters in the densest cities; nearest stores are kept first.
 const MAX_STORE_MARKERS = 2000;
@@ -88,7 +100,10 @@ const MAX_STORE_MARKERS = 2000;
  *   placeArmed / onPlaceAt(lat, lng)   armed clicks place a store instead of
  *                analyzing the clicked spot
  *   suggestedSites  suggestion picks [{ id, n, lat, lng, kind, sqft, name,
- *                gainText }], drawn as numbered dashed markers (not pins)
+ *                gainText }], drawn as numbered dashed markers (not pins);
+ *                while armed, clicking one calls onSuggestedPick(n - 1)
+ *   zones        guide zones [{ lat, lng, gain }] (best first), drawn while
+ *                placing; they never take clicks
  */
 export default function MapView({
   center = { lat: 39.5, lng: -98.35 },
@@ -102,6 +117,8 @@ export default function MapView({
   placeArmed = false,
   onPlaceAt,
   suggestedSites = [],
+  onSuggestedPick,
+  zones = [],
   // True when the map is actually shown. The parent keeps both renderers
   // mounted and hides the inactive one, so a Leaflet map initialized while
   // hidden measures 0×0 — this effect re-syncs size the moment it appears.
@@ -113,6 +130,8 @@ export default function MapView({
   const storesLayerRef = useRef(null);
   const pinsLayerRef = useRef(null);
   const suggestLayerRef = useRef(null);
+  const zonesLayerRef = useRef(null);
+  const onSuggestedPickRef = useRef(onSuggestedPick);
   const rendererRef = useRef(null);
   // Refs mirror the latest props for the once-bound map click handler.
   const placeArmedRef = useRef(placeArmed);
@@ -122,7 +141,8 @@ export default function MapView({
   useEffect(() => {
     placeArmedRef.current = placeArmed;
     onPlaceAtRef.current = onPlaceAt;
-  }, [placeArmed, onPlaceAt]);
+    onSuggestedPickRef.current = onSuggestedPick;
+  }, [placeArmed, onPlaceAt, onSuggestedPick]);
 
   useEffect(() => {
     if (mapInstance.current) return;
@@ -138,6 +158,9 @@ export default function MapView({
     // location marker, whichever layer happened to be added first.
     map.createPane(PINS_PANE).style.zIndex = String(PINS_PANE_Z);
     map.createPane(SUGGEST_PANE).style.zIndex = String(SUGGEST_PANE_Z);
+    const zonesPane = map.createPane(ZONES_PANE);
+    zonesPane.style.zIndex = String(ZONES_PANE_Z);
+    zonesPane.style.pointerEvents = 'none';
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -301,7 +324,8 @@ export default function MapView({
 
   // Suggested sites: visual only (the list in the Tract view is the
   // keyboard and screen-reader surface), so the markers take no tab stops.
-  // Marker clicks don't reach the map, so they never re-analyze or place.
+  // Marker clicks don't reach the map, so they never re-analyze or place a
+  // pin where they land; while armed, a click adds that suggested site.
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
@@ -328,11 +352,45 @@ export default function MapView({
         pane: SUGGEST_PANE,
         keyboard: false,
         riseOnHover: true,
-      }).bindTooltip(suggestTooltip(s), { direction: 'top' })),
+      })
+        .bindTooltip(suggestTooltip(s) + (placeArmed ? ADD_HINT : ''), { direction: 'top' })
+        .on('click', () => {
+          if (placeArmedRef.current) onSuggestedPickRef.current?.(s.n - 1);
+        })),
     );
     layer.addTo(map);
     suggestLayerRef.current = layer;
-  }, [suggestedSites]);
+  }, [suggestedSites, placeArmed]);
+
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map) return;
+    if (zonesLayerRef.current) {
+      zonesLayerRef.current.remove();
+      zonesLayerRef.current = null;
+    }
+    const list = Array.isArray(zones) ? zones.filter((z) => Number.isFinite(z?.lat) && Number.isFinite(z?.lng) && z.gain > 0) : [];
+    if (list.length === 0) return;
+    const best = Math.max(...list.map((z) => z.gain));
+    const layer = L.layerGroup(
+      list.map((z) => {
+        const t = z.gain / best;
+        return L.circleMarker([z.lat, z.lng], {
+          pane: ZONES_PANE,
+          interactive: false,
+          bubblingMouseEvents: true,
+          radius: 4 + 7 * Math.sqrt(t),
+          color: ZONE_EDGE,
+          weight: 1,
+          opacity: 0.35 + 0.45 * t,
+          fillColor: ZONE_FILL,
+          fillOpacity: 0.12 + 0.4 * t,
+        });
+      }),
+    );
+    layer.addTo(map);
+    zonesLayerRef.current = layer;
+  }, [zones]);
 
   useEffect(() => {
     const map = mapInstance.current;

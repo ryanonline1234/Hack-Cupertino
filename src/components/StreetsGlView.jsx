@@ -191,6 +191,12 @@ function SuggestionIcon({ cls }) {
  *                 sqft, name, gainText }]); numbered dashed markers, not pins
  *   suggestStatus  one line about the suggestions for the banner's live
  *                 region (null when there are none)
+ *   onAddSuggested(index), onAddAllSuggested()  add suggestion picks as
+ *                 supermarkets (the banner's suggestion row and the map markers)
+ *   onPlaceArmedChange(armed)  tells the tracker when placing starts/stops, so
+ *                 it can compute the guide zones
+ *   zones, zonesNote  guide zones for placing by hand ([{ lat, lng, gain }])
+ *                 and one line explaining them (or why there are none)
  */
 export default function StreetsGlView({
   lat,
@@ -212,6 +218,11 @@ export default function StreetsGlView({
   onSuggestSites,
   suggestedSites = [],
   suggestStatus = null,
+  onAddSuggested,
+  onAddAllSuggested,
+  onPlaceArmedChange,
+  zones = [],
+  zonesNote = null,
 }) {
   const placedPins = Array.isArray(placedStores) ? placedStores : Array.isArray(pins) ? pins : [];
   const [query, setQuery]               = useState('');
@@ -224,10 +235,11 @@ export default function StreetsGlView({
   const [mapError, setMapError]         = useState('');
   const [iframeRetry, setIframeRetry]   = useState(0);
   const [rendererMode, setRendererMode] = useState(() => getInitialRendererMode());
-  // Highlight mode: locks the iframe camera to top-down + paints our own
-  // green grocery-store markers on top using Mercator projection.
-  // Shared scenario links carry hl=1 so sources highlight on arrival.
-  const [highlight, setHighlight]       = useState(() => {
+  // Highlight mode (3D only): locks the iframe camera to top-down + paints our
+  // own green grocery-store markers on top using Mercator projection. Shared
+  // scenario links carry hl=1. The toggle button was removed on 2026-10-18;
+  // 2D always draws the counted supermarkets.
+  const [highlight]                     = useState(() => {
     try {
       return decodeAppState(window.location.hash).highlight === true;
     } catch {
@@ -306,6 +318,11 @@ export default function StreetsGlView({
     ro.observe(dock);
     return () => ro.disconnect();
   }, []);
+
+  // The tracker computes the guide zones only while placing.
+  useEffect(() => {
+    onPlaceArmedChange?.(placeArmed);
+  }, [placeArmed, onPlaceArmedChange]);
 
   // Move focus only after the armed banner has mounted (or unmounted).
   useEffect(() => {
@@ -530,7 +547,9 @@ export default function StreetsGlView({
   const busy = isLoading || geocoding;
   const atPinLimit = placedPins.length >= MAX_SHARED_PINS;
   const formatNote = storeFormatInfo(placeFormat).note;
-  const showStoreLayer = highlight || placeArmed;
+  // Counted supermarkets are always drawn once there is data (2026-10-18:
+  // the Highlight Food toggle was removed). 3D keeps its highlight camera.
+  const showStoreLayer = hasData || highlight;
   // The scenario card (left-4, 320px) shows whenever pins exist; on a wide
   // enough map the banner dock moves beside it instead of under it.
   const dockLeft = placedPins.length > 0 && viewport.width >= DOCK_BESIDE_CARD_MIN_WIDTH ? 352 : 8;
@@ -568,6 +587,8 @@ export default function StreetsGlView({
           placeArmed={placeArmed}
           onPlaceAt={placeStore}
           suggestedSites={suggestedSites}
+          onSuggestedPick={onAddSuggested}
+          zones={placeArmed ? zones : []}
           visible={useFallbackMap}
         />
       </div>
@@ -867,50 +888,36 @@ export default function StreetsGlView({
             })}
           </div>
           {formatNote && <p className="text-white/55 leading-snug">{formatNote}</p>}
-          {/* Always mounted so the live region announces the first update. */}
-          <p className={suggestStatus ? 'text-white/70 leading-snug' : 'sr-only'} role="status" aria-live="polite">
-            {suggestStatus ?? ''}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-white/60">
+          {/* By hand: click anywhere, or drop exactly at the searched spot. */}
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Place by hand">
+            <span className="text-white/75">
               {atPinLimit
                 ? `${MAX_SHARED_PINS}-store limit reached`
                 : useFallbackMap
-                  ? 'Click the map to place a store'
+                  ? 'Click anywhere on the map to place a store'
                   : '3D drops at analysis center · 2D places exactly'}
             </span>
             <span className="font-semibold" style={{ color: 'var(--cyan)' }}>
               {placedPins.length} placed
             </span>
             <span className="flex-1" />
-            {typeof onSuggestSites === 'function' && (
-              <button
-                type="button"
-                onClick={() => onSuggestSites()}
-                title="Find where a supermarket would bring the most residents within the distance limit (distance only)"
-                className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--cyan)]"
-                style={{
-                  background: 'color-mix(in srgb, var(--orange) 12%, transparent)',
-                  border: '1px dashed color-mix(in srgb, var(--orange) 55%, transparent)',
-                  color: 'var(--orange)',
-                }}
-              >
-                Suggest sites
-              </button>
-            )}
             <button
               type="button"
               disabled={atPinLimit}
               onClick={() => placeStore(lat, lng)}
-              title="Place a store at the analyzed spot"
-              className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press disabled:opacity-40"
+              title="Place a store exactly at the point you searched (the blue pin), not at a suggested site"
+              className="inline-flex items-center gap-1.5 rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press disabled:opacity-40"
               style={{
-                background: 'rgba(34,211,238,0.15)',
-                border: '1px solid rgba(34,211,238,0.4)',
+                background: 'rgba(34,211,238,0.10)',
+                border: '1px solid rgba(34,211,238,0.35)',
                 color: 'var(--cyan)',
               }}
             >
-              Drop here
+              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M6 11s4-3.6 4-6.5A4 4 0 0 0 2 4.5C2 7.4 6 11 6 11Z" stroke="currentColor" strokeWidth="1.4" />
+                <circle cx="6" cy="4.5" r="1.3" fill="currentColor" />
+              </svg>
+              Drop at searched spot
             </button>
             {onUndoPin && (
               <button
@@ -934,6 +941,85 @@ export default function StreetsGlView({
                 Clear
               </button>
             )}
+          </div>
+          {useFallbackMap && zonesNote && (
+            <p className="flex items-start gap-1.5 leading-snug" style={{ color: 'rgba(255,255,255,0.62)' }}>
+              <span aria-hidden="true" className="mt-0.5 block shrink-0 w-2.5 h-2.5 rounded-full" style={{ background: 'rgba(245,158,11,0.55)', border: '1px solid #b45309' }} />
+              <span>{zonesNote}</span>
+            </p>
+          )}
+
+          {/* Suggested: its own box, so its buttons never read as "drop here". */}
+          {(typeof onSuggestSites === 'function' || suggestedSites.length > 0) && (
+            <div
+              role="group"
+              aria-label="Suggested sites"
+              className="flex flex-wrap items-center gap-2 rounded-xl px-2.5 py-2"
+              style={{ border: '1px dashed color-mix(in srgb, var(--orange) 45%, transparent)', background: 'color-mix(in srgb, var(--orange) 5%, transparent)' }}
+            >
+              <span className="font-semibold" style={{ color: 'var(--orange)' }}>Suggested sites</span>
+              <span className="text-white/50">distance only</span>
+              <span className="flex-1" />
+              {suggestedSites.length === 0 && typeof onSuggestSites === 'function' && (
+                <button
+                  type="button"
+                  onClick={() => onSuggestSites()}
+                  title="Find where a supermarket would bring the most residents within the distance limit (distance only)"
+                  className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--cyan)]"
+                  style={{
+                    background: 'color-mix(in srgb, var(--orange) 12%, transparent)',
+                    border: '1px dashed color-mix(in srgb, var(--orange) 55%, transparent)',
+                    color: 'var(--orange)',
+                  }}
+                >
+                  Suggest sites
+                </button>
+              )}
+              {suggestedSites.map((site) => (
+                <button
+                  key={site.id}
+                  type="button"
+                  disabled={atPinLimit || typeof onAddSuggested !== 'function'}
+                  onClick={() => onAddSuggested?.(site.n - 1)}
+                  title={`Add suggested site ${site.n} as a supermarket${site.gainText ? ` (${site.gainText})` : ''}`}
+                  className="inline-flex items-center gap-1.5 rounded-full pl-1 pr-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press disabled:opacity-40"
+                  style={{
+                    background: 'color-mix(in srgb, var(--orange) 12%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--orange) 50%, transparent)',
+                    color: 'var(--orange)',
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="inline-flex items-center justify-center rounded-full text-[10px] font-bold"
+                    style={{ width: 20, height: 20, border: '2px dashed var(--orange)', background: 'var(--void)' }}
+                  >
+                    {site.n}
+                  </span>
+                  Add site {site.n}
+                  {site.gainShort && <span className="font-normal text-white/60">{site.gainShort}</span>}
+                </button>
+              ))}
+              {suggestedSites.length > 1 && typeof onAddAllSuggested === 'function' && (
+                <button
+                  type="button"
+                  disabled={placedPins.length + suggestedSites.length > MAX_SHARED_PINS}
+                  onClick={() => onAddAllSuggested()}
+                  className="rounded-full px-2.5 min-h-[32px] text-[11px] transition-colors btn-press disabled:opacity-40"
+                  style={{ border: '1px solid color-mix(in srgb, var(--orange) 35%, transparent)', color: 'rgba(255,255,255,0.75)' }}
+                >
+                  Add all
+                </button>
+              )}
+              {/* Always mounted so the live region announces the first update. */}
+              <p className={suggestStatus ? 'basis-full text-white/70 leading-snug' : 'sr-only'} role="status" aria-live="polite">
+                {suggestStatus ?? ''}
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex-1" />
             <button
               type="button"
               onClick={() => onShareScenario?.()}
@@ -1065,31 +1151,6 @@ export default function StreetsGlView({
             title="Bypass cache and fetch fresh tract data"
           >
             Fresh Data
-          </button>
-
-          {/* Counted-store toggle. 3D: hash-teleports the camera top-down
-              (no reload) and overlays green markers for the counted SNAP
-              supermarkets near the tract. 2D: toggles a native Leaflet
-              marker layer with the same data. */}
-          <button
-            type="button"
-            disabled={!hasData}
-            onClick={() => setHighlight((v) => !v)}
-            className="shrink-0 px-3.5 py-3 md:py-2.5 rounded-full text-xs font-semibold transition-all disabled:opacity-40 btn-press"
-            style={{
-              background: onDark(highlight ? 'rgba(0,255,153,0.18)' : 'rgba(0,255,153,0.06)'),
-              border: `1px solid ${highlight ? 'rgba(0,255,153,0.55)' : 'rgba(0,255,153,0.22)'}`,
-              color: 'var(--neon)',
-              backdropFilter: 'blur(20px)',
-              boxShadow: highlight ? '0 0 12px rgba(0,255,153,0.25)' : 'none',
-            }}
-            title={
-              highlight
-                ? 'Hide the counted supermarkets'
-                : 'Show the supermarkets USDA counts (SNAP Supermarket and Super Store) in green'
-            }
-          >
-            {highlight ? 'Hide Sources' : 'Highlight Food'}
           </button>
 
           {/* Place-a-store arming. Disabled without analysis data; placing
@@ -1324,9 +1385,11 @@ export default function StreetsGlView({
         </div>
       )}
 
-      {/* Center crosshair: marks the analyzed point. Hidden in highlight
-          mode (store markers already cover the map) and while loading. */}
-      {hasData && !isLoading && !highlight && (
+      {/* Center crosshair: marks the analyzed point in 3D. Hidden in 2D, where
+          it is pinned to the container's center and drifts off the searched
+          point as soon as the map pans (the blue pin marks it there), in
+          highlight mode and while loading. */}
+      {hasData && !isLoading && !highlight && !useFallbackMap && (
         <div
           className="absolute inset-0 flex items-center justify-center pointer-events-none"
           style={{ zIndex: 5 }}

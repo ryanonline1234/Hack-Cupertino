@@ -1,218 +1,222 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import Papa from 'papaparse';
 import { escapeHtml } from '../lib/storeTooltip';
+import {
+  decodeLilaTracts,
+  lilaDotRadius,
+  summarizeLilaTracts,
+  topStatesByTracts,
+  tractsInBounds,
+} from '../lib/usLilaTracts';
 
 /*
- * Judge Notes: Top 10 Complexity Hotspots
- * 1) The USDA ERS 2019 Food Access Research Atlas CSV (LRAM, 2010 tracts) is parsed
- *    client-side and reduced into state-level aggregates at load time.
- * 2) "Flagged" means LILATracts_1And10 = 1: low income & low access on the 2019
- *    supermarket map (1 mi urban / 10 mi rural), as USDA published it.
- * 3) Map rendering must keep marker density readable at national zoom without overwhelming the user.
- * 4) Zoom and pan listeners recalculate in-view summaries to shift from broad to specific context.
- * 5) Out-of-view states are de-emphasized after threshold zoom to direct attention spatially.
- * 6) Marker styles encode both category and confidence while remaining color-accessible.
- * 7) Performance safeguards prevent repeated expensive reductions during rapid map interaction.
- * 8) Initial preloaded mode supports immediate exploration before any location search is performed.
- * 9) The summary panel cross-checks visible vs national totals for trustworthy storytelling.
- * 10) Data and view logic are composed to keep this mode independent from tracker-specific assumptions.
+ * Judge Notes: complexity hotspots
+ * 1) One dot per 2010 census tract USDA flagged LILATracts_1And10 = 1 on the
+ *    published 2019 Food Access Research Atlas (low income & low access,
+ *    supermarkets, 1 mi urban / 10 mi rural). Flags are USDA's, not ours.
+ * 2) Dots sit at the Census 2010 Gazetteer internal point, joined at build
+ *    time (scripts/build-us-lila-tracts.mjs -> public/data/us/).
+ * 3) ~9,300 dots draw on one canvas (preferCanvas), with a hit tolerance so
+ *    tiny dots stay hoverable and tappable.
+ * 4) Dot area tracks low-access residents (sqrt radius), small at national
+ *    zoom and growing a little as you zoom in.
+ * 5) The summary counts the dots in the current window (debounced on
+ *    moveend) next to the national totals.
+ * 6) Every string that reaches a tooltip or popup goes through escapeHtml.
  */
 
-const DETAIL_ZOOM_THRESHOLD = 5;
+const DATA_URL = '/data/us/usda2019-lila-tracts.json';
+const CONTIGUOUS_US = [
+  [24.5, -124.8],
+  [49.4, -66.9],
+];
+const SUMMARY_DEBOUNCE_MS = 140;
+// --danger from src/index.css (fill) with a darker rim so dots hold up on the
+// light basemap. Urban tracts are solid; rural tracts are rings.
+const DOT_FILL = '#ff6b6b';
+const DOT_RIM = '#9b1c1c';
+const LEGEND_SIZES = [500, 2000, 8000];
 
-const STATE_CENTROIDS = {
-  Alabama: [32.806671, -86.79113],
-  Alaska: [61.370716, -152.404419],
-  Arizona: [33.729759, -111.431221],
-  Arkansas: [34.969704, -92.373123],
-  California: [36.116203, -119.681564],
-  Colorado: [39.059811, -105.311104],
-  Connecticut: [41.597782, -72.755371],
-  Delaware: [39.318523, -75.507141],
-  'District of Columbia': [38.9072, -77.0369],
-  Florida: [27.766279, -81.686783],
-  Georgia: [33.040619, -83.643074],
-  Hawaii: [21.094318, -157.498337],
-  Idaho: [44.240459, -114.478828],
-  Illinois: [40.349457, -88.986137],
-  Indiana: [39.849426, -86.258278],
-  Iowa: [42.011539, -93.210526],
-  Kansas: [38.5266, -96.726486],
-  Kentucky: [37.66814, -84.670067],
-  Louisiana: [31.169546, -91.867805],
-  Maine: [44.693947, -69.381927],
-  Maryland: [39.063946, -76.802101],
-  Massachusetts: [42.230171, -71.530106],
-  Michigan: [43.326618, -84.536095],
-  Minnesota: [45.694454, -93.900192],
-  Mississippi: [32.741646, -89.678696],
-  Missouri: [38.456085, -92.288368],
-  Montana: [46.921925, -110.454353],
-  Nebraska: [41.12537, -98.268082],
-  Nevada: [38.313515, -117.055374],
-  'New Hampshire': [43.452492, -71.563896],
-  'New Jersey': [40.298904, -74.521011],
-  'New Mexico': [34.840515, -106.248482],
-  'New York': [42.165726, -74.948051],
-  'North Carolina': [35.630066, -79.806419],
-  'North Dakota': [47.528912, -99.784012],
-  Ohio: [40.388783, -82.764915],
-  Oklahoma: [35.565342, -96.928917],
-  Oregon: [44.572021, -122.070938],
-  Pennsylvania: [40.590752, -77.209755],
-  'Rhode Island': [41.680893, -71.51178],
-  'South Carolina': [33.856892, -80.945007],
-  'South Dakota': [44.299782, -99.438828],
-  Tennessee: [35.747845, -86.692345],
-  Texas: [31.054487, -97.563461],
-  Utah: [40.150032, -111.862434],
-  Vermont: [44.045876, -72.710686],
-  Virginia: [37.769337, -78.169968],
-  Washington: [47.400902, -121.490494],
-  'West Virginia': [38.491226, -80.954453],
-  Wisconsin: [44.268543, -89.616508],
-  Wyoming: [42.755966, -107.30249],
+const fmtInt = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString('en-US') : 'not published');
+const fmtPct = (n) => (Number.isFinite(n) ? `${n.toFixed(1)}%` : 'not published');
+const fmtUsd = (n) => (Number.isFinite(n) ? `$${Math.round(n).toLocaleString('en-US')}` : 'not published');
+
+// Thinner rims and lighter fills at national zoom so overlapping dots read
+// as density instead of one solid mass.
+function dotStyle(tract, zoom) {
+  const far = zoom < 6;
+  return {
+    radius: lilaDotRadius(tract.lowAccess, zoom),
+    color: DOT_RIM,
+    weight: tract.urban ? (far ? 0.35 : 0.7) : far ? 0.9 : 1.4,
+    opacity: 0.85,
+    fillColor: DOT_FILL,
+    fillOpacity: tract.urban ? (far ? 0.6 : 0.75) : 0.35,
+  };
+}
+
+function tractTooltipHtml(t) {
+  return `<div class="usmap-tip-title">${escapeHtml(t.county)}, ${escapeHtml(t.state)}</div>
+    <div class="usmap-tip-sub">Tract ${escapeHtml(t.geoid)} · ${t.urban ? 'Urban' : 'Rural'}</div>
+    <div>Low-access residents: <b>${escapeHtml(fmtInt(t.lowAccess))}</b></div>
+    <div>Poverty rate: <b>${escapeHtml(fmtPct(t.povertyRate))}</b></div>`;
+}
+
+function tractLabel(t) {
+  return `${t.county}, ${t.state} (tract ${t.geoid})`;
+}
+
+function tractPopupElement(t, onOpenTract, close) {
+  const el = document.createElement('div');
+  el.innerHTML = `<div class="usmap-tip-title">${escapeHtml(t.county)}, ${escapeHtml(t.state)}</div>
+    <div class="usmap-tip-sub">2010 census tract ${escapeHtml(t.geoid)}<br/>${t.urban ? 'Urban tract (1 mile test)' : 'Rural tract (10 mile test)'}</div>
+    <div>Low-access residents: <b>${escapeHtml(fmtInt(t.lowAccess))}</b></div>
+    <div>Of them, low income: <b>${escapeHtml(fmtInt(t.lowIncomeLowAccess))}</b></div>
+    <div>Poverty rate: <b>${escapeHtml(fmtPct(t.povertyRate))}</b></div>
+    <div>Median family income: <b>${escapeHtml(fmtUsd(t.medianFamilyIncome))}</b></div>
+    <div class="usmap-tip-note">USDA 2019 flag, as published</div>
+    ${onOpenTract ? '<button type="button" class="usmap-analyze">Analyze this tract</button>' : ''}`;
+  const button = el.querySelector('.usmap-analyze');
+  if (button) {
+    button.addEventListener('click', () => {
+      close();
+      onOpenTract({ lat: t.lat, lng: t.pointLng, label: tractLabel(t) });
+    });
+  }
+  return el;
+}
+
+// Tooltip and popup skin: the dark glass of the panels below, scoped to this view.
+const OVERLAY_CSS = `
+.usmap-tip.leaflet-tooltip {
+  background: rgba(5, 6, 8, 0.92);
+  color: rgba(232, 237, 244, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 7px 9px;
+  font: 11.5px/1.45 Inter, system-ui, sans-serif;
+}
+.usmap-tip.leaflet-tooltip-top::before { border-top-color: rgba(5, 6, 8, 0.92); }
+.usmap-tip b, .usmap-popup b { color: #fff; font-weight: 600; }
+.usmap-tip-title { font-weight: 600; color: #fff; }
+.usmap-tip-sub { color: rgba(232, 237, 244, 0.6); margin-bottom: 3px; }
+.usmap-tip-note { color: rgba(232, 237, 244, 0.5); margin-top: 4px; font-size: 10.5px; }
+.usmap-popup .leaflet-popup-content-wrapper,
+.usmap-popup .leaflet-popup-tip {
+  background: rgba(5, 6, 8, 0.95);
+  color: rgba(232, 237, 244, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+.usmap-popup .leaflet-popup-content { margin: 11px 13px; font: 12px/1.5 Inter, system-ui, sans-serif; }
+.usmap-popup a.leaflet-popup-close-button { color: rgba(232, 237, 244, 0.55); }
+.usmap-popup a.leaflet-popup-close-button:hover { color: #fff; }
+.usmap-analyze {
+  margin-top: 9px;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 10px;
+  font: 600 12px/1.2 Inter, system-ui, sans-serif;
+  color: #04130b;
+  background: var(--neon, #5ef2a0);
+  cursor: pointer;
+}
+.usmap-analyze:hover { filter: brightness(1.08); }
+.usmap-analyze:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+`;
+
+const panelStyle = {
+  background: 'rgba(5, 6, 8, 0.84)',
+  border: '1px solid rgba(255,255,255,0.1)',
+  color: 'rgba(232,237,244,0.88)',
+  backdropFilter: 'blur(12px)',
+  WebkitBackdropFilter: 'blur(12px)',
 };
 
-function formatRate(rate) {
-  return `${(rate * 100).toFixed(1)}%`;
+function LegendDot({ radius, urban = true }) {
+  const size = Math.ceil(radius * 2 + 3);
+  return (
+    <svg width={size} height={size} aria-hidden="true" className="shrink-0">
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill={DOT_FILL}
+        fillOpacity={urban ? 0.75 : 0.35}
+        stroke={DOT_RIM}
+        strokeWidth={urban ? 0.7 : 1.4}
+      />
+    </svg>
+  );
 }
 
-// Sequential orange scale (pale -> deep): darker means a higher share of
-// tracts flagged low income & low access on the 2019 map. Single-hue reads for red-green colorblind viewers,
-// unlike the previous green/red diverging scale.
-const RATE_STOPS = [
-  [254, 232, 200],
-  [253, 187, 132],
-  [227, 74, 51],
-];
-
-function rateToColor(rate) {
-  const clamped = Math.min(1, Math.max(0, rate));
-  const scaled = clamped * (RATE_STOPS.length - 1);
-  const i = Math.min(RATE_STOPS.length - 2, Math.floor(scaled));
-  const t = scaled - i;
-  const [r1, g1, b1] = RATE_STOPS[i];
-  const [r2, g2, b2] = RATE_STOPS[i + 1];
-  const mix = (a, b) => Math.round(a + (b - a) * t);
-  return `rgb(${mix(r1, r2)}, ${mix(g1, g2)}, ${mix(b1, b2)})`;
-}
-
-function radiusForTracts(totalTracts) {
-  return Math.max(7, Math.min(20, 6 + Math.log10(totalTracts + 1) * 3.2));
-}
-
-function summarize(rows) {
-  const states = rows.length;
-  const totalTracts = rows.reduce((sum, row) => sum + row.total, 0);
-  const designatedTracts = rows.reduce((sum, row) => sum + row.designated, 0);
-  const designationRate = totalTracts > 0 ? designatedTracts / totalTracts : 0;
-  return { states, totalTracts, designatedTracts, designationRate };
-}
-
-function aggregateByState(rows) {
-  const grouped = new Map();
-
-  for (const row of rows) {
-    const state = String(row.State || '').trim();
-    if (!state) continue;
-
-    if (!grouped.has(state)) {
-      grouped.set(state, { state, designated: 0, notDesignated: 0, total: 0 });
-    }
-
-    const bucket = grouped.get(state);
-    const designated = Number(row.LILATracts_1And10) === 1;
-    bucket.total += 1;
-    if (designated) bucket.designated += 1;
-    else bucket.notDesignated += 1;
-  }
-
-  return Array.from(grouped.values())
-    .map((entry) => ({
-      ...entry,
-      rate: entry.total > 0 ? entry.designated / entry.total : 0,
-      centroid: STATE_CENTROIDS[entry.state] || null,
-    }))
-    .filter((entry) => Array.isArray(entry.centroid));
-}
-
-export default function DesignationAtlasView() {
+/**
+ * US map of USDA's published 2019 low-income & low-access tracts.
+ *
+ * @param {{ onOpenTract?: (tract: { lat: number, lng: number, label: string }) => void }} props
+ *   onOpenTract (optional): called from a dot's popup ("Analyze this tract")
+ *   with the tract's 2010 internal point and a "County, State (tract GEOID)"
+ *   label. Without it the popup has no button.
+ */
+export default function DesignationAtlasView({ onOpenTract } = {}) {
   const rootRef = useRef(null);
   const mapRef = useRef(null);
-  const layerRef = useRef(null);
+  const onOpenTractRef = useRef(onOpenTract);
 
-  const [stateStats, setStateStats] = useState([]);
+  const [tracts, setTracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [mapZoom, setMapZoom] = useState(4);
-  const [visibleStateStats, setVisibleStateStats] = useState([]);
+  const [inView, setInView] = useState(null);
 
-  const summary = useMemo(() => {
-    return summarize(stateStats);
-  }, [stateStats]);
+  useEffect(() => {
+    onOpenTractRef.current = onOpenTract;
+  }, [onOpenTract]);
 
-  const focusedSummary = useMemo(() => summarize(visibleStateStats), [visibleStateStats]);
-
-  const topNationalByRate = useMemo(() => {
-    return [...stateStats].sort((a, b) => b.rate - a.rate).slice(0, 5);
-  }, [stateStats]);
-
-  const topVisibleByRate = useMemo(() => {
-    return [...visibleStateStats].sort((a, b) => b.rate - a.rate).slice(0, 6);
-  }, [visibleStateStats]);
-
-  const visibleStateSet = useMemo(() => {
-    return new Set(visibleStateStats.map((row) => row.state));
-  }, [visibleStateStats]);
+  const national = useMemo(() => summarizeLilaTracts(tracts), [tracts]);
 
   useEffect(() => {
     let active = true;
-
-    async function loadDesignationData() {
-      setLoading(true);
-      setError('');
-
+    (async () => {
       try {
-        const response = await fetch('/data/food_atlas.csv');
-        if (!response.ok) throw new Error('Unable to load the USDA 2019 Food Access Research Atlas.');
-
-        const text = await response.text();
-        const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
-        const rows = parsed?.data || [];
-        const aggregated = aggregateByState(rows);
-
-        if (active) {
-          setStateStats(aggregated);
-        }
+        const response = await fetch(DATA_URL);
+        if (!response.ok) throw new Error('Unable to load the USDA 2019 Food Access Research Atlas tracts.');
+        const decoded = decodeLilaTracts(await response.json());
+        if (active) setTracts(decoded);
       } catch (err) {
-        if (active) {
-          setError(err?.message || 'Unable to build the USDA 2019 low-income & low-access map.');
-        }
+        if (active) setError(err?.message || 'Unable to build the USDA 2019 low-income & low-access map.');
       } finally {
         if (active) setLoading(false);
       }
-    }
-
-    loadDesignationData();
+    })();
     return () => {
       active = false;
     };
   }, []);
 
   useEffect(() => {
-    if (mapRef.current || !rootRef.current) return;
+    if (mapRef.current || !rootRef.current) return undefined;
 
     const map = L.map(rootRef.current, {
-      center: [39.3, -98.6],
+      preferCanvas: true,
+      center: [39.3, -96.5],
       zoom: 4,
       minZoom: 3,
-      maxZoom: 8,
-      zoomControl: true,
+      maxZoom: 12,
+      // Quarter steps so the lower 48 can fill the window on any screen.
+      zoomSnap: 0.25,
+      zoomDelta: 0.5,
+      zoomControl: false,
       attributionControl: true,
     });
+    // Keep the zoom buttons clear of the panels: top-right beside the
+    // summary on wider screens; bottom-right on phones, where the summary
+    // spans the top.
+    const width = rootRef.current.clientWidth;
+    L.control.zoom({ position: width >= 640 ? 'topright' : 'bottomright' }).addTo(map);
 
     // CARTO basemaps require an API key on the keyed raster endpoint (no
     // {s} subdomains there). The key is public-by-design for raster tiles;
@@ -224,158 +228,209 @@ export default function DesignationAtlasView() {
       maxZoom: 19,
     }).addTo(map);
 
+    // Lower 48 in view, clear of the panels: beside the summary on wide
+    // screens, between the summary and the legend otherwise.
+    let padding;
+    if (width >= 900) padding = { paddingTopLeft: [370, 10], paddingBottomRight: [10, 10] };
+    else if (width >= 640) padding = { paddingTopLeft: [10, 345], paddingBottomRight: [10, 130] };
+    else padding = { paddingTopLeft: [8, 235], paddingBottomRight: [8, 110] };
+    map.fitBounds(CONTIGUOUS_US, padding);
+
     mapRef.current = map;
+    if (import.meta.env.DEV) window.__usMap = map;
     return () => {
+      if (import.meta.env.DEV && window.__usMap === map) delete window.__usMap;
       map.remove();
       mapRef.current = null;
-      layerRef.current = null;
     };
   }, []);
 
+  // Dots: one canvas layer, rebuilt only when the data changes.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !tracts.length) return undefined;
 
-    function updateViewportStats() {
-      setMapZoom(map.getZoom());
-
-      if (!stateStats.length) {
-        setVisibleStateStats([]);
-        return;
-      }
-
-      const bounds = map.getBounds();
-      const visible = stateStats.filter((row) => bounds.contains(row.centroid));
-      setVisibleStateStats(visible);
+    const renderer = L.canvas({ padding: 0.5, tolerance: 5 });
+    const group = L.featureGroup();
+    const zoom = map.getZoom();
+    for (const t of tracts) {
+      const marker = L.circleMarker([t.lat, t.lng], { renderer, ...dotStyle(t, zoom) });
+      marker.tract = t;
+      group.addLayer(marker);
     }
 
-    updateViewportStats();
-    map.on('zoomend moveend', updateViewportStats);
-
-    return () => {
-      map.off('zoomend moveend', updateViewportStats);
-    };
-  }, [stateStats]);
-
-  useEffect(() => {
-    if (!mapRef.current) return;
-
-    if (layerRef.current) {
-      layerRef.current.remove();
-      layerRef.current = null;
-    }
-
-    if (!stateStats.length) return;
-
-    const renderer = L.canvas({ padding: 0.4 });
-    const layer = L.layerGroup();
-    const zoomMultiplier = mapZoom >= DETAIL_ZOOM_THRESHOLD ? 1.2 : 1;
-
-    stateStats.forEach((row) => {
-      const color = rateToColor(row.rate);
-      const isFocused = visibleStateSet.has(row.state);
-      const dimMarker = mapZoom >= DETAIL_ZOOM_THRESHOLD && !isFocused;
-      const marker = L.circleMarker(row.centroid, {
-        renderer,
-        radius: radiusForTracts(row.total) * zoomMultiplier,
-        color: dimMarker ? color : '#7c2d12',
-        fillColor: color,
-        fillOpacity: dimMarker ? 0.2 : 0.8,
-        weight: dimMarker ? 0.8 : 1.5,
-        opacity: dimMarker ? 0.35 : 0.95,
-      });
-
-      marker.bindPopup(
-        `<div style="min-width: 220px; font-family: Inter, system-ui, sans-serif;">
-          <strong>${escapeHtml(row.state)}</strong><br/>
-          Low income &amp; low access (USDA 2019 LRAM): ${row.designated.toLocaleString()}<br/>
-          Not flagged: ${row.notDesignated.toLocaleString()}<br/>
-          2010 census tracts: ${row.total.toLocaleString()}<br/>
-          Share flagged: ${formatRate(row.rate)}
-        </div>`,
-      );
-
-      layer.addLayer(marker);
+    group.bindTooltip((layer) => tractTooltipHtml(layer.tract), {
+      className: 'usmap-tip',
+      direction: 'top',
+      offset: [0, -5],
+      opacity: 1,
     });
 
-    layer.addTo(mapRef.current);
-    layerRef.current = layer;
-  }, [stateStats, mapZoom, visibleStateSet]);
+    // The canvas hands the click to the top-most dot within tolerance; at
+    // national zoom that can be a neighbor, so open the dot whose center is
+    // nearest the click instead.
+    function nearestTract(e) {
+      // Not e.containerPoint: for small circle markers Leaflet sets it to the
+      // hit dot's center, which is the very guess being corrected here.
+      if (!e.originalEvent || !('clientX' in e.originalEvent)) return null;
+      const at = map.mouseEventToContainerPoint(e.originalEvent);
+      let best = null;
+      let bestD = Infinity;
+      group.eachLayer((marker) => {
+        const p = map.latLngToContainerPoint(marker.getLatLng());
+        const d = Math.hypot(p.x - at.x, p.y - at.y);
+        if (d <= marker.getRadius() + 6 && d < bestD) {
+          best = marker.tract;
+          bestD = d;
+        }
+      });
+      return best;
+    }
+
+    const popup = L.popup({ className: 'usmap-popup', maxWidth: 280, offset: [0, -4], autoPanPadding: [24, 24] });
+    group.on('click', (e) => {
+      const t = nearestTract(e) || e.layer?.tract;
+      if (!t) return;
+      group.closeTooltip();
+      popup
+        .setLatLng([t.lat, t.lng])
+        .setContent(tractPopupElement(t, onOpenTractRef.current, () => map.closePopup(popup)))
+        .openOn(map);
+    });
+
+    function resize() {
+      const z = map.getZoom();
+      group.eachLayer((marker) => marker.setStyle(dotStyle(marker.tract, z)));
+    }
+    map.on('zoomend', resize);
+
+    group.addTo(map);
+    return () => {
+      map.off('zoomend', resize);
+      map.closePopup(popup);
+      group.remove();
+    };
+  }, [tracts]);
+
+  // In-view summary, debounced on moveend (zoomend is followed by moveend).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return undefined;
+    let timer = null;
+
+    function update() {
+      timer = null;
+      setMapZoom(map.getZoom());
+      if (!tracts.length) return;
+      const b = map.getBounds();
+      const visible = tractsInBounds(tracts, {
+        south: b.getSouth(),
+        west: b.getWest(),
+        north: b.getNorth(),
+        east: b.getEast(),
+      });
+      setInView({ ...summarizeLilaTracts(visible), topStates: topStatesByTracts(visible, 4) });
+    }
+    function schedule() {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(update, SUMMARY_DEBOUNCE_MS);
+    }
+
+    schedule();
+    map.on('moveend', schedule);
+    return () => {
+      if (timer) clearTimeout(timer);
+      map.off('moveend', schedule);
+    };
+  }, [tracts]);
+
+  const view = inView || { tracts: 0, lowAccess: 0, lowIncomeLowAccess: 0, topStates: [] };
 
   return (
     <div className="relative w-full h-full overflow-hidden" style={{ background: '#050608' }}>
+      <style>{OVERLAY_CSS}</style>
       <div ref={rootRef} className="w-full h-full" />
 
       <div
-        className="absolute left-3 top-3 z-[1000] rounded-lg px-3 py-2 text-xs max-w-[calc(100vw-1.5rem)] sm:max-w-sm"
-        style={{
-          background: 'rgba(5, 6, 8, 0.84)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          color: 'rgba(232,237,244,0.88)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-        }}
+        data-usmap-summary
+        className="absolute left-3 top-3 z-[1000] rounded-lg px-3 py-2.5 text-xs w-[calc(100%-1.5rem)] sm:w-auto sm:max-w-[21rem]"
+        style={panelStyle}
       >
-        {mapZoom < DETAIL_ZOOM_THRESHOLD ? (
-          <>
-            <div className="font-semibold text-white/90">USDA 2019 low-income &amp; low-access tracts</div>
-            <div className="mt-1 text-white/70">
-              Share of each state&apos;s 2010 census tracts flagged on USDA&apos;s 2019 supermarket map (LRAM: 1 mi urban, 10 mi rural), as published.
+        <div className="font-semibold text-white/90">USDA 2019 low-income &amp; low-access tracts</div>
+        <p className="mt-1 text-[11px] leading-snug text-white/65">
+          USDA&apos;s published 2019 map (Food Access Research Atlas): tracts USDA flagged low income and low access
+          (supermarkets; 1 mile urban, 10 miles rural). Published flags, not this app&apos;s estimate.
+        </p>
+
+        <div className="mt-2.5 text-[10px] uppercase tracking-[0.12em] text-white/45">In view</div>
+        <div className="mt-1 grid grid-cols-2 gap-3">
+          <div>
+            <div className="text-lg font-semibold leading-tight tabular-nums" style={{ color: DOT_FILL }}>
+              {fmtInt(view.tracts)}
             </div>
-            <div className="mt-2 text-white/60">
-              States: {summary.states} · Tracts: {summary.totalTracts.toLocaleString()} · Flagged: {formatRate(summary.designationRate)}
-            </div>
-            <div className="mt-2 text-white/65">Highest shares flagged:</div>
-            <div className="mt-1 space-y-0.5 text-white/55">
-              {topNationalByRate.slice(0, 4).map((row) => (
-                <div key={row.state}>
-                  {row.state}: {formatRate(row.rate)}
+            <div className="text-white/60">flagged tracts</div>
+          </div>
+          <div>
+            <div className="text-lg font-semibold leading-tight tabular-nums text-white/90">{fmtInt(view.lowAccess)}</div>
+            <div className="text-white/60">low-access residents</div>
+          </div>
+        </div>
+        <div className="mt-1 hidden sm:block text-white/50 tabular-nums">
+          {fmtInt(view.lowIncomeLowAccess)} of them low income
+        </div>
+
+        <div className="mt-2 text-white/55 tabular-nums">
+          Nationwide (50 states + DC): {fmtInt(national.tracts)} tracts · {fmtInt(national.lowAccess)} low-access
+          residents
+        </div>
+
+        {view.topStates.length > 0 && (
+          <div className="mt-2 hidden sm:block">
+            <div className="text-white/60">Most flagged tracts in view</div>
+            <div className="mt-0.5 space-y-0.5 text-white/50 tabular-nums">
+              {view.topStates.map((row) => (
+                <div key={row.state} className="flex justify-between gap-4">
+                  <span>{row.state}</span>
+                  <span>{fmtInt(row.tracts)}</span>
                 </div>
               ))}
             </div>
-          </>
-        ) : (
-          <>
-            <div className="font-semibold text-white/90">USDA 2019 low-income &amp; low-access tracts, in view</div>
-            <div className="mt-1 text-white/70">Shares now reflect states in your current map window.</div>
-            <div className="mt-2 text-white/60">
-              In view: {focusedSummary.states} states · {focusedSummary.totalTracts.toLocaleString()} tracts · Flagged: {formatRate(focusedSummary.designationRate)}
-            </div>
-            <div className="mt-2 text-white/65">In-view highest shares flagged:</div>
-            <div className="mt-1 space-y-0.5 text-white/55">
-              {topVisibleByRate.length > 0 ? (
-                topVisibleByRate.map((row) => (
-                  <div key={row.state}>
-                    {row.state}: {formatRate(row.rate)}
-                  </div>
-                ))
-              ) : (
-                <div>Pan/zoom to include state markers.</div>
-              )}
-            </div>
-          </>
+          </div>
+        )}
+        {inView && view.tracts === 0 && !loading && (
+          <div className="mt-2 text-white/50">No flagged tracts in this window. Zoom out or pan.</div>
         )}
       </div>
 
       <div
-        className="absolute right-3 bottom-3 z-[1000] rounded-lg px-3 py-2 text-[11px] max-w-[calc(100vw-1.5rem)]"
-        style={{
-          background: 'rgba(5, 6, 8, 0.84)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          color: 'rgba(232,237,244,0.8)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-        }}
+        className="absolute left-3 bottom-6 sm:bottom-3 z-[1000] rounded-lg px-3 py-2 text-[11px] max-w-[calc(100%-4.5rem)] sm:max-w-[19rem]"
+        style={{ ...panelStyle, color: 'rgba(232,237,244,0.8)' }}
       >
-        <div className="font-medium text-white/80">Legend</div>
-        <div className="mt-1 text-white/55">Zoom ≥ {DETAIL_ZOOM_THRESHOLD}: focus in-view stats</div>
-        <div className="mt-1 flex items-center gap-2">
-          <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: rateToColor(0.1) }} />
-          Lower share flagged (2019 LRAM)
+        <div className="font-medium text-white/80">Each dot is one flagged census tract</div>
+        <div className="mt-1.5 flex items-end gap-3">
+          {LEGEND_SIZES.map((n) => (
+            <div key={n} className="flex items-center gap-1.5">
+              <LegendDot radius={lilaDotRadius(n, mapZoom)} />
+              <span className="tabular-nums text-white/65">{n.toLocaleString('en-US')}</span>
+            </div>
+          ))}
         </div>
-        <div className="mt-1 flex items-center gap-2">
-          <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: rateToColor(0.9) }} />
-          Higher share flagged (2019 LRAM)
+        <div className="mt-1 text-white/55 leading-snug sm:hidden">Dot size: low-access residents</div>
+        <div className="mt-1 text-white/55 leading-snug hidden sm:block">
+          Dot size: low-access residents, people living more than 1 mile from a supermarket (urban tracts) or 10
+          miles (rural tracts).
+        </div>
+        <div className="mt-1.5 flex items-center gap-3 text-white/65">
+          <span className="flex items-center gap-1.5">
+            <LegendDot radius={4} /> Urban
+          </span>
+          <span className="flex items-center gap-1.5">
+            <LegendDot radius={4} urban={false} /> Rural
+          </span>
+          <span className="hidden sm:inline text-white/45">Hover or tap a dot</span>
+        </div>
+        <div className="mt-1 hidden sm:block text-[10px] text-white/40">
+          Dots at 2010 tract internal points (Census 2010 Gazetteer).
         </div>
       </div>
 

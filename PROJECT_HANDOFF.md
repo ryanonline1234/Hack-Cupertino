@@ -175,8 +175,10 @@ self-checks) is in `docs/data.md`. Shapes:
 - `public/data/sites/<SSCCC>.json` — bundled counties only: OpenStreetMap
   commercial-site candidates `[id, lat, lng, kind, sqft, name]` with
   per-kind `counts`, `osmBase` and `license` (ODbL; `README.md` beside them).
-- `public/data/food_atlas.csv` — ERS 2019 atlas for the US map mode only (no
-  builder).
+- `public/data/us/usda2019-lila-tracts.json` — the US map: one row per tract
+  USDA's 2019 atlas flagged low income & low access, at its Census 2010
+  internal point (`scripts/build-us-lila-tracts.mjs`; source extract
+  `scripts/data/food_atlas_2019.csv`).
 
 ## 5. End-to-End Data Flow (tract)
 

@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { DEFAULT_MAX_SITES, blockCandidates, suggestSites } from '../src/engine/suggestSites.js';
+import { DEFAULT_MAX_SITES, blockCandidates, scoreSiteZones, suggestSites } from '../src/engine/suggestSites.js';
 import { evaluatePlacedStoreScenario } from '../src/engine/scenarioEngine.js';
 import { PIN_DECIMALS, haversineMiles, roundCoord } from '../src/lib/geo.js';
 import { decodeAppState, encodeAppState } from '../src/lib/urlState.js';
@@ -395,4 +395,51 @@ test('fast enough: 3,000 candidates x 200 blocks', () => {
   const ms = performance.now() - t0;
   assert.ok(result.picks.length > 0);
   assert.ok(ms < 1500, `${ms.toFixed(0)} ms`);
+});
+
+// ------------------------------------------------------------ guide zones
+
+test('scoreSiteZones: each candidate scored alone, best first, gain > 0 only', () => {
+  const blocks = [
+    { pop: 100, hu: 40, ...at(2, 0), miles: null },
+    { pop: 50, hu: 20, ...at(2.4, 0), miles: null },
+    { pop: 80, hu: 30, ...at(-3, 0), miles: null },
+  ];
+  const candidates = [
+    { id: 'east', ...at(2.2, 0), kind: 'building', label: 'Building' },
+    { id: 'west', ...at(-3, 0.2), kind: 'building', label: 'Building' },
+    { id: 'nowhere', ...at(0, 9), kind: 'building', label: 'Building' },
+  ];
+  const zones = scoreSiteZones({ blocks, threshold: 1, candidates });
+  assert.deepEqual(zones.map((z) => [z.id, z.gain]), [['east', 150], ['west', 80]]);
+});
+
+test('scoreSiteZones: existing counting pins are applied first; non-counting pins are not', () => {
+  const blocks = [
+    { pop: 100, hu: 40, ...at(2, 0), miles: null },
+    { pop: 80, hu: 30, ...at(-3, 0), miles: null },
+  ];
+  const candidates = [{ id: 'east', ...at(2.1, 0) }, { id: 'west', ...at(-3, 0.1) }];
+  const dollar = scoreSiteZones({ blocks, threshold: 1, candidates, existingPins: [{ ...at(2, 0), format: 'd' }] });
+  assert.deepEqual(dollar.map((z) => z.id), ['east', 'west']);
+  const market = scoreSiteZones({ blocks, threshold: 1, candidates, existingPins: [{ ...at(2, 0), format: 's' }] });
+  assert.deepEqual(market.map((z) => [z.id, z.gain]), [['west', 80]]);
+});
+
+test('scoreSiteZones: matches the first pick of suggestSites at the same candidates', () => {
+  const blocks = [
+    { pop: 100, hu: 40, ...at(2, 0), miles: null },
+    { pop: 50, hu: 20, ...at(2.4, 0), miles: null },
+    { pop: 80, hu: 30, ...at(-3, 0), miles: null },
+  ];
+  const candidates = [{ id: 'a', ...at(2.2, 0) }, { id: 'b', ...at(-3, 0.2) }];
+  const zones = scoreSiteZones({ blocks, threshold: 1, candidates });
+  const { picks } = suggestSites({ blocks, threshold: 1, candidates, lowIncome: true });
+  assert.equal(picks[0].candidate.id, zones[0].id);
+  assert.equal(picks[0].gain, zones[0].gain);
+});
+
+test('scoreSiteZones: unmeasurable baseline or no candidates gives []', () => {
+  assert.deepEqual(scoreSiteZones({ blocks: [], threshold: 1, candidates: [{ id: 'x', ...at(0, 0) }] }), []);
+  assert.deepEqual(scoreSiteZones({ blocks: [{ pop: 5, ...at(2, 0), miles: null }], threshold: 1, candidates: [] }), []);
 });

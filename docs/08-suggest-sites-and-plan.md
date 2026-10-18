@@ -121,6 +121,30 @@ advice from USDA; check each program's current eligibility."
 - Log lines: "Suggested sites (computed): 2 sites from OpenStreetMap
   commercial candidates → tract would no longer meet the test".
 
+## 3a. Update 2026-10-18: placing by hand vs suggestions, and guide zones
+
+- **The armed banner separates the two ways to place.** "By hand" holds the
+  instruction (click anywhere), the placed count, Undo and Clear, and a button
+  renamed from "Drop here" to "Drop at searched spot". It places at the
+  searched point, the blue pin, never at a suggestion. Suggestions sit in
+  their own dashed orange box, with one "Add site N (+gain)" button per pick
+  and "Add all". Before this, "Drop here" sat next to "Suggest sites", and
+  after suggesting it read as "place the suggestion".
+- **Clicking a numbered suggestion circle while placing adds that site** as
+  a supermarket. Before, marker clicks did nothing.
+- **Guide zones.** While placing, the map shades the tract's existing shops
+  and commercial buildings (the commercial candidates of §1) by how many
+  residents a supermarket there alone would newly bring within the limit,
+  on the current pins. The pure function is `scoreSiteZones` in
+  `src/engine/suggestSites.js`. A zone's gain equals the first pick's gain at
+  the same spot (tested). It shows the best 60, drawn in a pane that takes no
+  clicks, so a click anywhere still places exactly. With no commercial-site
+  data for the tract, there are no zones and the banner says so.
+- **The 2D crosshair is gone.** It was fixed to the map's centre and drifted
+  off the searched point as soon as the map panned. The blue pin marks that
+  point. Counted supermarkets are always drawn, and the Highlight Food toggle
+  was removed.
+
 ## Acceptance
 
 - suggestSites: Alviso 06085504602 with block candidates finds a site with
