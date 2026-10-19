@@ -16,13 +16,20 @@ Earlier (2026-10-03) post-deploy check: Production check after deploy: data file
 /api/overpass and /api/llmapi are 404, no key values in the 14 bundle files,
 Alviso + village pin flips MEETS → DOES NOT MEET.
 
-## In progress (2026-10-18, branch `ui/placing-and-us-map`, not deployed)
-The placing redesign, guide zones, collapsible log, no Highlight Food, and a
-tract-level US map (DECISIONS 2026-10-18, docs/08 §3a, docs/data.md). `npm
-test` passes 376/376, lint is clean, and build and the key check are ok.
-Checked headless on a local dev server. Deploy = merge to `main` and push.
-After that, the demo video needs `rerecord_all.sh`: takeC no longer clicks
-Highlight Food, and the placing scene now shows guide zones.
+## Live (2026-10-18, main 86015dc)
+These are live at https://miles-to-market.vercel.app: the placing redesign,
+guide zones, the compact place-store bar, the collapsible log, the removal of
+Highlight Food, and the tract-level US map (DECISIONS 2026-10-18, docs/08
+§3a, docs/data.md). Checked on production in a fresh browser:
+- the placement flows;
+- the log toggle;
+- the US map, which loads all 9,293 tracts in about 2 seconds;
+- no page errors.
+
+`npm test` passes 376/376, lint is clean, and build and the key check are
+ok. The demo video was re-recorded from production with the timing
+unchanged, so the teammates' recorded voice parts still line up. The video
+they recorded against is in `notes-local/video/pre-2026-10-18/`.
 
 ## Verified (2026-10-17)
 - React Bits copies deleted. Build output is identical apart from one unused

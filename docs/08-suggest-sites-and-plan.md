@@ -144,6 +144,9 @@ advice from USDA; check each program's current eligibility."
   off the searched point as soon as the map panned. The blue pin marks that
   point. Counted supermarkets are always drawn, and the Highlight Food toggle
   was removed.
+- **The bar stays compact.** While placing, the 2D legend is hidden and Share
+  and Done sit on the By hand row. The bar covers about a quarter of an
+  810px-tall map, down from 41%, which had hidden the click target.
 
 ## Acceptance
 
