@@ -907,7 +907,7 @@ export default function TrackerApp({ onHome }) {
     }
     return {
       zones,
-      note: `Orange zones are existing shops and commercial buildings; deeper orange brings more residents within ${a.threshold} mi. A guide only: click anywhere.`,
+      note: `Orange zones: existing shops and commercial buildings; deeper = more residents within ${a.threshold} mi. A guide; click anywhere.`,
     };
   }, [mapPlaceArmed, communityData, zoneLoad, pins]);
 

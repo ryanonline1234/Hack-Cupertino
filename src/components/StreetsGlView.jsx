@@ -796,8 +796,9 @@ export default function StreetsGlView({
         </div>
       )}
 
-      {/* 2D legend: what the dots mean while the store layer is on. */}
-      {useFallbackMap && hasData && showStoreLayer && (
+      {/* 2D legend: what the dots mean. Hidden while placing, when the banner
+          explains the map and every pixel of map is a click target. */}
+      {useFallbackMap && hasData && showStoreLayer && !placeArmed && (
         <div
           className="pointer-events-auto flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-3 py-1.5 rounded-2xl text-[11px] animate-fade-slide-up max-w-full"
           style={{
@@ -856,7 +857,7 @@ export default function StreetsGlView({
         <div
           role="group"
           aria-label="Place a store"
-          className="pointer-events-auto flex flex-col gap-2 px-3 py-2 rounded-2xl text-[11px] animate-fade-slide-up w-full max-w-[680px]"
+          className="pointer-events-auto flex flex-col gap-2 px-3 py-2 rounded-2xl text-[11px] animate-fade-slide-up w-full max-w-[820px]"
           style={{
             background: 'rgba(5,6,8,0.88)',
             border: '1px solid rgba(34,211,238,0.35)',
@@ -941,6 +942,31 @@ export default function StreetsGlView({
                 Clear
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => onShareScenario?.()}
+              title="Copy a link that replays this location and placed stores"
+              className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press"
+              style={{
+                background: 'color-mix(in srgb, var(--neon) 15%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--neon) 40%, transparent)',
+                color: 'var(--neon)',
+              }}
+            >
+              Share
+            </button>
+            <button
+              type="button"
+              onClick={finishPlacing}
+              className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press"
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: 'rgba(255,255,255,0.85)',
+              }}
+            >
+              Done
+            </button>
           </div>
           {useFallbackMap && zonesNote && (
             <p className="flex items-start gap-1.5 leading-snug" style={{ color: 'rgba(255,255,255,0.62)' }}>
@@ -1017,35 +1043,6 @@ export default function StreetsGlView({
               </p>
             </div>
           )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="flex-1" />
-            <button
-              type="button"
-              onClick={() => onShareScenario?.()}
-              title="Copy a link that replays this location and placed stores"
-              className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press"
-              style={{
-                background: 'color-mix(in srgb, var(--neon) 15%, transparent)',
-                border: '1px solid color-mix(in srgb, var(--neon) 40%, transparent)',
-                color: 'var(--neon)',
-              }}
-            >
-              Share
-            </button>
-            <button
-              type="button"
-              onClick={finishPlacing}
-              className="rounded-full px-2.5 min-h-[32px] text-[11px] font-semibold transition-colors btn-press"
-              style={{
-                background: 'rgba(255,255,255,0.08)',
-                border: '1px solid rgba(255,255,255,0.2)',
-                color: 'rgba(255,255,255,0.85)',
-              }}
-            >
-              Done
-            </button>
-          </div>
         </div>
       )}
       </div>
