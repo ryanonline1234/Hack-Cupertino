@@ -94,7 +94,9 @@ function ModeToggle({ mode, onModeChange }) {
   );
 }
 
-export default function FeatureNav({ communityData, loading, layout, onToggleLayout, mode, onModeChange, onHome }) {
+// onNewSearch (optional): clears the location and returns to the search
+// screen; the button shows only when it is passed (2026-10-18).
+export default function FeatureNav({ communityData, loading, layout, onToggleLayout, mode, onModeChange, onHome, onNewSearch }) {
   // "CA · Tract 5046.02" from TIGERweb's NAME ("Census Tract 5046.02").
   const meta = communityData?.meta;
   const tractLabel = String(meta?.tractName || '').replace(/^Census Tract\s+/i, '') || meta?.fips?.slice(-6);
@@ -193,6 +195,21 @@ export default function FeatureNav({ communityData, loading, layout, onToggleLay
           </div>
         )}
 
+        {typeof onNewSearch === 'function' && (
+          <button
+            type="button"
+            onClick={() => onNewSearch()}
+            title="Clear this location and go back to the search screen"
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors btn-press"
+            style={{ border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.8)' }}
+          >
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <circle cx="5.2" cy="5.2" r="3.6" stroke="currentColor" strokeWidth="1.4" />
+              <path d="M8 8l2.6 2.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            New search
+          </button>
+        )}
         <div className="hidden md:block">
           <LayoutToggle layout={layout} onToggle={onToggleLayout} />
         </div>

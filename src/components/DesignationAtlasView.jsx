@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { Search, X } from 'lucide-react';
 import { escapeHtml } from '../lib/storeTooltip';
 import {
+  countyLabel,
+  decodeCounties,
   decodeLilaTracts,
   lilaDotRadius,
+  paddedCountyBounds,
+  searchCounties,
   summarizeLilaTracts,
   topStatesByTracts,
   tractsInBounds,
@@ -24,9 +29,19 @@ import {
  * 5) The summary counts the dots in the current window (debounced on
  *    moveend) next to the national totals.
  * 6) Every string that reaches a tooltip or popup goes through escapeHtml.
+ * 7) County search: an ARIA combobox over public/data/us/counties.json
+ *    (every county in the atlas), filtered on each keystroke with no network
+ *    (searchCounties). Picking one flies to its padded tract-point box,
+ *    clear of the panels, and dims every dot outside it until cleared.
  */
 
 const DATA_URL = '/data/us/usda2019-lila-tracts.json';
+const COUNTIES_URL = '/data/us/counties.json';
+const COUNTY_MAX_ZOOM = 11;
+// Fly-to length in seconds (county and back to the national view).
+const FLY_SECONDS = 1.2;
+const LIST_ID = 'usmap-county-options';
+const optionId = (index) => `usmap-county-option-${index}`;
 const CONTIGUOUS_US = [
   [24.5, -124.8],
   [49.4, -66.9],
@@ -43,10 +58,11 @@ const fmtPct = (n) => (Number.isFinite(n) ? `${n.toFixed(1)}%` : 'not published'
 const fmtUsd = (n) => (Number.isFinite(n) ? `$${Math.round(n).toLocaleString('en-US')}` : 'not published');
 
 // Thinner rims and lighter fills at national zoom so overlapping dots read
-// as density instead of one solid mass.
-function dotStyle(tract, zoom) {
+// as density instead of one solid mass. With a county picked (focusFips),
+// its dots go fully opaque and every other dot drops to about 30%.
+function dotStyle(tract, zoom, focusFips = null) {
   const far = zoom < 6;
-  return {
+  const style = {
     radius: lilaDotRadius(tract.lowAccess, zoom),
     color: DOT_RIM,
     weight: tract.urban ? (far ? 0.35 : 0.7) : far ? 0.9 : 1.4,
@@ -54,7 +70,60 @@ function dotStyle(tract, zoom) {
     fillColor: DOT_FILL,
     fillOpacity: tract.urban ? (far ? 0.6 : 0.75) : 0.35,
   };
+  if (!focusFips) return style;
+  if (tract.geoid.startsWith(focusFips)) {
+    return { ...style, opacity: 1, weight: style.weight + 0.5, fillOpacity: tract.urban ? 0.9 : 0.45 };
+  }
+  return { ...style, opacity: 0.3, fillOpacity: tract.urban ? 0.25 : 0.12 };
 }
+
+// Lower 48 in view, clear of the panels: beside the summary on wide
+// screens, between the summary (search box included) and the legend
+// otherwise.
+function nationalPadding(width) {
+  if (width >= 900) return { paddingTopLeft: [370, 10], paddingBottomRight: [10, 10] };
+  if (width >= 640) return { paddingTopLeft: [10, 390], paddingBottomRight: [10, 130] };
+  return { paddingTopLeft: [8, 280], paddingBottomRight: [8, 110] };
+}
+
+// Padding that fits a county into the larger clear area of the map: right of
+// the summary panel or below it (above the legend), keeping off the zoom
+// buttons. Measured at pick time, so the county card is already counted.
+function countyPadding(map, panel, legend) {
+  const size = map.getSize();
+  const origin = map.getContainer().getBoundingClientRect();
+  const rel = (el) => {
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { left: r.left - origin.left, top: r.top - origin.top, right: r.right - origin.left, bottom: r.bottom - origin.top };
+  };
+  const p = rel(panel);
+  const l = rel(legend);
+  const m = 16;
+  const zoomTopRight = size.x >= 640 ? 52 : 0;
+  const zoomBottomRight = size.x >= 640 ? 0 : 52;
+  const areas = [];
+  if (p) {
+    const right = { left: p.right + m, top: m, right: size.x - m - zoomTopRight, bottom: size.y - m };
+    if (l && l.right > right.left) right.bottom = l.top - m;
+    const below = { left: m, top: p.bottom + m, right: size.x - m - zoomBottomRight, bottom: (l ? l.top : size.y) - m };
+    areas.push(right, below);
+  }
+  const usable = areas
+    .map((a) => ({ ...a, w: a.right - a.left, h: a.bottom - a.top }))
+    .filter((a) => a.w >= 120 && a.h >= 120)
+    .sort((a, b) => b.w * b.h - a.w * a.h);
+  const area = usable[0] || { left: m, top: m, right: size.x - m, bottom: size.y - m };
+  return {
+    paddingTopLeft: [area.left, area.top],
+    paddingBottomRight: [size.x - area.right, size.y - area.bottom],
+  };
+}
+
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+const flaggedText = (n) => (n > 0 ? `${fmtInt(n)} flagged tract${n === 1 ? '' : 's'}` : 'no flagged tracts');
 
 function tractTooltipHtml(t) {
   return `<div class="usmap-tip-title">${escapeHtml(t.county)}, ${escapeHtml(t.state)}</div>
@@ -126,6 +195,71 @@ const OVERLAY_CSS = `
 }
 .usmap-analyze:hover { filter: brightness(1.08); }
 .usmap-analyze:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.usmap-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 4px 0 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  transition: border-color 140ms ease-out, background-color 140ms ease-out;
+}
+.usmap-search:hover { border-color: rgba(255, 255, 255, 0.26); }
+.usmap-search:focus-within {
+  border-color: rgba(94, 242, 160, 0.7);
+  background: rgba(255, 255, 255, 0.08);
+}
+.usmap-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: #fff;
+  font: 12.5px/1.2 Inter, system-ui, sans-serif;
+}
+.usmap-search input::placeholder { color: rgba(232, 237, 244, 0.5); }
+.usmap-search input:disabled { cursor: not-allowed; }
+.usmap-clear {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(232, 237, 244, 0.6);
+  cursor: pointer;
+}
+.usmap-clear:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
+.usmap-clear:focus-visible { outline: 2px solid var(--neon, #5ef2a0); outline-offset: 0; }
+.usmap-options {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  max-height: min(22rem, 55vh);
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border-radius: 8px;
+  background: #08090c;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+}
+.usmap-option {
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.usmap-option[aria-selected='true'] { background: rgba(94, 242, 160, 0.14); }
+.usmap-option[aria-selected='true'] .usmap-option-name { color: #fff; }
 `;
 
 const panelStyle = {
@@ -164,6 +298,11 @@ function LegendDot({ radius, urban = true }) {
 export default function DesignationAtlasView({ onOpenTract } = {}) {
   const rootRef = useRef(null);
   const mapRef = useRef(null);
+  const groupRef = useRef(null);
+  const panelRef = useRef(null);
+  const legendRef = useRef(null);
+  const inputRef = useRef(null);
+  const focusFipsRef = useRef(null);
   const onOpenTractRef = useRef(onOpenTract);
 
   const [tracts, setTracts] = useState([]);
@@ -172,11 +311,42 @@ export default function DesignationAtlasView({ onOpenTract } = {}) {
   const [mapZoom, setMapZoom] = useState(4);
   const [inView, setInView] = useState(null);
 
+  const [counties, setCounties] = useState([]);
+  const [countiesError, setCountiesError] = useState(false);
+  const [query, setQuery] = useState('');
+  const [listOpen, setListOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const [picked, setPicked] = useState(null);
+  // Bumped on every pick, so picking the same county again flies back to it.
+  const [flySeq, setFlySeq] = useState(0);
+
   useEffect(() => {
     onOpenTractRef.current = onOpenTract;
   }, [onOpenTract]);
 
   const national = useMemo(() => summarizeLilaTracts(tracts), [tracts]);
+  const matches = useMemo(() => searchCounties(counties, query), [counties, query]);
+  const hasQuery = query.trim() !== '';
+  const showOptions = listOpen && hasQuery && matches.length > 0;
+  const showNoMatch = listOpen && hasQuery && counties.length > 0 && matches.length === 0;
+
+  // Counties for the search box; the map works without them.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const response = await fetch(COUNTIES_URL);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const decoded = decodeCounties(await response.json());
+        if (active) setCounties(decoded);
+      } catch {
+        if (active) setCountiesError(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -228,13 +398,7 @@ export default function DesignationAtlasView({ onOpenTract } = {}) {
       maxZoom: 19,
     }).addTo(map);
 
-    // Lower 48 in view, clear of the panels: beside the summary on wide
-    // screens, between the summary and the legend otherwise.
-    let padding;
-    if (width >= 900) padding = { paddingTopLeft: [370, 10], paddingBottomRight: [10, 10] };
-    else if (width >= 640) padding = { paddingTopLeft: [10, 345], paddingBottomRight: [10, 130] };
-    else padding = { paddingTopLeft: [8, 235], paddingBottomRight: [8, 110] };
-    map.fitBounds(CONTIGUOUS_US, padding);
+    map.fitBounds(CONTIGUOUS_US, nationalPadding(width));
 
     mapRef.current = map;
     if (import.meta.env.DEV) window.__usMap = map;
@@ -254,7 +418,7 @@ export default function DesignationAtlasView({ onOpenTract } = {}) {
     const group = L.featureGroup();
     const zoom = map.getZoom();
     for (const t of tracts) {
-      const marker = L.circleMarker([t.lat, t.lng], { renderer, ...dotStyle(t, zoom) });
+      const marker = L.circleMarker([t.lat, t.lng], { renderer, ...dotStyle(t, zoom, focusFipsRef.current) });
       marker.tract = t;
       group.addLayer(marker);
     }
@@ -300,17 +464,114 @@ export default function DesignationAtlasView({ onOpenTract } = {}) {
 
     function resize() {
       const z = map.getZoom();
-      group.eachLayer((marker) => marker.setStyle(dotStyle(marker.tract, z)));
+      group.eachLayer((marker) => marker.setStyle(dotStyle(marker.tract, z, focusFipsRef.current)));
     }
     map.on('zoomend', resize);
 
     group.addTo(map);
+    groupRef.current = group;
     return () => {
       map.off('zoomend', resize);
       map.closePopup(popup);
       group.remove();
+      if (groupRef.current === group) groupRef.current = null;
     };
   }, [tracts]);
+
+  // Picked county: its dots full strength and drawn on top, the rest dimmed.
+  useEffect(() => {
+    const fips = picked?.fips ?? null;
+    focusFipsRef.current = fips;
+    const map = mapRef.current;
+    const group = groupRef.current;
+    if (!map || !group) return;
+    const z = map.getZoom();
+    group.eachLayer((marker) => {
+      marker.setStyle(dotStyle(marker.tract, z, fips));
+      if (fips && marker.tract.geoid.startsWith(fips)) marker.bringToFront();
+    });
+  }, [picked, tracts]);
+
+  // Fly to a picked county once its card is on screen, so the padding
+  // measures the panel as the user will see it.
+  useEffect(() => {
+    const map = mapRef.current;
+    const bounds = picked && paddedCountyBounds(picked);
+    if (!map || !bounds) return;
+    map.closePopup();
+    const options = { ...countyPadding(map, panelRef.current, legendRef.current), maxZoom: COUNTY_MAX_ZOOM };
+    if (prefersReducedMotion()) map.fitBounds(bounds, { ...options, animate: false });
+    else map.flyToBounds(bounds, { ...options, duration: FLY_SECONDS });
+  }, [picked, flySeq]);
+
+  // Keep the active option visible when arrowing through a scrolled list.
+  useEffect(() => {
+    if (activeIndex < 0) return;
+    document.getElementById(optionId(activeIndex))?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex]);
+
+  function pickCounty(county) {
+    setPicked(county);
+    setFlySeq((n) => n + 1);
+    setQuery(countyLabel(county));
+    setListOpen(false);
+    setActiveIndex(-1);
+  }
+
+  function clearSearch() {
+    setQuery('');
+    setPicked(null);
+    setListOpen(false);
+    setActiveIndex(-1);
+    const map = mapRef.current;
+    if (map) {
+      map.closePopup();
+      const padding = nationalPadding(map.getSize().x);
+      if (prefersReducedMotion()) map.fitBounds(CONTIGUOUS_US, { ...padding, animate: false });
+      else map.flyToBounds(CONTIGUOUS_US, { ...padding, duration: FLY_SECONDS });
+    }
+    inputRef.current?.focus();
+  }
+
+  function onQueryChange(event) {
+    const value = event.target.value;
+    setQuery(value);
+    setListOpen(true);
+    setActiveIndex(-1);
+    // Emptying the box by hand drops the highlight but leaves the map where it is.
+    if (value.trim() === '' && picked) setPicked(null);
+  }
+
+  function onQueryKeyDown(event) {
+    const count = matches.length;
+    if (event.key === 'ArrowDown') {
+      if (!hasQuery || !count) return;
+      event.preventDefault();
+      if (!showOptions) {
+        setListOpen(true);
+        setActiveIndex(0);
+      } else {
+        setActiveIndex((i) => (i + 1) % count);
+      }
+    } else if (event.key === 'ArrowUp') {
+      if (!showOptions) return;
+      event.preventDefault();
+      setActiveIndex((i) => (i <= 0 ? count - 1 : i - 1));
+    } else if (event.key === 'Enter') {
+      if (!hasQuery || !count) return;
+      event.preventDefault();
+      pickCounty(showOptions && activeIndex >= 0 && activeIndex < count ? matches[activeIndex] : matches[0]);
+    } else if (event.key === 'Escape') {
+      if (!showOptions && !showNoMatch) return;
+      event.preventDefault();
+      setListOpen(false);
+      setActiveIndex(-1);
+    }
+  }
+
+  function onQueryFocus() {
+    if (hasQuery && !(picked && countyLabel(picked) === query)) setListOpen(true);
+  }
 
   // In-view summary, debounced on moveend (zoomend is followed by moveend).
   useEffect(() => {
@@ -352,12 +613,118 @@ export default function DesignationAtlasView({ onOpenTract } = {}) {
       <div ref={rootRef} className="w-full h-full" />
 
       <div
+        ref={panelRef}
         data-usmap-summary
-        className="absolute left-3 top-3 z-[1000] rounded-lg px-3 py-2.5 text-xs w-[calc(100%-1.5rem)] sm:w-auto sm:max-w-[21rem]"
+        className="absolute left-3 top-3 z-[1000] rounded-lg px-3 py-2.5 text-xs w-[calc(100%-1.5rem)] sm:w-[21rem]"
         style={panelStyle}
       >
-        <div className="font-semibold text-white/90">USDA 2019 low-income &amp; low-access tracts</div>
-        <p className="mt-1 text-[11px] leading-snug text-white/65">
+        <div className="relative">
+          <div className="usmap-search">
+            <Search size={14} aria-hidden="true" className="shrink-0 text-white/55" />
+            <input
+              ref={inputRef}
+              type="text"
+              role="combobox"
+              aria-label="Search by county"
+              aria-autocomplete="list"
+              aria-expanded={showOptions}
+              aria-controls={LIST_ID}
+              aria-activedescendant={showOptions && activeIndex >= 0 ? optionId(activeIndex) : undefined}
+              placeholder={
+                countiesError
+                  ? 'County search unavailable'
+                  : counties.length
+                    ? 'Search by county, e.g. Santa Clara'
+                    : 'Loading counties…'
+              }
+              disabled={countiesError}
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={query}
+              onChange={onQueryChange}
+              onKeyDown={onQueryKeyDown}
+              onFocus={onQueryFocus}
+              onBlur={() => setListOpen(false)}
+            />
+            {(query || picked) && (
+              <button type="button" className="usmap-clear" aria-label="Clear county search" onClick={clearSearch}>
+                <X size={14} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+          {/* mousedown keeps focus in the input, so a click or a scrollbar drag doesn't close the list first. */}
+          <ul
+            id={LIST_ID}
+            role="listbox"
+            aria-label="Matching counties"
+            className="usmap-options"
+            hidden={!showOptions}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            {showOptions &&
+              matches.map((c, i) => (
+                <li
+                  key={c.fips}
+                  id={optionId(i)}
+                  role="option"
+                  aria-selected={i === activeIndex}
+                  className="usmap-option"
+                  onMouseMove={() => i !== activeIndex && setActiveIndex(i)}
+                  onClick={() => pickCounty(c)}
+                >
+                  <div className="usmap-option-name text-[12px] text-white/85">{countyLabel(c)}</div>
+                  <div className="text-[10.5px] text-white/50 tabular-nums">{flaggedText(c.flagged)}</div>
+                </li>
+              ))}
+          </ul>
+          {showNoMatch && (
+            <div className="usmap-options px-2.5 py-2 text-white/60" role="status">
+              No county matches “{query.trim()}”. Try a county name, then a state.
+            </div>
+          )}
+        </div>
+
+        {picked && (
+          <div
+            data-usmap-county
+            aria-live="polite"
+            className="mt-2 rounded-md px-2.5 py-2"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)' }}
+          >
+            <div className="font-semibold text-white/90">{countyLabel(picked)}</div>
+            {picked.flagged > 0 ? (
+              <>
+                <div className="mt-1 grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-base font-semibold leading-tight tabular-nums" style={{ color: DOT_FILL }}>
+                      {fmtInt(picked.flagged)}
+                      <span className="text-xs font-normal text-white/55"> of {fmtInt(picked.tracts)}</span>
+                    </div>
+                    <div className="text-white/60">tracts flagged</div>
+                  </div>
+                  <div>
+                    <div className="text-base font-semibold leading-tight tabular-nums text-white/90">
+                      {fmtInt(picked.flaggedLowAccess)}
+                    </div>
+                    <div className="text-white/60">low-access residents</div>
+                  </div>
+                </div>
+                <div className="mt-1 text-[10.5px] leading-snug text-white/45">
+                  In its flagged tracts, which stay bright on the map.
+                </div>
+              </>
+            ) : (
+              <p className="mt-1 leading-snug text-white/65">
+                USDA&apos;s 2019 map flagged none of its {fmtInt(picked.tracts)} census tract
+                {picked.tracts === 1 ? '' : 's'} as low income and low access.
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="mt-2.5 font-semibold text-white/90">USDA 2019 low-income &amp; low-access tracts</div>
+        <p className={`mt-1 text-[11px] leading-snug text-white/65${picked ? ' hidden sm:block' : ''}`}>
           USDA&apos;s published 2019 map (Food Access Research Atlas): tracts USDA flagged low income and low access
           (supermarkets; 1 mile urban, 10 miles rural). Published flags, not this app&apos;s estimate.
         </p>
@@ -403,6 +770,7 @@ export default function DesignationAtlasView({ onOpenTract } = {}) {
       </div>
 
       <div
+        ref={legendRef}
         className="absolute left-3 bottom-6 sm:bottom-3 z-[1000] rounded-lg px-3 py-2 text-[11px] max-w-[calc(100%-4.5rem)] sm:max-w-[19rem]"
         style={{ ...panelStyle, color: 'rgba(232,237,244,0.8)' }}
       >

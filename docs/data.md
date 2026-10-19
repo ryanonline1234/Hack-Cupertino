@@ -27,7 +27,7 @@ Rules that apply to all of them:
 | ERS tract attributes | `public/data/ers/` | USDA ERS Food Access Research Atlas 2025 + 2019 | pulled 2026-10-03 | `scripts/build-ers-shards.mjs` |
 | Census blocks (4 counties) | `public/data/blocks/` | Census TIGERweb, 2020 Census | pulled 2026-10-03 | `scripts/build-block-bundles.mjs` |
 | Site candidates (4 counties) | `public/data/sites/` | OpenStreetMap via Overpass | OSM data 2026-10-03 | `scripts/build-site-candidates.mjs` |
-| US map tracts | `public/data/us/usda2019-lila-tracts.json` | USDA ERS Food Access Research Atlas 2019 + Census 2010 Gazetteer tract points | built 2026-10-18 | `scripts/build-us-lila-tracts.mjs` |
+| US map tracts | `public/data/us/usda2019-lila-tracts.json` | USDA ERS Food Access Research Atlas 2019 + Census 2010 Gazetteer tract points | built 2026-10-19 (with `counties.json`) | `scripts/build-us-lila-tracts.mjs` |
 
 Not committed (fetched live at runtime, each failing on its own with a named
 Unknown or an "unavailable" row): Census TIGERweb (tract and place at the
@@ -364,6 +364,24 @@ the tracker then tests the 2020 tract there. The tract test itself reads the
 ERS shards above, never this file.
 
 **Terms.** Both sources are US federal government works (17 U.S.C. § 105).
+
+**County search data, `public/data/us/counties.json` (since 2026-10-19).**
+The same build writes one row per county in the atlas: 3,142 counties, 2,083
+of them with at least one flagged tract. Each row has:
+- the 5-digit FIPS code, county name and state;
+- a center point, population-weighted from the tract points;
+- a bounding box of its tract points;
+- its total and flagged tract counts;
+- the low-access residents in its flagged tracts.
+
+The file is 301 KiB, about 98 KB gzipped. All 72,531 atlas tracts are
+placed. 25 renumbered after 2010 are mapped through `GEOID_2010_CODE_CHANGES`,
+from the Census ACS geography-change notes. Two of those (Oneida NY 0249.00,
+Los Angeles 1370.00) are approximate: their boundaries changed slightly, so
+they use the old tract's point. Without the table, Kusilvak Census Area (AK)
+and Oglala Lakota County (SD) had no points. The US map's "Search by county"
+box filters this file as you type (`searchCounties` in
+`src/lib/usLilaTracts.js`). Both files carry `retrievedAt` 2026-10-19 (UTC).
 
 **When to rebuild.** Only if the atlas extract changes. To show the 2025 map
 instead, derive from the ERS shards (`t2025`, 2020 tracts) with the 2020

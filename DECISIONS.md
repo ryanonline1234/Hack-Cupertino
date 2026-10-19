@@ -3,6 +3,22 @@
 Append-only. New decisions go on top with today's date; old entries are never
 edited. Each entry names the rejected alternative.
 
+## 2026-10-19 — New search, Home clears the location, US-map county search
+- **New search.** A header button clears the analysis, the placed stores,
+  the suggestions, the city summary and the log, and returns to the location
+  screen. Before, the only way back was editing the URL.
+- **Home.** Home now drops the searched location from the URL. The location
+  in the hash used to survive Home, so a refresh reopened it.
+- **County search.** The US map has a "Search by county" box. Suggestions
+  appear as you type, filtered locally from `public/data/us/counties.json`.
+  Picking a county flies to it, dims every other county's dots, and shows a
+  card (flagged tracts of total, low-access residents). It searches by
+  county, not address, because the map shows USDA's published tract flags;
+  an address search belongs in the tracker.
+- **Video.** The demo video gains a US-map scene in Ryan's part (S12b). Parts
+  1–2 keep identical timing, because the teammates had already recorded
+  their voices.
+
 ## 2026-10-18 — Placing by hand is separated from suggestions; guide zones; log toggle; no Highlight Food
 The owner found that after "Suggest sites", "Drop here" read as "place the
 suggestion", but it placed at the searched point.

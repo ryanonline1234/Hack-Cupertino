@@ -35,12 +35,21 @@ function LoadingView() {
 export default function App() {
   const [phase, setPhase] = useState(() => (hasDeepLink() ? 'tracker' : 'landing'));
 
+  // Home drops the searched location from the URL (2026-10-18), so a refresh
+  // after going home stays home instead of reopening that location.
+  function goHome() {
+    try {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    } catch { /* noop */ }
+    setPhase('landing');
+  }
+
   return (
     <Suspense fallback={<LoadingView />}>
       {phase === 'landing' ? (
         <LandingPage onLaunchSimulation={() => setPhase('tracker')} />
       ) : (
-        <TrackerApp onHome={() => setPhase('landing')} />
+        <TrackerApp onHome={goHome} />
       )}
     </Suspense>
   );

@@ -16,6 +16,10 @@ Earlier (2026-10-03) post-deploy check: Production check after deploy: data file
 /api/overpass and /api/llmapi are 404, no key values in the 14 bundle files,
 Alviso + village pin flips MEETS → DOES NOT MEET.
 
+## Live (2026-10-19)
+New search, Home clearing the location, US-map county search
+(DECISIONS 2026-10-19). `npm test` 388/388, lint clean, build ok.
+
 ## Live (2026-10-18, main 86015dc)
 These are live at https://miles-to-market.vercel.app: the placing redesign,
 guide zones, the compact place-store bar, the collapsible log, the removal of

@@ -4,15 +4,22 @@ import test from 'node:test';
 import { crc32, deflateRawSync } from 'node:zlib';
 
 import {
+  COUNTY_FIELDS,
   GEOID_2010_CODE_CHANGES,
   LILA_TRACT_FIELDS,
+  buildCountyRows,
   buildLilaTractRows,
+  countyLabel,
+  decodeCounties,
   decodeLilaTracts,
   lilaDotRadius,
+  normalizeCountyText,
   padGeoid,
+  paddedCountyBounds,
   parseAtlasCsv,
   parseCsv,
   parseGazetteerTracts,
+  searchCounties,
   summarizeLilaTracts,
   topStatesByTracts,
   tractsInBounds,
@@ -25,9 +32,10 @@ const HEADER = 'CensusTract,State,County,Urban,LILATracts_1And10,lapop1share,lap
 const atlasCsv = (...rows) => [HEADER, ...rows].join('\n') + '\n';
 
 // Gazetteer layout: tab-separated, space-padded, CRLF, header padded too.
+// An optional fifth value sets POP10 (default 100).
 function gazetteer(...rows) {
   const head = 'USPS\tGEOID\tPOP10\tHU10\tALAND\tAWATER\tALAND_SQMI\tAWATER_SQMI\tINTPTLAT\tINTPTLONG                      ';
-  const lines = rows.map(([usps, geoid, lat, lng]) => `${usps}\t${geoid}\t100\t50\t1\t0\t       0.001\t       0.000\t ${lat}\t ${lng}               `);
+  const lines = rows.map(([usps, geoid, lat, lng, pop = 100]) => `${usps}\t${geoid}\t${pop}\t50\t1\t0\t       0.001\t       0.000\t ${lat}\t ${lng}               `);
   return [head, ...lines].join('\r\n') + '\r\n';
 }
 
@@ -216,4 +224,239 @@ test('the US map reads the tract JSON (not the retired CSV) and escapes tooltip 
   assert.match(source, /escapeHtml\(t\.county\)/);
   assert.ok(!existsSync(new URL('../public/data/food_atlas.csv', import.meta.url)), 'the 5.5 MB CSV is no longer deployed');
   assert.ok(existsSync(new URL('../scripts/data/food_atlas_2019.csv', import.meta.url)));
+});
+
+// ── County search ───────────────────────────────────────────────────────
+
+test('parseGazetteerTracts with details adds POP10 and USPS', () => {
+  const text = gazetteer(['AL', '01001020200', '32.4757580', '-86.4724678', 3000]);
+  assert.deepEqual(parseGazetteerTracts(text, { details: true }).get('01001020200'), [32.475758, -86.4724678, 3000, 'AL']);
+  assert.deepEqual(parseGazetteerTracts(text).get('01001020200'), [32.475758, -86.4724678], 'default shape unchanged');
+  assert.throws(() => parseGazetteerTracts(gazetteer(['AL', '01001020200', '1', '2', 'x']), { details: true }), /bad POP10/);
+});
+
+test('GEOID_2010_CODE_CHANGES covers the 2015 county renames and the 2011/2012 renumberings', () => {
+  assert.equal(Object.keys(GEOID_2010_CODE_CHANGES).length, 25);
+  assert.equal(GEOID_2010_CODE_CHANGES['02158000100'], '02270000100', 'Wade Hampton -> Kusilvak');
+  assert.equal(GEOID_2010_CODE_CHANGES['46102940500'], '46113940500', 'Shannon -> Oglala Lakota');
+  assert.equal(GEOID_2010_CODE_CHANGES['36053030402'], '36053940700', 'Madison 9407.00 is now 0304.02');
+  assert.equal(GEOID_2010_CODE_CHANGES['36065024800'], '36065940000', 'Oneida 9400.00 is now 0248.00');
+  for (const [atlas, gaz] of Object.entries(GEOID_2010_CODE_CHANGES)) {
+    assert.match(atlas, /^\d{11}$/);
+    assert.match(gaz, /^\d{11}$/);
+    assert.equal(atlas.slice(0, 2), gaz.slice(0, 2), `${atlas} stays in its state`);
+  }
+});
+
+test('buildCountyRows: every county, flagged or not, with a POP10-weighted center, a point box and flagged totals', () => {
+  const records = parseAtlasCsv(atlasCsv(
+    '1001020100,Alabama,Autauga County,1,0,99.19,NULL,11.44,0.79,1896,11.3,81250,461',
+    '1001020200,Alabama,Autauga County,1,1,58.11,NULL,5.83,9,1261,17.9,49000,604',
+    '1001020300,Alabama,Autauga County,1,1,1,NULL,1,1,NULL,17.9,49000,NULL',
+    '28133950100,Mississippi,Sunflower County,0,1,NULL,40.1,NULL,NULL,2345,38.5,NULL,1200',
+    '28133950200,Mississippi,Sunflower County,0,0,NULL,40.1,NULL,NULL,10,38.5,NULL,1',
+    '2016000100,Alaska,Aleutians West Census Area,0,0,1,1,1,1,1,1,1,1',
+    '2016000200,Alaska,Aleutians West Census Area,0,0,1,1,1,1,1,1,1,1',
+    '2158000100,Alaska,Kusilvak Census Area,0,0,1,1,1,1,1,1,1,1',
+  ));
+  const points = parseGazetteerTracts(gazetteer(
+    ['AL', '01001020100', '32.0', '-86.0', 300],
+    ['AL', '01001020200', '33.0', '-87.0', 100],
+    ['AL', '01001020300', '32.5', '-86.5', 0],
+    ['MS', '28133950100', '33.6', '-90.6', 1000],
+    ['MS', '28133950200', '33.8', '-90.4', 3000],
+    ['AK', '02016000100', '52.0', '178.0', 100],
+    ['AK', '02016000200', '53.8', '-166.6', 100],
+    ['AK', '02270000100', '62.28', '-163.19', 7459],
+  ), { details: true });
+  const { rows, misses, recoded } = buildCountyRows(records, points);
+
+  assert.deepEqual(misses, []);
+  assert.deepEqual(recoded, ['02158000100<-02270000100'], 'Kusilvak placed at its Wade Hampton point');
+  assert.deepEqual(rows.map((r) => r[0]), ['01001', '02016', '02158', '28133']);
+  for (const row of rows) assert.equal(row.length, COUNTY_FIELDS.length);
+  // Weighted: (32*300 + 33*100 + 32.5*0) / 400 = 32.25; -86.25.
+  assert.deepEqual(rows[0], ['01001', 'Autauga County', 'Alabama', 'AL', 32.25, -86.25, 32, -87, 33, -86, 3, 2, 1261]);
+  // Aleutians West: the +178 point is drawn at -182, so the box stays narrow.
+  assert.deepEqual(rows[1].slice(4, 10), [52.9, -174.3, 52, -182, 53.8, -166.6]);
+  assert.deepEqual(rows[1].slice(10), [2, 0, 0], 'a county with no flagged tract still gets a row');
+  assert.deepEqual(rows[3], ['28133', 'Sunflower County', 'Mississippi', 'MS', 33.75, -90.45, 33.6, -90.6, 33.8, -90.4, 2, 1, 2345]);
+});
+
+test('buildCountyRows falls back to a plain mean without POP10, lists misses and rejects a county with two names', () => {
+  const records = parseAtlasCsv(atlasCsv(
+    '1001020100,Alabama,Autauga County,1,0,1,NULL,1,1,1,1,1,1',
+    '1001020200,Alabama,Autauga County,1,1,1,NULL,1,1,40,1,1,1',
+    '1001020300,Alabama,Autauga County,1,0,1,NULL,1,1,1,1,1,1',
+  ));
+  const noPop = new Map([['01001020100', [32, -86, null, 'AL']], ['01001020200', [33, -87, null, 'AL']]]);
+  const { rows, misses } = buildCountyRows(records, noPop);
+  assert.deepEqual(misses, ['01001020300']);
+  assert.deepEqual(rows[0], ['01001', 'Autauga County', 'Alabama', 'AL', 32.5, -86.5, 32, -87, 33, -86, 3, 1, 40]);
+  const clash = parseAtlasCsv(atlasCsv(
+    '1001020100,Alabama,Autauga County,1,0,1,NULL,1,1,1,1,1,1',
+    '1001020200,Alabama,Baldwin County,1,0,1,NULL,1,1,1,1,1,1',
+  ));
+  assert.throws(() => buildCountyRows(clash, noPop), /both/);
+});
+
+const sampleCounties = () => decodeCounties({
+  fields: [...COUNTY_FIELDS],
+  rows: [
+    ['06085', 'Santa Clara County', 'California', 'CA', 37.315, -121.91, 36.978, -122.177, 37.46, -121.524, 372, 6, 6939],
+    ['06087', 'Santa Cruz County', 'California', 'CA', 37.0, -122.0, 36.9, -122.3, 37.2, -121.6, 52, 2, 1500],
+    ['04023', 'Santa Cruz County', 'Arizona', 'AZ', 31.4, -110.9, 31.3, -111.2, 31.6, -110.5, 10, 3, 9000],
+    ['06083', 'Santa Barbara County', 'California', 'CA', 34.6, -120.0, 34.4, -120.6, 35.1, -119.5, 90, 4, 5000],
+    ['35049', 'Santa Fe County', 'New Mexico', 'NM', 35.6, -105.9, 35.2, -106.2, 36.0, -105.7, 50, 1, 800],
+    ['49043', 'Summit County', 'Utah', 'UT', 40.8, -111.3, 40.6, -111.6, 41.2, -110.5, 10, 0, 0],
+    ['28133', 'Sunflower County', 'Mississippi', 'MS', 33.6, -90.6, 33.3, -90.8, 33.9, -90.4, 8, 6, 9000],
+    ['22075', 'Plaquemines Parish', 'Louisiana', 'LA', 29.5, -89.7, 29.2, -90.0, 29.9, -89.4, 12, 2, 300],
+    ['35013', 'Doña Ana County', 'New Mexico', 'NM', 32.3, -106.8, 32.0, -107.2, 32.9, -106.4, 41, 5, 7000],
+    ['02016', 'Aleutians West Census Area', 'Alaska', 'AK', 53.267, -169.944, 51.959, -181.661, 53.621, -166.771, 2, 1, 1185],
+    ['24037', "St. Mary's County", 'Maryland', 'MD', 38.3, -76.6, 38.1, -76.9, 38.5, -76.4, 18, 0, 0],
+    ['36061', 'New York County', 'New York', 'NY', 40.78, -73.97, 40.7, -74.02, 40.88, -73.91, 288, 3, 5000],
+  ],
+});
+
+test('decodeCounties names the fields and rejects a different field list', () => {
+  const [first] = sampleCounties();
+  assert.deepEqual(first, {
+    fips: '06085', county: 'Santa Clara County', state: 'California', usps: 'CA', lat: 37.315, lng: -121.91,
+    box: [36.978, -122.177, 37.46, -121.524], tracts: 372, flagged: 6, flaggedLowAccess: 6939,
+  });
+  assert.equal(countyLabel(first), 'Santa Clara County, California');
+  assert.throws(() => decodeCounties({ fields: COUNTY_FIELDS.slice(1), rows: [] }), /Unexpected fields/);
+  assert.throws(() => decodeCounties({ fields: [...COUNTY_FIELDS] }), /no rows/);
+});
+
+test('normalizeCountyText drops case, accents, periods and apostrophes', () => {
+  assert.equal(normalizeCountyText('  Doña Ana County '), 'dona ana county');
+  assert.equal(normalizeCountyText("St. Mary's"), 'st marys');
+  assert.equal(normalizeCountyText('Miami-Dade, FL'), 'miami dade fl');
+});
+
+test('searchCounties ranks prefix, then word start, then contains; ties by flagged tracts, then name', () => {
+  const counties = sampleCounties();
+  const labels = (q, limit) => searchCounties(counties, q, limit).map(countyLabel);
+  assert.deepEqual(labels('Santa C'), ['Santa Clara County, California', 'Santa Cruz County, Arizona', 'Santa Cruz County, California']);
+  assert.deepEqual(labels('santa'), [
+    'Santa Clara County, California', 'Santa Barbara County, California', 'Santa Cruz County, Arizona',
+    'Santa Cruz County, California', 'Santa Fe County, New Mexico',
+  ]);
+  // Word start: "cruz" starts the second word of both Santa Cruz counties.
+  assert.deepEqual(labels('cruz'), ['Santa Cruz County, Arizona', 'Santa Cruz County, California']);
+  // Contains only: "ara" is inside Clara and Barbara.
+  assert.deepEqual(labels('ara'), ['Santa Clara County, California', 'Santa Barbara County, California']);
+  // A word start outranks a contains, whatever the flagged counts.
+  assert.deepEqual(labels('ana'), ['Doña Ana County, New Mexico']);
+  assert.deepEqual(labels('mary'), ["St. Mary's County, Maryland"]);
+  // Same tier, same flagged count (6): alphabetical.
+  assert.deepEqual(labels('s', 3), ['Santa Clara County, California', 'Sunflower County, Mississippi', 'Santa Barbara County, California']);
+  assert.equal(searchCounties(counties, 's').length, 8, 'at most 8');
+  assert.deepEqual(labels(''), []);
+  assert.deepEqual(labels('   '), []);
+  assert.deepEqual(labels('zzz'), []);
+});
+
+test('searchCounties ignores case, accents and a trailing County / Parish / Borough on either side', () => {
+  const counties = sampleCounties();
+  const first = (q) => searchCounties(counties, q)[0]?.fips;
+  assert.equal(first('SANTA CLARA COUNTY'), '06085');
+  assert.equal(first('santa clara cou'), '06085', 'a half-typed suffix still matches');
+  assert.equal(first('dona ana'), '35013');
+  assert.equal(first('Doña'), '35013');
+  assert.equal(first('plaquemines county'), '22075', 'the wrong suffix is ignored');
+  assert.equal(first('plaquemines parish'), '22075');
+  assert.equal(first('st marys'), '24037');
+  assert.equal(first('St. Mary’s County'), '24037');
+  assert.equal(first('new york'), '36061', 'a state name alone is still a county query');
+});
+
+test('searchCounties reads a state after the county: USPS code or state name, with or without a comma', () => {
+  const counties = sampleCounties();
+  const labels = (q) => searchCounties(counties, q).map(countyLabel);
+  assert.deepEqual(labels('santa clara ca'), ['Santa Clara County, California']);
+  assert.deepEqual(labels('santa cruz az'), ['Santa Cruz County, Arizona']);
+  assert.deepEqual(labels('santa cruz, california'), ['Santa Cruz County, California']);
+  assert.deepEqual(labels('Santa Cruz County, Calif'), ['Santa Cruz County, California']);
+  assert.deepEqual(labels('sunflower, mississippi'), ['Sunflower County, Mississippi']);
+  assert.deepEqual(labels('sunflower mississippi'), ['Sunflower County, Mississippi']);
+  assert.deepEqual(labels('sunflower, ms'), ['Sunflower County, Mississippi']);
+  assert.deepEqual(labels('santa fe new mexico'), ['Santa Fe County, New Mexico']);
+  assert.deepEqual(labels('santa clara, nm'), [], 'a state that does not fit filters everything out');
+  assert.deepEqual(labels('santa clara,'), ['Santa Clara County, California'], 'an empty state part is ignored');
+  assert.deepEqual(labels('Santa Clara County, California'), ['Santa Clara County, California'], 'the label itself finds the county');
+});
+
+test('paddedCountyBounds pads by a fraction of the span, at least a minimum, and handles one-point counties', () => {
+  const [santaClara] = sampleCounties();
+  const [[s, w], [n, e]] = paddedCountyBounds(santaClara);
+  assert.ok(Math.abs(s - (36.978 - 0.482 * 0.15)) < 1e-9 && Math.abs(n - (37.46 + 0.482 * 0.15)) < 1e-9);
+  assert.ok(w < -122.177 && e > -121.524);
+  const one = { box: [31.845, -103.561, 31.845, -103.561] };
+  const [[s1, w1], [n1, e1]] = paddedCountyBounds(one);
+  assert.ok(Math.abs(n1 - s1 - 0.1) < 1e-9, 'one point -> 0.05° each side');
+  assert.ok(e1 - w1 > 0.1, 'longitude pad widened by 1/cos(lat)');
+  assert.equal(paddedCountyBounds({ box: null }), null);
+  assert.equal(paddedCountyBounds({ box: [1, null, 2, 3] }), null);
+});
+
+test('the committed county file covers every atlas tract and agrees with the tract file', () => {
+  const url = new URL('../public/data/us/counties.json', import.meta.url);
+  const text = readFileSync(url, 'utf8');
+  assert.ok(Buffer.byteLength(text) < 400 * 1024, `counties.json is ${Buffer.byteLength(text)} bytes`);
+  const doc = JSON.parse(text);
+  const tractDoc = JSON.parse(readFileSync(new URL('../public/data/us/usda2019-lila-tracts.json', import.meta.url), 'utf8'));
+  assert.deepEqual(doc.fields, [...COUNTY_FIELDS]);
+  assert.equal(doc.rows.length, doc.counts.counties);
+  assert.deepEqual(doc.counts.placeMisses, []);
+  assert.equal(doc.counts.atlasRows, tractDoc.counts.atlasRows);
+
+  const fromTracts = new Map();
+  for (const row of tractDoc.rows) {
+    const entry = fromTracts.get(row[0].slice(0, 5)) || { flagged: 0, lowAccess: 0, county: row[4], state: row[3] };
+    entry.flagged += 1;
+    entry.lowAccess += row[6];
+    fromTracts.set(row[0].slice(0, 5), entry);
+  }
+  let tracts = 0;
+  let flagged = 0;
+  let withFlagged = 0;
+  let prev = '';
+  for (const row of doc.rows) {
+    const [fips, county, state, usps, lat, lng, minLat, minLng, maxLat, maxLng, n, f, lowAccess] = row;
+    assert.match(fips, /^\d{5}$/);
+    assert.ok(fips > prev, `${fips} sorted and unique`);
+    prev = fips;
+    assert.ok(county && state, fips);
+    assert.match(usps, /^[A-Z]{2}$/);
+    for (const v of [lat, lng, minLat, minLng, maxLat, maxLng]) assert.ok(Number.isFinite(v), `${fips} coordinates`);
+    assert.ok(minLat <= lat && lat <= maxLat && minLng <= lng && lng <= maxLng, `${fips} center inside its box`);
+    assert.ok(maxLat - minLat < 6 && maxLng - minLng < 16, `${fips} box is county-sized`);
+    assert.ok(Number.isInteger(n) && n >= 1 && Number.isInteger(f) && f >= 0 && f <= n, fips);
+    const t = fromTracts.get(fips);
+    assert.equal(f, t ? t.flagged : 0, `${fips} flagged tracts match the tract file`);
+    assert.equal(lowAccess, t ? t.lowAccess : 0, `${fips} low-access residents match the tract file`);
+    if (t) assert.deepEqual([county, state], [t.county, t.state]);
+    tracts += n;
+    flagged += f;
+    if (f > 0) withFlagged += 1;
+  }
+  assert.equal(tracts, doc.counts.atlasRows, 'every atlas tract is in a county');
+  assert.equal(flagged, tractDoc.rows.length);
+  assert.equal(withFlagged, doc.counts.withFlagged);
+  assert.equal(withFlagged, fromTracts.size);
+
+  const counties = decodeCounties(doc);
+  assert.deepEqual(searchCounties(counties, 'santa clara ca').map((c) => c.fips), ['06085']);
+  assert.ok(searchCounties(counties, 'Santa C').some((c) => countyLabel(c) === 'Santa Clara County, California'));
+});
+
+test('the US map searches the county file with an ARIA combobox', () => {
+  const source = readFileSync(new URL('../src/components/DesignationAtlasView.jsx', import.meta.url), 'utf8');
+  assert.match(source, /\/data\/us\/counties\.json/);
+  assert.match(source, /role="combobox"/);
+  assert.match(source, /role="listbox"/);
+  assert.match(source, /role="option"/);
+  assert.match(source, /aria-activedescendant/);
 });

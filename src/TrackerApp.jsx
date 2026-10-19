@@ -449,6 +449,27 @@ export default function TrackerApp({ onHome }) {
     ]);
   }, []);
 
+  // "New search" (2026-10-18): back to the location screen with nothing
+  // loaded. With no analysis, the hash effect drops the location from the
+  // URL, so a refresh stays on the search screen too.
+  function handleNewSearch() {
+    searchNonceRef.current += 1; // a search still in flight is dropped
+    pendingPinsRef.current = null;
+    pendingFocusRef.current = null;
+    closeCitySummary();
+    siteRequestIdRef.current += 1;
+    setSiteRequest(null);
+    setZoneLoad(null);
+    dispatchPins({ type: 'reset' });
+    setCommunityData(null);
+    setDataError('');
+    setLastSearch(null);
+    setLoading(false);
+    setMode('atlas');
+    setLocationPicked(false);
+    setLogs(INITIAL_LOGS);
+  }
+
   function handleGateSelect(lat, lng, options = {}) {
     setLocationPicked(true);
     handleLocationSearch(lat, lng, options);
@@ -1299,6 +1320,7 @@ export default function TrackerApp({ onHome }) {
         onModeChange={setMode}
         onToggleLayout={() => setLayout((value) => (value === 'bottom' ? 'split' : 'bottom'))}
         onHome={onHome}
+        onNewSearch={locationPicked || communityData ? handleNewSearch : undefined}
       />
 
       <div className="flex-1 overflow-hidden min-h-0">

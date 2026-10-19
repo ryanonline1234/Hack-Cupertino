@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Build the US map's tract file: public/data/us/usda2019-lila-tracts.json.
+// Build the US map's data: public/data/us/usda2019-lila-tracts.json (the
+// dots) and public/data/us/counties.json (the county search).
 //
 // One dot per census tract USDA flagged LILATracts_1And10 = 1 on its published
 // 2019 Food Access Research Atlas (low income and low access, supermarkets,
@@ -32,15 +33,29 @@
 // exits non-zero before writing if any flagged tract fails to join, unless
 // --allow-misses is passed (the misses are then listed in the file).
 //
+// Counties file: one row per county in the atlas (every county, flagged
+// tracts or not), keyed by the 5-digit FIPS (first 5 digits of the atlas
+// GEOID): { retrievedAt, sources, definition, fields: [names], counts:
+// { atlasRows, counties, withFlagged, tracts, flagged, recoded, placeMisses },
+// rows: [[FIPS, County, State, USPS, LAT, LNG, MINLAT, MINLNG, MAXLAT, MAXLNG,
+// Tracts, FlaggedTracts, FlaggedLAPOP1_10], ...] }. The center is the
+// POP10-weighted mean of the county's tract internal points, the box spans
+// those points (3 decimals); reduce in buildCountyRows (src/lib/usLilaTracts.js). Every
+// atlas tract must get a point (directly or via GEOID_2010_CODE_CHANGES), or
+// the run fails the same way. Measured 2026-10-18: 3,142 counties, 2,083 with
+// a flagged tract, 72,531 tracts placed (25 via a code change), 0 misses.
+//
 // Usage: node scripts/build-us-lila-tracts.mjs [--atlas path] [--gazetteer path-to-zip-or-txt]
-//        [--out path] [--allow-misses]
+//        [--out path] [--counties-out path] [--allow-misses]
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { crc32, inflateRawSync } from 'node:zlib';
 
 import {
+  COUNTY_FIELDS,
   LILA_TRACT_FIELDS,
+  buildCountyRows,
   buildLilaTractRows,
   parseAtlasCsv,
   parseGazetteerTracts,
@@ -58,15 +73,17 @@ function parseArgs(argv) {
     atlas: path.join(ROOT, 'scripts/data/food_atlas_2019.csv'),
     gazetteer: null,
     out: path.join(ROOT, 'public/data/us/usda2019-lila-tracts.json'),
+    countiesOut: path.join(ROOT, 'public/data/us/counties.json'),
     allowMisses: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--allow-misses') opts.allowMisses = true;
-    else if (arg === '--atlas' || arg === '--gazetteer' || arg === '--out') {
+    else if (arg === '--atlas' || arg === '--gazetteer' || arg === '--out' || arg === '--counties-out') {
       const value = argv[i + 1];
       if (!value) throw new Error(`${arg} needs a path`);
-      opts[arg.slice(2)] = path.resolve(value);
+      const key = arg === '--counties-out' ? 'countiesOut' : arg.slice(2);
+      opts[key] = path.resolve(value);
       i += 1;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
@@ -144,16 +161,20 @@ export async function main(argv) {
   const opts = parseArgs(argv);
   const atlasRecords = parseAtlasCsv(readFileSync(opts.atlas, 'utf8'));
   const { text: gazetteerText, provenance } = await loadGazetteerText(opts.gazetteer);
-  const centroids = parseGazetteerTracts(gazetteerText);
+  const centroids = parseGazetteerTracts(gazetteerText, { details: true });
   const { rows, misses, recoded, flagged } = buildLilaTractRows(atlasRecords, centroids);
+  const counties = buildCountyRows(atlasRecords, centroids);
+  const withFlagged = counties.rows.filter((row) => row[11] > 0).length;
 
   console.log(`atlas rows: ${atlasRecords.length}`);
   console.log(`gazetteer tracts: ${centroids.size}`);
   console.log(`flagged LILATracts_1And10 = 1: ${flagged}`);
   console.log(`joined: ${rows.length} (${recoded.length} via a post-2010 tract code change: ${recoded.join(', ') || 'none'})`);
   console.log(`join misses: ${misses.length}${misses.length ? ` (${misses.slice(0, 20).join(', ')})` : ''}`);
-  if (misses.length && !opts.allowMisses) {
-    console.error('Flagged tracts without a Gazetteer point; rerun with --allow-misses to write anyway.');
+  console.log(`counties: ${counties.rows.length} (${withFlagged} with a flagged tract); tracts placed via a code change: ${counties.recoded.length}`);
+  console.log(`county tract misses: ${counties.misses.length}${counties.misses.length ? ` (${counties.misses.slice(0, 20).join(', ')})` : ''}`);
+  if ((misses.length || counties.misses.length) && !opts.allowMisses) {
+    console.error('Atlas tracts without a Gazetteer point; rerun with --allow-misses to write anyway.');
     return 1;
   }
 
@@ -174,6 +195,27 @@ export async function main(argv) {
   mkdirSync(path.dirname(opts.out), { recursive: true });
   writeFileSync(opts.out, json);
   console.log(`wrote ${path.relative(ROOT, opts.out)}: ${rows.length} rows, ${(Buffer.byteLength(json) / 1024).toFixed(1)} KiB`);
+
+  const countyDoc = {
+    retrievedAt: doc.retrievedAt,
+    sources: doc.sources,
+    definition: 'One row per county in the 2019 atlas extract, keyed by the 5-digit FIPS (first 5 digits of the atlas GEOID). Tracts = atlas tracts in the county; FlaggedTracts = of them, LILATracts_1And10 = 1; FlaggedLAPOP1_10 = sum of LAPOP1_10 over the flagged tracts. LAT/LNG = POP10-weighted mean of the tracts\' Census 2010 Gazetteer internal points; MINLAT..MAXLNG = the box around those points. Longitudes east of 180° (far Aleutians) are shifted by -360, as the map draws them.',
+    fields: [...COUNTY_FIELDS],
+    counts: {
+      atlasRows: atlasRecords.length,
+      counties: counties.rows.length,
+      withFlagged,
+      tracts: counties.rows.reduce((sum, row) => sum + row[10], 0),
+      flagged: counties.rows.reduce((sum, row) => sum + row[11], 0),
+      recoded: counties.recoded,
+      placeMisses: counties.misses,
+    },
+    rows: counties.rows,
+  };
+  const countyJson = serializeLilaTracts(countyDoc);
+  mkdirSync(path.dirname(opts.countiesOut), { recursive: true });
+  writeFileSync(opts.countiesOut, countyJson);
+  console.log(`wrote ${path.relative(ROOT, opts.countiesOut)}: ${counties.rows.length} rows, ${(Buffer.byteLength(countyJson) / 1024).toFixed(1)} KiB`);
   return 0;
 }
 

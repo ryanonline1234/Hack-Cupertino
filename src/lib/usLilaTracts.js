@@ -108,14 +108,18 @@ export function parseAtlasCsv(text, required = ATLAS_REQUIRED_COLUMNS) {
 }
 
 // Census Gazetteer tract file (tab-separated, space-padded, CRLF) ->
-// Map<GEOID, [lat, lng]> from INTPTLAT / INTPTLONG.
-export function parseGazetteerTracts(text) {
+// Map<GEOID, [lat, lng]> from INTPTLAT / INTPTLONG. With { details: true }
+// each value is [lat, lng, POP10, USPS] instead (null when the file lacks the
+// column); the county build weights centers by POP10.
+export function parseGazetteerTracts(text, { details = false } = {}) {
   const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
   if (!lines.length) throw new Error('Gazetteer file is empty');
   const header = lines[0].split('\t').map((name) => name.trim());
   const iGeoid = header.indexOf('GEOID');
   const iLat = header.indexOf('INTPTLAT');
   const iLng = header.indexOf('INTPTLONG');
+  const iPop = header.indexOf('POP10');
+  const iUsps = header.indexOf('USPS');
   if (iGeoid < 0 || iLat < 0 || iLng < 0) {
     throw new Error(`Gazetteer header lacks GEOID/INTPTLAT/INTPTLONG: ${header.join(',')}`);
   }
@@ -129,7 +133,17 @@ export function parseGazetteerTracts(text) {
       throw new Error(`Gazetteer line ${n + 1} has a bad internal point for ${geoid}`);
     }
     if (centroids.has(geoid)) throw new Error(`Gazetteer lists ${geoid} twice`);
-    centroids.set(geoid, [lat, lng]);
+    if (!details) {
+      centroids.set(geoid, [lat, lng]);
+      continue;
+    }
+    const popText = iPop < 0 ? '' : String(cells[iPop] ?? '').trim();
+    const pop = popText === '' ? null : Number(popText);
+    if (pop !== null && !(Number.isInteger(pop) && pop >= 0)) {
+      throw new Error(`Gazetteer line ${n + 1} has a bad POP10 for ${geoid}`);
+    }
+    const usps = iUsps < 0 ? null : String(cells[iUsps] ?? '').trim().toUpperCase() || null;
+    centroids.set(geoid, [lat, lng, pop, usps]);
   }
   return centroids;
 }
@@ -148,18 +162,50 @@ export function atlasNumber(value, { integer = false } = {}) {
 const round4 = (value) => Math.round(value * 1e4) / 1e4;
 
 // The atlas uses tract codes as corrected after the 2010 census; the 2010
-// Gazetteer keeps the original codes. Same tract, same boundaries, new number
-// (Census ACS geography-change notes): atlas GEOID -> 2010 Gazetteer GEOID.
-// Only the renamed tracts USDA flagged are listed; any other miss still fails
-// the build.
+// Gazetteer keeps the original codes. Same tract, new number (Census ACS
+// geography-change notes, 2011/2012/2014/2015 "Geography Changes" pages):
+// atlas GEOID -> 2010 Gazetteer GEOID. This lists every atlas tract (flagged
+// or not) that has no 2010 Gazetteer row: 25, checked 2026-10-18 against the
+// Census pages and, where the atlas publishes LAPOP1_10 and lapop1share,
+// against POP10. The tract build only looks up flagged tracts; the county
+// build looks up all of them. Any other miss still fails both builds.
 export const GEOID_2010_CODE_CHANGES = Object.freeze({
-  // 2011 ACS: Madison County, NY, tract 9401.01 is now 0301.01, 9401.02 is now 0301.02.
-  '36053030101': '36053940101',
-  '36053030102': '36053940102',
-  // 2012 ACS: Pima County, AZ, tract 4704.00 is now 52.00.
-  '04019005200': '04019470400',
+  // 2011 ACS: Madison County, NY: nine tracts renumbered, same boundaries.
+  '36053030101': '36053940101', // 9401.01 is now 0301.01
+  '36053030102': '36053940102', // 9401.02 is now 0301.02
+  '36053030103': '36053940103', // 9401.03 is now 0301.03
+  '36053030200': '36053940200', // 9402.00 is now 0302.00
+  '36053030300': '36053940300', // 9403.00 is now 0303.00
+  '36053030401': '36053940401', // 9404.01 is now 0304.01
+  '36053030403': '36053940403', // 9404.03 is now 0304.03
+  '36053030600': '36053940600', // 9406.00 is now 0306.00
+  '36053030402': '36053940700', // 9407.00 is now 0304.02
+  // 2011 ACS: Oneida County, NY: 9400.00 is now 0248.00, 9401.00 is now
+  // 0247.00, and 9402.00 forms most of 0249.00 (plus part of 0230.00), so
+  // 0249.00 sits at 9402.00's point.
+  '36065024800': '36065940000',
+  '36065024700': '36065940100',
+  '36065024900': '36065940200',
+  // 2012 ACS: Pima County, AZ: seven tracts renumbered, same boundaries.
+  '04019002704': '04019002701', // 27.01 is now 27.04
+  '04019002906': '04019002903', // 29.03 is now 29.06
+  '04019004118': '04019410501', // 4105.01 is now 41.18
+  '04019004121': '04019410502', // 4105.02 is now 41.21
+  '04019004125': '04019410503', // 4105.03 is now 41.25
+  '04019005200': '04019470400', // 4704.00 is now 52.00
+  '04019005300': '04019470500', // 4705.00 is now 53.00
+  // 2012 ACS: Los Angeles County, CA: tract 1370.00 was reinstated from all
+  // of 2010 tract 9304.01 plus part of 8002.04, so it sits at 9304.01's point.
+  '06037137000': '06037930401',
   // 2014 ACS: Bedford city, VA (51515) was absorbed into Bedford County (51019).
   '51019050100': '51515050100',
+  // 2015 ACS: Wade Hampton Census Area, AK (02270) is now Kusilvak Census
+  // Area (02158), and Shannon County, SD (46113) is now Oglala Lakota County
+  // (46102); tract codes unchanged.
+  '02158000100': '02270000100',
+  '46102940500': '46113940500',
+  '46102940800': '46113940800',
+  '46102940900': '46113940900',
 });
 
 // Atlas records + Gazetteer centroids -> one compact row per tract USDA
@@ -204,6 +250,147 @@ export function buildLilaTractRows(atlasRecords, centroids, codeChanges = GEOID_
   }
   rows.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   return { rows, misses, recoded, flagged };
+}
+
+// Column order of each row in public/data/us/counties.json (the US map's
+// county search). FIPS is the first 5 digits of the atlas GEOID; County and
+// State are the atlas strings as written; USPS comes from the Gazetteer.
+// LAT/LNG is the center, MINLAT..MAXLNG the box of the county's tract points.
+export const COUNTY_FIELDS = Object.freeze([
+  'FIPS',
+  'County',
+  'State',
+  'USPS',
+  'LAT',
+  'LNG',
+  'MINLAT',
+  'MINLNG',
+  'MAXLAT',
+  'MAXLNG',
+  'Tracts',
+  'FlaggedTracts',
+  'FlaggedLAPOP1_10',
+]);
+
+// County coordinates only aim the map, so 3 decimals (~110 m) keep the file small.
+const round3 = (value) => Math.round(value * 1e3) / 1e3;
+
+// Gazetteer longitudes east of 180° (only the far Aleutians) -> west of
+// -180°, as the map draws them, so Aleutians West's box stays beside Alaska.
+const mapLng = (lng) => (lng > 0 ? lng - 360 : lng);
+
+// Atlas records + Gazetteer points (parseGazetteerTracts with details) -> one
+// row per county in COUNTY_FIELDS order, sorted by FIPS, for EVERY county in
+// the atlas (flagged tracts or not).
+//   Tracts            atlas rows in the county
+//   FlaggedTracts     of them, LILATracts_1And10 = 1
+//   FlaggedLAPOP1_10  sum of LAPOP1_10 over the flagged ones (unpublished skipped)
+//   LAT, LNG          POP10-weighted mean of the tract internal points; a plain
+//                     mean when the county's POP10 is missing or sums to 0
+//   MIN*/MAX*         box around those points (a one-tract county is a point)
+//   (coordinates rounded to 3 decimals)
+// Tracts are placed like buildLilaTractRows (GEOID, else the 2010 code change);
+// a tract with no point still counts but lands in `misses`, and a county
+// with no point at all gets null coordinates.
+export function buildCountyRows(atlasRecords, points, codeChanges = GEOID_2010_CODE_CHANGES) {
+  const byFips = new Map();
+  const uspsByState = new Map();
+  const misses = [];
+  const recoded = [];
+  const seen = new Set();
+  for (const record of atlasRecords) {
+    const geoid = padGeoid(record.CensusTract);
+    if (seen.has(geoid)) throw new Error(`Atlas lists ${geoid} twice`);
+    seen.add(geoid);
+    const flag = atlasNumber(record.LILATracts_1And10, { integer: true });
+    if (flag !== 0 && flag !== 1) throw new Error(`LILATracts_1And10 is not 0/1 for ${record.CensusTract}`);
+    const fips = geoid.slice(0, 5);
+    const county = String(record.County ?? '').trim();
+    const state = String(record.State ?? '').trim();
+    if (!county || !state) throw new Error(`Atlas tract ${geoid} has no County or State`);
+    let entry = byFips.get(fips);
+    if (!entry) {
+      entry = { fips, county, state, usps: null, tracts: 0, flagged: 0, lowAccess: 0, pts: [] };
+      byFips.set(fips, entry);
+    } else if (entry.county !== county || entry.state !== state) {
+      throw new Error(`County ${fips} is both "${entry.county}, ${entry.state}" and "${county}, ${state}"`);
+    }
+    entry.tracts += 1;
+    if (flag === 1) {
+      entry.flagged += 1;
+      const lapop = atlasNumber(record.LAPOP1_10, { integer: true });
+      if (lapop !== null) entry.lowAccess += lapop;
+    }
+    let point = points.get(geoid);
+    if (!point && codeChanges[geoid]) {
+      point = points.get(codeChanges[geoid]);
+      if (point) recoded.push(`${geoid}<-${codeChanges[geoid]}`);
+    }
+    if (!point) {
+      misses.push(geoid);
+      continue;
+    }
+    entry.pts.push(point);
+    const usps = point[3];
+    if (usps) {
+      const stateFips = fips.slice(0, 2);
+      const known = uspsByState.get(stateFips);
+      if (known && known !== usps) throw new Error(`State ${stateFips} is both ${known} and ${usps} in the Gazetteer`);
+      uspsByState.set(stateFips, usps);
+    }
+  }
+
+  const rows = [];
+  for (const entry of byFips.values()) {
+    let center = [null, null];
+    let box = [null, null, null, null];
+    if (entry.pts.length) {
+      let minLat = Infinity;
+      let minLng = Infinity;
+      let maxLat = -Infinity;
+      let maxLng = -Infinity;
+      let sumLat = 0;
+      let sumLng = 0;
+      let wLat = 0;
+      let wLng = 0;
+      let wSum = 0;
+      for (const [lat, rawLng, pop] of entry.pts) {
+        const lng = mapLng(rawLng);
+        minLat = Math.min(minLat, lat);
+        maxLat = Math.max(maxLat, lat);
+        minLng = Math.min(minLng, lng);
+        maxLng = Math.max(maxLng, lng);
+        sumLat += lat;
+        sumLng += lng;
+        if (Number.isFinite(pop) && pop > 0) {
+          wLat += lat * pop;
+          wLng += lng * pop;
+          wSum += pop;
+        }
+      }
+      // Weighted only when every point has a POP10; a partial weighting
+      // would silently drop the unweighted tracts.
+      const allWeighted = entry.pts.every((p) => Number.isFinite(p[2]));
+      center = allWeighted && wSum > 0
+        ? [round3(wLat / wSum), round3(wLng / wSum)]
+        : [round3(sumLat / entry.pts.length), round3(sumLng / entry.pts.length)];
+      box = [round3(minLat), round3(minLng), round3(maxLat), round3(maxLng)];
+    }
+    rows.push([
+      entry.fips,
+      entry.county,
+      entry.state,
+      uspsByState.get(entry.fips.slice(0, 2)) ?? null,
+      center[0],
+      center[1],
+      ...box,
+      entry.tracts,
+      entry.flagged,
+      entry.lowAccess,
+    ]);
+  }
+  rows.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return { rows, misses, recoded };
 }
 
 // ── Run time ────────────────────────────────────────────────────────────
@@ -277,4 +464,167 @@ export function lilaDotRadius(lowAccess, zoom) {
   const people = Number.isFinite(lowAccess) && lowAccess > 0 ? lowAccess : 0;
   const zoomScale = Math.min(3, Math.max(0.6, 0.75 + (zoom - 4) * 0.38));
   return (0.8 + Math.sqrt(people) / 36) * zoomScale;
+}
+
+// ── County search (run time) ────────────────────────────────────────────
+
+// Committed counties.json -> array of county objects. Throws on a different
+// field list, like decodeLilaTracts.
+export function decodeCounties(json) {
+  const fields = json?.fields;
+  if (!Array.isArray(fields) || fields.join(',') !== COUNTY_FIELDS.join(',')) {
+    throw new Error('Unexpected fields in the county file');
+  }
+  if (!Array.isArray(json.rows)) throw new Error('The county file has no rows');
+  return json.rows.map((row) => ({
+    fips: row[0],
+    county: row[1],
+    state: row[2],
+    usps: row[3],
+    lat: row[4],
+    lng: row[5],
+    box: row[6] === null ? null : [row[6], row[7], row[8], row[9]],
+    tracts: row[10],
+    flagged: row[11],
+    flaggedLowAccess: row[12],
+  }));
+}
+
+// "Santa Clara County, California"
+export function countyLabel(county) {
+  return `${county.county}, ${county.state}`;
+}
+
+// Lowercase, accents dropped ("Doña" -> "dona"), periods and apostrophes
+// dropped ("St. Mary's" -> "st marys"), any other run of punctuation or space
+// -> one space.
+export function normalizeCountyText(text) {
+  return String(text ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/['’.]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+const COUNTY_SUFFIX = / (city and borough|county|parish|borough)$/;
+const stripCountySuffix = (text) => text.replace(COUNTY_SUFFIX, '');
+
+const searchKeyCache = new WeakMap();
+function searchKeys(county) {
+  let keys = searchKeyCache.get(county);
+  if (!keys) {
+    const full = normalizeCountyText(county.county);
+    keys = {
+      names: [...new Set([full, stripCountySuffix(full)])],
+      state: normalizeCountyText(county.state),
+      usps: String(county.usps ?? '').toLowerCase(),
+    };
+    searchKeyCache.set(county, keys);
+  }
+  return keys;
+}
+
+// 0: the name starts with the query, 1: a word in it does, 2: it contains it.
+function nameTier(names, queries) {
+  let best = null;
+  for (const name of names) {
+    for (const q of queries) {
+      let tier = null;
+      if (name.startsWith(q)) tier = 0;
+      else if (` ${name}`.includes(` ${q}`)) tier = 1;
+      else if (name.includes(q)) tier = 2;
+      if (tier !== null && (best === null || tier < best)) best = tier;
+    }
+  }
+  return best;
+}
+
+// Ways to read a query: always the whole thing as a county name, plus
+// "county, state" (after the last comma: a USPS code or the start of a state
+// name) or, without a comma, its last one to three words as a state (a USPS
+// code, a full state name, or 3+ letters that start one) when words are left
+// over for the county. `states` is a list of { state, usps } keys.
+function readCountyQuery(query, states) {
+  const matchStates = (part, prefix) => {
+    const hits = new Set();
+    for (const s of states) {
+      if ((part.length === 2 && s.usps === part) || s.state === part || (prefix && s.state.startsWith(part))) hits.add(s.state);
+    }
+    return hits;
+  };
+  const raw = String(query ?? '');
+  const comma = raw.lastIndexOf(',');
+  if (comma >= 0) {
+    const county = normalizeCountyText(raw.slice(0, comma));
+    const statePart = normalizeCountyText(raw.slice(comma + 1));
+    if (!county) return [];
+    if (!statePart) return [{ county, states: null }];
+    const hits = matchStates(statePart, true);
+    return hits.size ? [{ county, states: hits }] : [];
+  }
+  const whole = normalizeCountyText(raw);
+  if (!whole) return [];
+  const readings = [{ county: whole, states: null }];
+  const words = whole.split(' ');
+  for (let k = 1; k <= Math.min(3, words.length - 1); k += 1) {
+    const statePart = words.slice(-k).join(' ');
+    const hits = matchStates(statePart, statePart.length >= 3);
+    if (hits.size) readings.push({ county: words.slice(0, -k).join(' '), states: hits });
+  }
+  return readings;
+}
+
+// Counties matching a typed query, best first, at most `limit`: name starts
+// with the query, then a word in the name does, then the name contains it.
+// Case, accents and a trailing " County" / " Parish" / " Borough" are ignored
+// on both sides, and a state can follow ("santa clara ca", "sunflower,
+// mississippi"). Ties: more flagged tracts first, then alphabetical.
+export function searchCounties(counties, query, limit = 8) {
+  if (!Array.isArray(counties) || !counties.length) return [];
+  const stateKeys = new Map();
+  for (const c of counties) {
+    const k = searchKeys(c);
+    if (!stateKeys.has(k.state)) stateKeys.set(k.state, { state: k.state, usps: k.usps });
+  }
+  const readings = readCountyQuery(query, [...stateKeys.values()]);
+  if (!readings.length) return [];
+  const prepared = readings.map((r) => ({
+    states: r.states,
+    queries: [...new Set([r.county, stripCountySuffix(r.county)])].filter(Boolean),
+  }));
+  const hits = [];
+  for (const c of counties) {
+    const keys = searchKeys(c);
+    let best = null;
+    for (const r of prepared) {
+      if (r.states && !r.states.has(keys.state)) continue;
+      const tier = nameTier(keys.names, r.queries);
+      if (tier !== null && (best === null || tier < best)) best = tier;
+    }
+    if (best !== null) hits.push({ c, tier: best });
+  }
+  hits.sort(
+    (a, b) => a.tier - b.tier || b.c.flagged - a.c.flagged || countyLabel(a.c).localeCompare(countyLabel(b.c), 'en'),
+  );
+  return hits.slice(0, limit).map((h) => h.c);
+}
+
+// The box to fit the map to: the county's tract-point box, padded by
+// `fraction` of its span on each side and at least `minPadDeg` degrees of
+// latitude (the same distance in longitude), so a one-tract county still
+// shows its surroundings. Returns [[south, west], [north, east]] or null.
+export function paddedCountyBounds(county, { fraction = 0.15, minPadDeg = 0.05 } = {}) {
+  const box = county?.box;
+  if (!box || box.some((v) => !Number.isFinite(v))) return null;
+  const [minLat, minLng, maxLat, maxLng] = box;
+  const midLat = (minLat + maxLat) / 2;
+  const cos = Math.max(0.2, Math.cos((midLat * Math.PI) / 180));
+  const padLat = Math.max((maxLat - minLat) * fraction, minPadDeg);
+  const padLng = Math.max((maxLng - minLng) * fraction, minPadDeg / cos);
+  return [
+    [Math.max(-90, minLat - padLat), minLng - padLng],
+    [Math.min(90, maxLat + padLat), maxLng + padLng],
+  ];
 }
