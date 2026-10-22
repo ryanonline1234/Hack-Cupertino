@@ -16,6 +16,17 @@ Earlier (2026-10-03) post-deploy check: Production check after deploy: data file
 /api/overpass and /api/llmapi are 404, no key values in the 14 bundle files,
 Alviso + village pin flips MEETS → DOES NOT MEET.
 
+## Final video (2026-10-22)
+`notes-local/video/final/miles-to-market_cac_FINAL_captions.mp4` (2:33, captions
+burned in) is the upload. There is also a `_no-burned-captions.mp4` plus
+`.srt` if YouTube captions are preferred. The picture is time-warped to the
+team's recorded voices (`~/Movies/CapCut/1019.mov`). The duplicated rule
+ad-lib is cut, and long silences are shortened. Every scripted line's on-screen
+action lands on the spoken words. How to rebuild: `notes-local/video/sync/README.md`.
+Ryan's take skipped the spoken AI-use sentence; by his choice the video carries
+no extra AI line. AI use is in the written disclosure and the end-card footer.
+The tools card now says 388 tests.
+
 ## Live (2026-10-19, main 5a75956)
 New search, Home clearing the location, US-map county search
 (DECISIONS 2026-10-19). `npm test` 388/388, lint clean, build ok.
